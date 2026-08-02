@@ -1,0 +1,6 @@
+# Source lives on /mnt/e (the Windows E: drive, reached through WSL's 9p mount).
+# Small-file I/O across that boundary is ~200x slower than native Linux disk, and cargo does
+# an enormous amount of it. Redirecting only the build output keeps source where we want it
+# while keeping builds fast. Everything under this path is disposable.
+[build]
+target-dir = "$HOME/.cargo-target/solfx"

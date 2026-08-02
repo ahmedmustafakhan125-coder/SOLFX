@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # .cargo/config.toml redirects build output to a developer-local path on WSL, where
+  # /mnt/e is a slow 9p mount. That path does not exist on a runner, and the env var takes
+  # precedence over the config file.
+  CARGO_TARGET_DIR: target
+
+jobs:
+  check:
+    name: fmt, clippy, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        # rust-toolchain.toml pins the version and components.
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+  # The property suite is the actual safety gate (ARCHITECTURE.md § 12.2). Run it far
+  # harder than the per-PR budget allows, so a rare counterexample surfaces here rather
+  # than on devnet.
+  deep-properties:
+    name: deep property run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Property tests, 100k cases each
+        env:
+          PROPTEST_CASES: 100000
+        run: cargo test --release --workspace --test properties

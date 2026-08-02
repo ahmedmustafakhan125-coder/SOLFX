@@ -1,0 +1,34 @@
+# Rust build output. Redirected to native Linux disk by .cargo/config.toml, but ignore
+# the default location too in case the redirect is ever removed.
+/target
+**/*.rs.bk
+
+# Coverage
+*.profraw
+*.profdata
+/lcov.info
+
+# Node / frontend (Phase 8)
+node_modules/
+.next/
+dist/
+
+# Anchor (Phase 2)
+.anchor/
+test-ledger/
+
+# Keys — never commit one, on any cluster.
+*.pem
+id.json
+keypair*.json
+!Anchor.toml
+
+# Probe data: large, regenerable, and not source.
+scratch/feed-probe/data/
+scratch/feed-probe/*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
