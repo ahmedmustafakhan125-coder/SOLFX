@@ -7,9 +7,13 @@
 pub mod admin;
 pub mod guardian;
 pub mod keeper;
+pub mod lp;
+pub mod trader;
 pub mod user;
 
 pub use admin::*;
 pub use guardian::*;
 pub use keeper::*;
+pub use lp::*;
+pub use trader::*;
 pub use user::*;

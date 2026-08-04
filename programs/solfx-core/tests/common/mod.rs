@@ -44,8 +44,8 @@ use solfx_core::instructions::admin::{
     InitializeMarketParams, InitializeProtocolParams, UpdateFeeParams, UpdateRiskParams,
 };
 use solfx_core::state::{
-    FeedKind, InsuranceFund, LpPool, Market, MarketStatus, PriceSource, Protocol,
-    QuoteConversionKind, UserAccount,
+    Direction, FeedKind, InsuranceFund, LpPool, Market, MarketStatus, Position, PriceSource,
+    Protocol, QuoteConversionKind, UserAccount,
 };
 
 /// The Pyth pull-oracle receiver. Taken from the SDK rather than written out, so the tests
@@ -57,6 +57,9 @@ pub const PYTH_RECEIVER_ID: Pubkey = pyth_solana_receiver_sdk::ID;
 pub const T0: i64 = 1_800_000_000;
 
 pub const ONE_USDC: u64 = 1_000_000;
+
+/// One standard lot: 100,000 units of base currency at `BASE_PRECISION`.
+pub const ONE_LOT: u64 = 100_000 * 1_000_000_000;
 
 /// `anchor_lang::prelude::Result` is a single-parameter alias, so the standard two-parameter
 /// form needs its own name inside a module that glob-imports the prelude.
@@ -162,8 +165,15 @@ impl MarketSpec {
                 liquidation_fee_bps: 50,
                 max_oi_long: 1_000_000 * ONE_USDC,
                 max_oi_short: 1_000_000 * ONE_USDC,
-                max_position_size: 100_000 * ONE_USDC,
-                min_position_size: ONE_USDC,
+                // Base units at BASE_PRECISION, not USDC: 1 lot = 1e14.
+                //
+                // The floor is set very low on purpose. A base-unit minimum is
+                // asset-specific — a sane minimum for EUR/USD is ~40,000x too large for
+                // gold, because an ounce is worth ~3,700 euros — so the *money* floor is
+                // `pricing::validate_notional` ($1 of notional), which applies uniformly.
+                // This bound exists to stop dust sizes, not to set a minimum trade value.
+                max_position_size: 100 * ONE_LOT,
+                min_position_size: ONE_LOT / 1_000_000,
 
                 max_staleness_seconds: 10,
                 max_conf_bps: 15,
@@ -262,6 +272,8 @@ pub struct Env {
     pub lp_mint: Pubkey,
     pub now: i64,
     users: Vec<Pubkey>,
+    positions: Vec<Pubkey>,
+    lp_deposited: u64,
 }
 
 impl Env {
@@ -302,6 +314,8 @@ impl Env {
             lp_mint: pda(&[LP_MINT_SEED]),
             now: T0,
             users: Vec::new(),
+            positions: Vec::new(),
+            lp_deposited: 0,
         };
 
         env.write_mint_with_decimals(usdc_mint, USDC_DECIMALS);
@@ -767,6 +781,16 @@ impl Env {
 
     // --- reading state -----------------------------------------------------------------
 
+    /// Read an account that may have been closed. `close_position` reclaims the rent, so a
+    /// closed position deserialises as `None` rather than panicking the invariant sweep.
+    pub fn try_read<T: AccountDeserialize>(&self, key: &Pubkey) -> Option<T> {
+        let acct = self.svm.get_account(key)?;
+        if acct.data.len() < 8 || acct.owner != solfx_core::ID {
+            return None;
+        }
+        T::try_deserialize(&mut acct.data.as_slice()).ok()
+    }
+
     pub fn read<T: AccountDeserialize>(&self, key: &Pubkey) -> T {
         let acct = self
             .svm
@@ -799,43 +823,515 @@ impl Env {
             .amount
     }
 
-    // --- invariants --------------------------------------------------------------------
+    // --- positions ---------------------------------------------------------------------
 
-    /// Invariant I1 (`ARCHITECTURE.md` § 12.3):
-    /// `CollateralVault.amount == Σ(UserAccount.free) + Σ(Position.collateral)`.
+    pub fn position_pda(user_account: &Pubkey, market_index: u16, nonce: u8) -> Pubkey {
+        pda(&[
+            POSITION_SEED,
+            user_account.as_ref(),
+            &market_index.to_le_bytes(),
+            &[nonce],
+        ])
+    }
+
+    /// The eight vault/pool accounts every position instruction carries.
+    fn settlement_keys(&self) -> (Pubkey, Pubkey, Pubkey, Pubkey, Pubkey, Pubkey) {
+        (
+            self.collateral_vault,
+            self.lp_pool,
+            self.lp_vault,
+            self.insurance_fund,
+            self.insurance_vault,
+            self.fee_vault,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_ix(
+        &self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        direction: Direction,
+        size_base: u64,
+        collateral: u64,
+        price_limit: i64,
+        price: Pubkey,
+        secondary: Option<Pubkey>,
+        quote_conv: Option<Pubkey>,
+    ) -> Instruction {
+        let (collateral_vault, lp_pool, lp_vault, insurance_fund, insurance_vault, fee_vault) =
+            self.settlement_keys();
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::OpenPosition {
+                authority: user.pubkey(),
+                protocol: self.protocol,
+                user_account: user.account,
+                market: Self::market_pda(market_index),
+                position: Self::position_pda(&user.account, market_index, nonce),
+                collateral_vault,
+                lp_pool,
+                lp_vault,
+                insurance_fund,
+                insurance_vault,
+                fee_vault,
+                price_update: price,
+                secondary_price_update: secondary,
+                quote_conversion_price_update: quote_conv,
+                token_program: spl_token::ID,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::OpenPosition {
+                market_index,
+                nonce,
+                direction,
+                size_base,
+                collateral,
+                price_limit,
+            }
+            .data(),
+        }
+    }
+
+    /// The `DecreasePosition` account set, shared by decrease, increase and both collateral
+    /// adjustments — they touch exactly the same accounts.
+    pub fn modify_metas(
+        &self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        price: Pubkey,
+        secondary: Option<Pubkey>,
+        quote_conv: Option<Pubkey>,
+    ) -> Vec<anchor_lang::solana_program::instruction::AccountMeta> {
+        let (collateral_vault, lp_pool, lp_vault, insurance_fund, insurance_vault, fee_vault) =
+            self.settlement_keys();
+        solfx_core::accounts::DecreasePosition {
+            authority: user.pubkey(),
+            protocol: self.protocol,
+            user_account: user.account,
+            market: Self::market_pda(market_index),
+            position: Self::position_pda(&user.account, market_index, nonce),
+            collateral_vault,
+            lp_pool,
+            lp_vault,
+            insurance_fund,
+            insurance_vault,
+            fee_vault,
+            price_update: price,
+            secondary_price_update: secondary,
+            quote_conversion_price_update: quote_conv,
+            token_program: spl_token::ID,
+        }
+        .to_account_metas(None)
+    }
+
+    pub fn close_metas(
+        &self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        price: Pubkey,
+        secondary: Option<Pubkey>,
+        quote_conv: Option<Pubkey>,
+    ) -> Vec<anchor_lang::solana_program::instruction::AccountMeta> {
+        let (collateral_vault, lp_pool, lp_vault, insurance_fund, insurance_vault, fee_vault) =
+            self.settlement_keys();
+        solfx_core::accounts::ClosePosition {
+            authority: user.pubkey(),
+            protocol: self.protocol,
+            user_account: user.account,
+            market: Self::market_pda(market_index),
+            position: Self::position_pda(&user.account, market_index, nonce),
+            collateral_vault,
+            lp_pool,
+            lp_vault,
+            insurance_fund,
+            insurance_vault,
+            fee_vault,
+            price_update: price,
+            secondary_price_update: secondary,
+            quote_conversion_price_update: quote_conv,
+            token_program: spl_token::ID,
+        }
+        .to_account_metas(None)
+    }
+
+    /// Open a position, registering it so the invariant sweep sees it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open(
+        &mut self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        direction: Direction,
+        size_base: u64,
+        collateral: u64,
+        price_limit: i64,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix = self.open_ix(
+            user,
+            market_index,
+            nonce,
+            direction,
+            size_base,
+            collateral,
+            price_limit,
+            price,
+            None,
+            None,
+        );
+        let kp = user.keypair.insecure_clone();
+        let key = Self::position_pda(&user.account, market_index, nonce);
+        let result = self.send(ix, &[&kp]);
+        if result.is_ok() && !self.positions.contains(&key) {
+            self.positions.push(key);
+        }
+        result
+    }
+
+    pub fn close(
+        &mut self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        price_limit: i64,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: self.close_metas(user, market_index, nonce, price, None, None),
+            data: solfx_core::instruction::ClosePosition { price_limit }.data(),
+        };
+        let kp = user.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn decrease(
+        &mut self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        size_delta: u64,
+        price_limit: i64,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: self.modify_metas(user, market_index, nonce, price, None, None),
+            data: solfx_core::instruction::DecreasePosition {
+                size_delta,
+                price_limit,
+            }
+            .data(),
+        };
+        let kp = user.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn increase(
+        &mut self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        size_delta: u64,
+        collateral_delta: u64,
+        price_limit: i64,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: self.modify_metas(user, market_index, nonce, price, None, None),
+            data: solfx_core::instruction::IncreasePosition {
+                size_delta,
+                collateral_delta,
+                price_limit,
+            }
+            .data(),
+        };
+        let kp = user.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn add_margin(
+        &mut self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        amount: u64,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: self.modify_metas(user, market_index, nonce, price, None, None),
+            data: solfx_core::instruction::AddPositionCollateral { amount }.data(),
+        };
+        let kp = user.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn remove_margin(
+        &mut self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        amount: u64,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: self.modify_metas(user, market_index, nonce, price, None, None),
+            data: solfx_core::instruction::RemovePositionCollateral { amount }.data(),
+        };
+        let kp = user.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn position_state(&self, user: &User, market_index: u16, nonce: u8) -> Position {
+        self.read(&Self::position_pda(&user.account, market_index, nonce))
+    }
+
+    pub fn position_exists(&self, user: &User, market_index: u16, nonce: u8) -> bool {
+        self.try_read::<Position>(&Self::position_pda(&user.account, market_index, nonce))
+            .is_some()
+    }
+
+    /// Register a position key with the invariant sweep without opening it here.
+    pub fn track_position(&mut self, key: Pubkey) {
+        if !self.positions.contains(&key) {
+            self.positions.push(key);
+        }
+    }
+
+    /// Turn on the minimum-hold guard (§ 6.6). Markets ship with it at zero, so this is also
+    /// the retune path: risk parameters are data, never constants.
+    pub fn set_min_hold_slots(&mut self, index: u16, slots: u64) {
+        let mut m = self.market_state(index);
+        m.min_hold_slots = slots;
+        let key = Self::market_pda(index);
+        let mut data = Market::DISCRIMINATOR.to_vec();
+        m.serialize(&mut data).unwrap();
+        let existing = self.svm.get_account(&key).unwrap();
+        self.svm
+            .set_account(
+                key,
+                SvmAccount {
+                    lamports: existing.lamports,
+                    data,
+                    owner: existing.owner,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
+    // --- liquidity -----------------------------------------------------------------------
+
+    /// Seed the counterparty pool. Without it the vault cannot pay a winning trade, so only
+    /// losing trades would be testable.
+    pub fn seed_pool(&mut self, amount: u64) {
+        let provider = Keypair::new();
+        self.svm
+            .airdrop(&provider.pubkey(), 100 * 1_000_000_000)
+            .unwrap();
+
+        let usdc_account = Pubkey::new_unique();
+        let lp_account = Pubkey::new_unique();
+        let mint = self.usdc_mint;
+        let lp_mint = self.lp_mint;
+        self.write_token_account(usdc_account, mint, provider.pubkey(), amount);
+        self.write_token_account(lp_account, lp_mint, provider.pubkey(), 0);
+
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::AddLiquidity {
+                provider: provider.pubkey(),
+                protocol: self.protocol,
+                lp_pool: self.lp_pool,
+                lp_vault: self.lp_vault,
+                lp_mint: self.lp_mint,
+                provider_token_account: usdc_account,
+                provider_lp_account: lp_account,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::AddLiquidity {
+                amount,
+                min_lp_out: 0,
+            }
+            .data(),
+        };
+        self.send(ix, &[&provider]).expect("add_liquidity failed");
+        self.lp_deposited += amount;
+    }
+
+    // --- invariants (§ 12.3) ------------------------------------------------------------
+
+    /// **I1**: `CollateralVault.amount == Σ(UserAccount.free) + Σ(Position.collateral)`.
     ///
     /// Checked three ways rather than two. The vault's token balance, the sum over every
-    /// user account, and the running total the program maintains on `Protocol` must all
-    /// agree. Comparing only two of the three would let a bug that corrupts both in the same
-    /// direction pass unnoticed.
-    ///
-    /// Phase 2 has no positions, so the position term is zero. Phase 3 adds it here.
+    /// account, and the running total the program maintains on `Protocol` must all agree.
+    /// Comparing only two of the three would let a bug that corrupts both in the same
+    /// direction pass unnoticed — and a settlement bug corrupts them in the same direction
+    /// by construction, because one function writes both.
     pub fn assert_i1(&self) {
         let vault = self.token_balance(&self.collateral_vault);
         let protocol = self.protocol_state();
 
-        let summed: u64 = self
+        let free: u64 = self
             .users
             .iter()
             .map(|k| self.read::<UserAccount>(k).free_collateral)
             .sum();
+        let margin: u64 = self
+            .positions
+            .iter()
+            .filter_map(|k| self.try_read::<Position>(k))
+            .map(|p| p.collateral)
+            .sum();
+        let summed = free + margin;
 
         assert_eq!(
             vault, summed,
-            "I1 broken: vault holds {vault} but user accounts sum to {summed}"
+            "I1 broken: vault holds {vault}, accounts sum to {summed} \
+             (free {free} + position margin {margin})"
         );
         assert_eq!(
             vault, protocol.total_user_collateral,
             "I1 broken: vault holds {vault} but Protocol.total_user_collateral is {}",
             protocol.total_user_collateral
         );
+    }
+
+    /// **I2**: `LpVault.amount == LpPool.aum`.
+    ///
+    /// The pool's accounting and its tokens must never diverge. A settlement that moved one
+    /// without the other would show up here and nowhere else.
+    pub fn assert_i2(&self) {
+        let vault = self.token_balance(&self.lp_vault);
+        let aum = self.lp_state().aum;
+        assert_eq!(vault, aum, "I2 broken: lp_vault {vault} vs aum {aum}");
+    }
+
+    /// **I4**: `market.oi_long == Σ(long positions' entry notional)`, same for short, and the
+    /// base-unit counters match the open sizes exactly.
+    ///
+    /// The quote-unit counters are compared with a small tolerance because
+    /// `remove_open_interest` saturates rather than failing a close over a rounding unit
+    /// (see its doc comment). The **base**-unit counters are compared exactly, because those
+    /// carry no price and drive funding — they have to balance to the unit.
+    pub fn assert_i4(&self, market_index: u16) {
+        let m = self.market_state(market_index);
+        let mut long_notional = 0u64;
+        let mut short_notional = 0u64;
+        let mut long_base = 0i128;
+        let mut short_base = 0i128;
+
+        for key in &self.positions {
+            let Some(p) = self.try_read::<Position>(key) else {
+                continue;
+            };
+            if p.market_index != market_index || p.size_base == 0 {
+                continue;
+            }
+            match p.direction {
+                Direction::Long => {
+                    long_notional += p.entry_notional;
+                    long_base += i128::from(p.size_base);
+                }
+                Direction::Short => {
+                    short_notional += p.entry_notional;
+                    short_base += i128::from(p.size_base);
+                }
+            }
+        }
+
         assert_eq!(
-            protocol.total_deposits - protocol.total_withdrawals,
-            vault,
-            "I7 broken: deposits {} minus withdrawals {} does not equal the vault balance {vault}",
-            protocol.total_deposits,
-            protocol.total_withdrawals,
+            m.base_oi_long, long_base,
+            "I4 broken: market {market_index} base_oi_long {} vs positions {long_base}",
+            m.base_oi_long
         );
+        assert_eq!(
+            m.base_oi_short, short_base,
+            "I4 broken: market {market_index} base_oi_short {} vs positions {short_base}",
+            m.base_oi_short
+        );
+        assert!(
+            m.oi_long.abs_diff(long_notional) <= 2,
+            "I4 broken: market {market_index} oi_long {} vs positions {long_notional}",
+            m.oi_long
+        );
+        assert!(
+            m.oi_short.abs_diff(short_notional) <= 2,
+            "I4 broken: market {market_index} oi_short {} vs positions {short_notional}",
+            m.oi_short
+        );
+    }
+
+    /// **I5**: no position holds size with zero collateral.
+    ///
+    /// Such a position would be unliquidatable in the sense that matters — there is nothing
+    /// to seize — while still contributing risk to the book.
+    pub fn assert_i5(&self) {
+        for key in &self.positions {
+            let Some(p) = self.try_read::<Position>(key) else {
+                continue;
+            };
+            if p.size_base > 0 {
+                assert!(
+                    p.collateral > 0,
+                    "I5 broken: position {key} has size {} and zero collateral",
+                    p.size_base
+                );
+            }
+        }
+    }
+
+    /// **I6**: `InsuranceVault.amount == InsuranceFund.balance`.
+    pub fn assert_i6(&self) {
+        let vault = self.token_balance(&self.insurance_vault);
+        let balance = self.insurance_state().balance;
+        assert_eq!(
+            vault, balance,
+            "I6 broken: insurance_vault {vault} vs balance {balance}"
+        );
+    }
+
+    /// **I7**: every USDC the program holds is accounted for.
+    ///
+    /// `Σ(all vaults) == Σ(deposits) − Σ(withdrawals) + Σ(LP deposits)`. Nothing is created
+    /// and nothing is destroyed; trades only move value *between* the four vaults, which is
+    /// the property [`flows::Flows::is_conservative`] enforces on the way in.
+    pub fn assert_i7(&self) {
+        let total = self.token_balance(&self.collateral_vault)
+            + self.token_balance(&self.lp_vault)
+            + self.token_balance(&self.insurance_vault)
+            + self.token_balance(&self.fee_vault);
+        let p = self.protocol_state();
+        let expected = p.total_deposits - p.total_withdrawals + self.lp_deposited;
+        assert_eq!(
+            total, expected,
+            "I7 broken: vaults hold {total}, deposits-withdrawals+lp is {expected}"
+        );
+    }
+
+    /// Every invariant Phase 3 can check, in one call. Cheap enough to run after each
+    /// instruction, which is the point — an invariant checked only at the end of a scenario
+    /// tells you something broke but not what.
+    pub fn assert_invariants(&self) {
+        self.assert_i1();
+        self.assert_i2();
+        self.assert_i5();
+        self.assert_i6();
+        self.assert_i7();
+        for i in 0..self.protocol_state().num_markets {
+            self.assert_i4(i);
+        }
     }
 
     // --- raw account writing -----------------------------------------------------------

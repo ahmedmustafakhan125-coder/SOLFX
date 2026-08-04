@@ -42,6 +42,18 @@
 )]
 // Anchor's generated `Result` carries a large error enum; this fires on every handler.
 #![allow(clippy::result_large_err)]
+// Unit tests inside this crate assert against known values and unwrap expected-Ok results.
+// A panic in a *program* is a failed transaction with no named error; in a test it is the
+// reporting mechanism. Same exemption `solfx-math` takes, for the same reason.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::expect_used,
+        clippy::integer_division,
+        clippy::panic,
+        clippy::unwrap_used
+    )
+)]
 
 use anchor_lang::prelude::*;
 
@@ -149,6 +161,82 @@ pub mod solfx_core {
     /// Withdraw free collateral. Works while paused, by design.
     pub fn withdraw_collateral(ctx: Context<MoveCollateral>, amount: u64) -> Result<()> {
         instructions::user::withdraw_collateral(ctx, amount)
+    }
+
+    // --- positions (Phase 3) ----------------------------------------------------------
+
+    /// Open a leveraged position.
+    ///
+    /// `price_limit` is a maximum when buying and a minimum when selling — checked against
+    /// the *filled* price, which already carries the adverse spread.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_position(
+        ctx: Context<OpenPosition>,
+        market_index: u16,
+        nonce: u8,
+        direction: state::Direction,
+        size_base: u64,
+        collateral: u64,
+        price_limit: i64,
+    ) -> Result<()> {
+        instructions::trader::open_position::open_position(
+            ctx,
+            market_index,
+            nonce,
+            direction,
+            size_base,
+            collateral,
+            price_limit,
+        )
+    }
+
+    /// Add size, and optionally margin, to an existing position.
+    pub fn increase_position(
+        ctx: Context<DecreasePosition>,
+        size_delta: u64,
+        collateral_delta: u64,
+        price_limit: i64,
+    ) -> Result<()> {
+        instructions::trader::increase_position::increase_position(
+            ctx,
+            size_delta,
+            collateral_delta,
+            price_limit,
+        )
+    }
+
+    /// Partially close, realising a proportional share of PnL.
+    pub fn decrease_position(
+        ctx: Context<DecreasePosition>,
+        size_delta: u64,
+        price_limit: i64,
+    ) -> Result<()> {
+        instructions::trader::close_position::decrease_position(ctx, size_delta, price_limit)
+    }
+
+    /// Close the whole position and reclaim its rent.
+    pub fn close_position(ctx: Context<ClosePosition>, price_limit: i64) -> Result<()> {
+        instructions::trader::close_position::close_position(ctx, price_limit)
+    }
+
+    /// Move free collateral into a position's isolated margin.
+    pub fn add_position_collateral(ctx: Context<DecreasePosition>, amount: u64) -> Result<()> {
+        instructions::trader::adjust_collateral::add_position_collateral(ctx, amount)
+    }
+
+    /// Move margin out of a position, subject to the initial-margin requirement.
+    pub fn remove_position_collateral(ctx: Context<DecreasePosition>, amount: u64) -> Result<()> {
+        instructions::trader::adjust_collateral::remove_position_collateral(ctx, amount)
+    }
+
+    // --- liquidity --------------------------------------------------------------------
+
+    /// Deposit USDC into the counterparty pool and receive `slpUSD`.
+    ///
+    /// Deposit only. Withdrawal ships in Phase 5 with the cooldown and exit fee that defend
+    /// against the JIT attack — see `instructions::lp`.
+    pub fn add_liquidity(ctx: Context<AddLiquidity>, amount: u64, min_lp_out: u64) -> Result<()> {
+        instructions::lp::add_liquidity(ctx, amount, min_lp_out)
     }
 
     // --- keeper: permissionless -------------------------------------------------------

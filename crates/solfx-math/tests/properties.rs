@@ -740,10 +740,20 @@ proptest! {
 
     /// A non-zero confidence must never round away to nothing. If it could, a market could
     /// be quoted as if it were certain when it is not.
+    ///
+    /// Confidence is generated **relative to price** rather than independently. An
+    /// independent range lets the two be paired into a ratio above 65,535 bps, which
+    /// `max_conf_bps: u16` cannot express — so the ceiling rejects the input before the
+    /// rounding behaviour under test is ever reached. Bounding conf at half the price keeps
+    /// every case inside the representable domain and still covers the interesting end,
+    /// where conf is a tiny fraction of price and rounding to zero is the real risk.
+    ///
+    /// The original generator only failed at ~100k cases, which is exactly why the deep run
+    /// exists as a separate CI job.
     #[test]
     fn a_non_zero_confidence_never_rounds_to_zero_bps(
-        price in 1_000_000_i64..100_000_000_000_000,
-        conf in 1_u64..1_000_000_000,
+        (price, conf) in (1_000_000_i64..100_000_000_000_000)
+            .prop_flat_map(|p| (Just(p), 1_u64..=(p as u64 / 2))),
     ) {
         let v = oracle::ValidatedPrice::new(price, conf, 0, u16::MAX).unwrap();
         prop_assert!(v.conf_bps >= 1, "a real band reported 0 bps");

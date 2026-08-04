@@ -9,6 +9,11 @@ pub const PROTOCOL_SEED: &[u8] = b"protocol";
 pub const MARKET_SEED: &[u8] = b"market";
 /// `["user", authority]`
 pub const USER_SEED: &[u8] = b"user";
+/// `["position", user_account, market_index: u16, nonce: u8]`
+///
+/// The nonce lets one trader hold several positions in the same market — isolated margin
+/// (ADR-004) means each is a separate risk, so they must be separate accounts.
+pub const POSITION_SEED: &[u8] = b"position";
 /// `["collateral_vault"]` — holds every user's free collateral and (from Phase 3) every
 /// position's isolated margin.
 pub const COLLATERAL_VAULT_SEED: &[u8] = b"collateral_vault";

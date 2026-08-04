@@ -113,6 +113,40 @@ pub enum SolfxError {
     ZeroAmount,
     #[msg("Account still has open positions")]
     HasOpenPositions,
+
+    // --- positions (Phase 3) ---
+    #[msg("Position size is outside this market's permitted bounds")]
+    PositionSizeOutOfBounds,
+    #[msg("Notional is below the protocol minimum")]
+    NotionalTooSmall,
+    #[msg("Leverage exceeds this market's maximum")]
+    LeverageTooHigh,
+    #[msg("Collateral is below the initial margin requirement")]
+    InsufficientMargin,
+    #[msg("Fill price is worse than the slippage bound")]
+    SlippageExceeded,
+    #[msg("Position has not been held for the minimum number of slots")]
+    MinHoldTimeNotMet,
+    #[msg("Cannot reduce a position by more than its size")]
+    ReductionExceedsSize,
+    #[msg("Position still holds size and cannot be closed this way")]
+    PositionNotEmpty,
+    #[msg("Position does not belong to this market")]
+    PositionMarketMismatch,
+    #[msg("Open interest cap reached on this side")]
+    OpenInterestCapReached,
+    #[msg("Open interest accounting underflowed")]
+    OpenInterestUnderflow,
+    #[msg("Removing this collateral would breach the maintenance margin")]
+    WouldBreachMaintenanceMargin,
+    #[msg("Position is already liquidatable and cannot be modified")]
+    PositionLiquidatable,
+
+    // --- liquidity ---
+    #[msg("The liquidity pool cannot cover this payout")]
+    InsufficientPoolLiquidity,
+    #[msg("LP share calculation produced zero shares")]
+    ZeroLpShares,
 }
 
 /// Map the maths crate's errors onto program errors.
@@ -128,7 +162,7 @@ impl From<MathError> for SolfxError {
             MathError::DivideByZero => Self::DivideByZero,
             MathError::InvalidPrice => Self::InvalidOraclePrice,
             MathError::ConfidenceTooWide => Self::OracleConfidenceTooWide,
-            MathError::NotionalTooSmall => Self::InvalidParameter,
+            MathError::NotionalTooSmall => Self::NotionalTooSmall,
             MathError::InvalidParameter => Self::InvalidParameter,
             MathError::PriceTooStale => Self::OracleStale,
             MathError::PriceFromFuture => Self::OracleFromFuture,

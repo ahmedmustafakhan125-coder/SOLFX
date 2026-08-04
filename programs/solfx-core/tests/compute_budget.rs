@@ -34,9 +34,11 @@
 mod common;
 
 use anchor_lang::prelude::Pubkey;
+use anchor_lang::solana_program::instruction::Instruction;
+use anchor_lang::{InstructionData, ToAccountMetas};
 use common::*;
 use solana_signer::Signer;
-use solfx_core::state::MarketStatus;
+use solfx_core::state::{Direction, MarketStatus};
 
 /// Assert and report. `limit` is the CI tripwire, not the expected value.
 fn record(name: &str, used: u64, limit: u64) {
@@ -149,6 +151,198 @@ fn compute_budgets_stay_within_their_ceilings() {
 
     let ix = env.halt_market_ix(0);
     record("halt_market", env.send_metered(ix, &[&guardian]), 30_000);
+
+    println!("===========================================\n");
+}
+
+/// The position lifecycle, measured separately because it is the budget § 5.5 actually sets:
+/// `open_position` around 120k CU, liquidation under 200k.
+///
+/// These carry the full stack — a validated oracle read, execution pricing, margin checks,
+/// the four-vault settlement and up to three SPL Token CPIs.
+#[test]
+fn position_instructions_stay_within_their_ceilings() {
+    println!("\n=== SolFX Phase 3 compute-unit baselines ===");
+
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+    env.list_and_activate(1, &MarketSpec::eur_gbp_synthetic());
+    env.list_and_activate(2, &MarketSpec::usd_inr());
+    env.seed_pool(1_000_000 * ONE_USDC);
+
+    let user = env.new_user(500_000 * ONE_USDC, Pubkey::default());
+    env.deposit(&user, 200_000 * ONE_USDC).unwrap();
+    let kp = user.keypair.insecure_clone();
+
+    let mini = ONE_LOT / 10;
+    let no_buy = i64::MAX;
+    let no_sell = 1_i64;
+
+    // --- direct, USD-quoted: the common case ---
+    let price = env.post_price(FEED_EUR_USD, PriceSpec::default());
+    let ix = env.open_ix(
+        &user,
+        0,
+        0,
+        Direction::Long,
+        mini,
+        2_000 * ONE_USDC,
+        no_buy,
+        price,
+        None,
+        None,
+    );
+    record(
+        "open_position (direct)",
+        env.send_metered(ix, &[&kp]),
+        120_000,
+    );
+    env.track_position(Env::position_pda(&user.account, 0, 0));
+
+    let price = env.post_price(FEED_EUR_USD, PriceSpec::default());
+    let ix = Instruction {
+        program_id: solfx_core::ID,
+        accounts: env.modify_metas(&user, 0, 0, price, None, None),
+        data: solfx_core::instruction::IncreasePosition {
+            size_delta: mini,
+            collateral_delta: 2_000 * ONE_USDC,
+            price_limit: no_buy,
+        }
+        .data(),
+    };
+    record("increase_position", env.send_metered(ix, &[&kp]), 120_000);
+
+    let price = env.post_price(FEED_EUR_USD, PriceSpec::default());
+    let ix = Instruction {
+        program_id: solfx_core::ID,
+        accounts: env.modify_metas(&user, 0, 0, price, None, None),
+        data: solfx_core::instruction::DecreasePosition {
+            size_delta: mini / 2,
+            price_limit: no_sell,
+        }
+        .data(),
+    };
+    record("decrease_position", env.send_metered(ix, &[&kp]), 120_000);
+
+    let price = env.post_price(FEED_EUR_USD, PriceSpec::default());
+    let ix = Instruction {
+        program_id: solfx_core::ID,
+        accounts: env.modify_metas(&user, 0, 0, price, None, None),
+        data: solfx_core::instruction::AddPositionCollateral {
+            amount: 100 * ONE_USDC,
+        }
+        .data(),
+    };
+    record(
+        "add_position_collateral",
+        env.send_metered(ix, &[&kp]),
+        60_000,
+    );
+
+    let price = env.post_price(FEED_EUR_USD, PriceSpec::default());
+    let ix = Instruction {
+        program_id: solfx_core::ID,
+        accounts: env.modify_metas(&user, 0, 0, price, None, None),
+        data: solfx_core::instruction::RemovePositionCollateral {
+            amount: 100 * ONE_USDC,
+        }
+        .data(),
+    };
+    record(
+        "remove_position_collateral",
+        env.send_metered(ix, &[&kp]),
+        80_000,
+    );
+
+    let price = env.post_price(FEED_EUR_USD, PriceSpec::default());
+    let ix = Instruction {
+        program_id: solfx_core::ID,
+        accounts: env.close_metas(&user, 0, 0, price, None, None),
+        data: solfx_core::instruction::ClosePosition {
+            price_limit: no_sell,
+        }
+        .data(),
+    };
+    record(
+        "close_position (direct)",
+        env.send_metered(ix, &[&kp]),
+        120_000,
+    );
+
+    // --- synthetic: two oracle reads ---
+    let eur = env.post_price(FEED_EUR_USD, PriceSpec::at(108_500_000).conf(13_893));
+    let gbp = env.post_price(FEED_GBP_USD, PriceSpec::at(127_000_000).conf(17_272));
+    let ix = env.open_ix(
+        &user,
+        1,
+        0,
+        Direction::Long,
+        mini,
+        2_000 * ONE_USDC,
+        no_buy,
+        eur,
+        Some(gbp),
+        None,
+    );
+    record(
+        "open_position (synthetic)",
+        env.send_metered(ix, &[&kp]),
+        140_000,
+    );
+    env.track_position(Env::position_pda(&user.account, 1, 0));
+
+    // --- non-USD-quoted: primary plus conversion feed ---
+    let tick = PriceSpec::at(8_842_000_000).conf(5_180_000);
+    let inr = env.post_price(FEED_USD_INR, tick);
+    let conv = env.post_price(FEED_USD_INR, tick);
+    let ix = env.open_ix(
+        &user,
+        2,
+        0,
+        Direction::Long,
+        1_000_000_000_000,
+        500 * ONE_USDC,
+        no_buy,
+        inr,
+        None,
+        Some(conv),
+    );
+    record(
+        "open_position (converted)",
+        env.send_metered(ix, &[&kp]),
+        140_000,
+    );
+    env.track_position(Env::position_pda(&user.account, 2, 0));
+
+    // --- liquidity ---
+    let lp = solana_keypair::Keypair::new();
+    env.svm.airdrop(&lp.pubkey(), 100 * 1_000_000_000).unwrap();
+    let lp_usdc = Pubkey::new_unique();
+    let lp_shares = Pubkey::new_unique();
+    let (mint, lp_mint) = (env.usdc_mint, env.lp_mint);
+    env.write_token_account(lp_usdc, mint, lp.pubkey(), 10_000 * ONE_USDC);
+    env.write_token_account(lp_shares, lp_mint, lp.pubkey(), 0);
+    let ix = Instruction {
+        program_id: solfx_core::ID,
+        accounts: solfx_core::accounts::AddLiquidity {
+            provider: lp.pubkey(),
+            protocol: env.protocol,
+            lp_pool: env.lp_pool,
+            lp_vault: env.lp_vault,
+            lp_mint: env.lp_mint,
+            provider_token_account: lp_usdc,
+            provider_lp_account: lp_shares,
+            token_program: spl_token::ID,
+        }
+        .to_account_metas(None),
+        data: solfx_core::instruction::AddLiquidity {
+            amount: 10_000 * ONE_USDC,
+            min_lp_out: 0,
+        }
+        .data(),
+    };
+    record("add_liquidity", env.send_metered(ix, &[&lp]), 60_000);
 
     println!("===========================================\n");
 }

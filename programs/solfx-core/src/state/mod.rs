@@ -6,10 +6,12 @@
 
 pub mod lp_pool;
 pub mod market;
+pub mod position;
 pub mod protocol;
 pub mod user_account;
 
 pub use lp_pool::{InsuranceFund, LpPool};
 pub use market::{FeedKind, Market, MarketStatus, PriceSource, QuoteConversionKind};
+pub use position::{Direction, Position};
 pub use protocol::Protocol;
 pub use user_account::UserAccount;

@@ -5,6 +5,7 @@ use crate::constants::{
     MAX_ALLOWED_CONF_BPS, MAX_ALLOWED_LEVERAGE, MAX_ALLOWED_STALENESS_SECONDS, MAX_SYMBOL_LEN,
 };
 use crate::errors::SolfxError;
+use crate::state::position::Direction;
 
 /// Seconds in a day, for session-boundary validation.
 const SECONDS_PER_DAY: u32 = 86_400;
@@ -176,8 +177,16 @@ pub struct Market {
     /// Maintenance margin ratio in bps. 100 = 1%.
     pub mmr_bps: u16,
     pub liquidation_fee_bps: u16,
+    /// Per-side open-interest caps, in **USDC** at `QUOTE_PRECISION` (§ 7.4). A cap has to
+    /// be a money figure to mean anything across markets.
     pub max_oi_long: u64,
     pub max_oi_short: u64,
+    /// Position size bounds, in **base-currency units** at `BASE_PRECISION` — the same scale
+    /// as `Position::size_base`, not USDC. One standard lot is `100_000 * BASE_PRECISION`
+    /// = 1e14.
+    ///
+    /// Base units rather than notional because the bound must not move when the price does:
+    /// a notional cap would silently tighten on a rally and loosen on a selloff.
     pub max_position_size: u64,
     pub min_position_size: u64,
 
@@ -224,7 +233,22 @@ pub struct Market {
     pub total_fees_collected: u64,
 
     pub bump: u8,
-    pub _reserved: [u8; 128],
+
+    // --- appended in Phase 3 -----------------------------------------------------------
+    // Added *after* `bump` and paid for out of `_reserved`, which shrank from 128 bytes to
+    // 120. That is the § 5.6 forward-compatibility rule in action: every field above keeps
+    // its byte offset, so an account written by the Phase 2 binary still deserialises. The
+    // account's total size is unchanged.
+    /// Minimum slots a position must be held before it may be closed (§ 6.6).
+    ///
+    /// Zero disables the check. Non-zero is strongly recommended on any market whose spread
+    /// could ever be tighter than the true market spread — see `Position::opened_at_slot`.
+    pub min_hold_slots: u64,
+    /// Open positions across all users. Guards against delisting a market out from under
+    /// live positions.
+    pub open_position_count: u64,
+
+    pub _reserved: [u8; 120],
 }
 
 impl Market {
@@ -341,6 +365,105 @@ impl Market {
             SolfxError::InvalidOiCap
         );
 
+        Ok(())
+    }
+
+    // --- open interest (invariant I4, § 12.3) -------------------------------------------
+    //
+    // Two parallel sets of counters, and they answer different questions:
+    //
+    //   * `oi_long` / `oi_short` are in **quote units** and are what the OI caps in § 7.4
+    //     are denominated in — a cap has to be a money figure to mean anything.
+    //   * `base_oi_long` / `base_oi_short` are in **base units** and are what skew pricing
+    //     (§ 6.6) and funding (§ 6.7) run on — an imbalance has to be size-denominated, or
+    //     it would move every time the price did without any trade happening.
+    //
+    // Keeping only one would force the other to be derived at a price that changes between
+    // the open and the close, and the derived figure would drift from reality.
+
+    /// Record a position entering the book.
+    pub fn add_open_interest(
+        &mut self,
+        direction: Direction,
+        notional_quote: u64,
+        size_base: u64,
+    ) -> Result<()> {
+        let size = i128::from(size_base);
+        match direction {
+            Direction::Long => {
+                self.oi_long = self
+                    .oi_long
+                    .checked_add(notional_quote)
+                    .ok_or(SolfxError::MathOverflow)?;
+                self.base_oi_long = self
+                    .base_oi_long
+                    .checked_add(size)
+                    .ok_or(SolfxError::MathOverflow)?;
+            }
+            Direction::Short => {
+                self.oi_short = self
+                    .oi_short
+                    .checked_add(notional_quote)
+                    .ok_or(SolfxError::MathOverflow)?;
+                self.base_oi_short = self
+                    .base_oi_short
+                    .checked_add(size)
+                    .ok_or(SolfxError::MathOverflow)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Record a position leaving the book.
+    ///
+    /// Saturating rather than checked, and that is a deliberate choice with a cost.
+    ///
+    /// `oi_*` is a sum of notionals recorded at each *entry* price. A position opened at
+    /// 1.0850 and partially closed contributes its share at that price, but rounding means
+    /// the removals need not sum exactly back to the addition. Failing the close would trap
+    /// a trader's collateral over a rounding unit; saturating leaks at most a few quote units
+    /// into a cap that is measured in millions.
+    ///
+    /// The base-unit counters are checked, because those *must* balance exactly: they carry
+    /// no price and drive funding, which has to net to zero across the market (I3).
+    pub fn remove_open_interest(
+        &mut self,
+        direction: Direction,
+        notional_quote: u64,
+        size_base: u64,
+    ) -> Result<()> {
+        let size = i128::from(size_base);
+        match direction {
+            Direction::Long => {
+                self.oi_long = self.oi_long.saturating_sub(notional_quote);
+                self.base_oi_long = self
+                    .base_oi_long
+                    .checked_sub(size)
+                    .ok_or(SolfxError::MathOverflow)?;
+                require!(self.base_oi_long >= 0, SolfxError::OpenInterestUnderflow);
+            }
+            Direction::Short => {
+                self.oi_short = self.oi_short.saturating_sub(notional_quote);
+                self.base_oi_short = self
+                    .base_oi_short
+                    .checked_sub(size)
+                    .ok_or(SolfxError::MathOverflow)?;
+                require!(self.base_oi_short >= 0, SolfxError::OpenInterestUnderflow);
+            }
+        }
+        Ok(())
+    }
+
+    /// Enforce the per-side OI cap (§ 7.4).
+    ///
+    /// Checked *after* the addition, so the cap is a ceiling on the resulting book rather
+    /// than on the trade that got there.
+    pub fn check_oi_cap(&self, direction: Direction) -> Result<()> {
+        let (oi, cap) = match direction {
+            Direction::Long => (self.oi_long, self.max_oi_long),
+            Direction::Short => (self.oi_short, self.max_oi_short),
+        };
+        require!(oi <= cap, SolfxError::OpenInterestCapReached);
         Ok(())
     }
 

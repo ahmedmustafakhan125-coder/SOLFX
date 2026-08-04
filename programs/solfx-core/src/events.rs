@@ -138,6 +138,128 @@ pub struct MarketPriceUpdated {
     pub ts: i64,
 }
 
+// --- positions (Phase 3) ------------------------------------------------------------------
+
+/// A position was opened.
+///
+/// `exec_price` is what the trader actually filled at — oracle mid plus the adverse spread —
+/// while `oracle_price` is the mid it was derived from. Emitting both is what lets a trader
+/// verify the spread they were charged rather than take it on trust, which is the whole
+/// difference between this and a broker's fill report.
+#[event]
+pub struct PositionOpened {
+    pub position: Pubkey,
+    pub user_account: Pubkey,
+    pub market_index: u16,
+    pub direction: u8,
+    pub size_base: u64,
+    pub oracle_price: i64,
+    pub exec_price: i64,
+    pub spread_bps: u64,
+    pub notional_collateral: u64,
+    pub collateral: u64,
+    pub fee: u64,
+    pub referrer: Pubkey,
+    pub ts: i64,
+}
+
+#[event]
+pub struct PositionIncreased {
+    pub position: Pubkey,
+    pub market_index: u16,
+    pub size_added: u64,
+    pub collateral_added: u64,
+    pub exec_price: i64,
+    pub new_size_base: u64,
+    pub new_entry_price: i64,
+    pub fee: u64,
+    pub ts: i64,
+}
+
+/// A position was reduced or closed.
+///
+/// `realized_pnl` is signed and already converted into USDC (correction C-3), so an indexer
+/// never has to know the market's quote currency to total a trader's P&L.
+#[event]
+pub struct PositionDecreased {
+    pub position: Pubkey,
+    pub user_account: Pubkey,
+    pub market_index: u16,
+    pub size_closed: u64,
+    pub remaining_size: u64,
+    pub oracle_price: i64,
+    pub exec_price: i64,
+    pub realized_pnl: i64,
+    pub fee: u64,
+    pub collateral_returned: u64,
+    pub fully_closed: bool,
+    pub ts: i64,
+}
+
+#[event]
+pub struct PositionCollateralChanged {
+    pub position: Pubkey,
+    pub market_index: u16,
+    /// Positive when collateral was added, negative when removed.
+    pub delta: i64,
+    pub collateral_after: u64,
+    pub ts: i64,
+}
+
+/// A fee was collected and split (§ 8.3).
+///
+/// Emitted alongside every trade. The `referral` field is the per-trade accrual the IB
+/// programme claims against in Phase 6 — a public, verifiable record of what was earned,
+/// which is the structural answer to "the broker controls the ledger" (§ 8.5).
+#[event]
+pub struct FeeCollected {
+    pub market_index: u16,
+    pub user_account: Pubkey,
+    pub referrer: Pubkey,
+    pub total: u64,
+    pub lp: u64,
+    pub treasury: u64,
+    pub insurance: u64,
+    pub referral: u64,
+    pub ts: i64,
+}
+
+/// The LP vault paid or received on a settled position.
+///
+/// This is the B-book made visible: the pool is the counterparty, it earns when traders lose
+/// and pays when they win, and every one of those transfers is a public event (§ 1.3).
+#[event]
+pub struct PoolSettlement {
+    pub market_index: u16,
+    /// Positive when the pool paid a winning trader, negative when it received.
+    pub amount: i64,
+    pub aum_after: u64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct LiquidityAdded {
+    pub provider: Pubkey,
+    pub usdc_in: u64,
+    pub lp_tokens_out: u64,
+    pub aum_after: u64,
+    pub ts: i64,
+}
+
+/// A position closed owing more than its collateral covered.
+///
+/// Phase 3 has no liquidation engine, so this is reachable by simply letting a position run.
+/// The trader's loss is capped at what they posted and the shortfall lands on the pool.
+/// Phase 4 inserts the insurance fund and ADL ahead of that (§ 6.9); this event is what those
+/// mechanisms will reconcile against.
+#[event]
+pub struct BadDebtIncurred {
+    pub market_index: u16,
+    pub position: Pubkey,
+    pub amount: u64,
+    pub ts: i64,
+}
+
 /// A circuit breaker fired (§ 7.2).
 #[event]
 pub struct CircuitBreakerTripped {

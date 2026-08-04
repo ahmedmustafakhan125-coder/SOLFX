@@ -52,9 +52,29 @@ pub struct Protocol {
     pub collateral_vault_bump: u8,
     pub fee_vault_bump: u8,
 
+    // --- appended in Phase 3 -----------------------------------------------------------
+    // Paid for out of `_reserved`, which shrank from 128 bytes to 120. Every field above
+    // keeps its byte offset and the account's total size is unchanged (§ 5.6).
+    /// Referral share accrued across all trades, sitting in the fee vault.
+    ///
+    /// The IB programme (Phase 6, `solfx-referral`) claims against this. Tracked here rather
+    /// than inferred from events because a rebate ledger an IB has to reconstruct from logs
+    /// is exactly the ledger they cannot audit — which is the complaint the whole programme
+    /// exists to answer (§ 8.5).
+    pub total_referral_accrued: u64,
+    /// Lifetime referral paid out. Phase 6 increments this on claim.
+    pub total_referral_claimed: u64,
+    /// Cumulative shortfall where a position closed owing more than its collateral.
+    ///
+    /// Phase 3 has no liquidation engine, so a position can run past the point its margin
+    /// covers. The trader's loss is capped at what they posted and the remainder is recorded
+    /// here rather than silently absorbed — § 6.9's waterfall (insurance, then ADL, then LP
+    /// NAV) is Phase 4's job, and it needs a number to reconcile against.
+    pub total_bad_debt: u64,
+
     /// Forward-compatible padding (§ 5.6). New fields consume these bytes; nothing already
     /// on chain shifts. Append only — never reorder, never retype.
-    pub _reserved: [u8; 128],
+    pub _reserved: [u8; 112],
 }
 
 impl Protocol {
