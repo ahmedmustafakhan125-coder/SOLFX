@@ -1,6 +1,21 @@
 # Source lives on /mnt/e (the Windows E: drive, reached through WSL's 9p mount).
 # Small-file I/O across that boundary is ~200x slower than native Linux disk, and cargo does
-# an enormous amount of it. Redirecting only the build output keeps source where we want it
-# while keeping builds fast. Everything under this path is disposable.
-[build]
-target-dir = "$HOME/.cargo-target/solfx"
+# an enormous amount of it.
+#
+# Phase 1 solved this with `target-dir`. Phase 2 replaced it with a **symlink**:
+#
+#     ./target -> $HOME/.cargo-target/solfx
+#
+# The symlink is strictly better here because `anchor build` looks for `target/deploy/*.so`,
+# `target/deploy/*-keypair.json` and `target/idl/*.json` at paths relative to the workspace
+# root. A `target-dir` redirect puts those artefacts somewhere Anchor does not look; the
+# symlink keeps them exactly where Anchor expects while the bytes still land on fast disk.
+#
+# Recreate it after a fresh clone:
+#
+#     mkdir -p ~/.cargo-target/solfx && ln -s ~/.cargo-target/solfx target
+#
+# Everything under it is disposable except `target/deploy/solfx_core-keypair.json`, which is
+# the program's on-chain identity. Back it up to `keys/` (gitignored) before `cargo clean`.
+#
+# `target-dir` is deliberately NOT set here. Setting it would undo the above.

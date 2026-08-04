@@ -50,9 +50,11 @@ pub mod fees;
 pub mod fixed;
 pub mod funding;
 pub mod margin;
+pub mod oracle;
 pub mod pnl;
 pub mod pricing;
 pub mod types;
 
 pub use error::{MathError, MathResult};
+pub use oracle::ValidatedPrice;
 pub use types::{Direction, QuoteConversion, Side, TradeAction};

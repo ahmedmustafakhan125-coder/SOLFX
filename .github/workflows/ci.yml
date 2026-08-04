@@ -7,14 +7,18 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # .cargo/config.toml redirects build output to a developer-local path on WSL, where
-  # /mnt/e is a slow 9p mount. That path does not exist on a runner, and the env var takes
-  # precedence over the config file.
+  # Locally, `target/` is a symlink onto native Linux disk because /mnt/e is a slow 9p
+  # mount (see .cargo/config.toml). A runner has no such symlink; setting the variable
+  # explicitly keeps both environments writing to the same relative path.
   CARGO_TARGET_DIR: target
+  SOLANA_VERSION: v3.1.10
+  ANCHOR_VERSION: 1.1.2
 
 jobs:
-  check:
-    name: fmt, clippy, test
+  # Fast gate: the maths crate needs no Solana toolchain, so it fails in ~2 minutes rather
+  # than waiting behind a BPF build.
+  math:
+    name: math — fmt, clippy, test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,11 +32,57 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Clippy (math)
+        run: cargo clippy -p solfx-math --all-targets --all-features -- -D warnings
 
-      - name: Test
-        run: cargo test --workspace --all-features
+      - name: Test (math)
+        run: cargo test -p solfx-math --all-features
+
+  # The on-chain program. Needs the Solana and Anchor toolchains, and the integration suite
+  # needs a built .so, so `anchor build` runs before `cargo test`.
+  program:
+    name: program — build, clippy, integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install "${ANCHOR_VERSION}"
+          avm use "${ANCHOR_VERSION}"
+
+      - name: Clippy (program)
+        run: cargo clippy -p solfx-core --all-targets -- -D warnings
+
+      # Produces target/deploy/solfx_core.so, which the LiteSVM harness loads. Without this
+      # every integration test fails with a message telling you to run it.
+      - name: Anchor build
+        run: anchor build
+
+      - name: Integration tests
+        run: cargo test -p solfx-core
+
+      # Prints the table in docs/compute-budget.md and fails if any instruction has grown
+      # past its ceiling (ARCHITECTURE.md § 14.3).
+      - name: Compute-budget regression check
+        run: cargo test -p solfx-core --test compute_budget -- --nocapture
+
+      - name: Upload program artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: solfx-core-build
+          path: |
+            target/deploy/solfx_core.so
+            target/idl/solfx_core.json
+          if-no-files-found: error
 
   # The property suite is the actual safety gate (ARCHITECTURE.md § 12.2). Run it far
   # harder than the per-PR budget allows, so a rare counterexample surfaces here rather
@@ -47,4 +97,4 @@ jobs:
       - name: Property tests, 100k cases each
         env:
           PROPTEST_CASES: 100000
-        run: cargo test --release --workspace --test properties
+        run: cargo test --release -p solfx-math --test properties

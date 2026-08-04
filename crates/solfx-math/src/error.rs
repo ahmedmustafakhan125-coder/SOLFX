@@ -17,6 +17,14 @@ pub enum MathError {
     NotionalTooSmall,
     /// A rate, ratio or bps input was outside its permitted domain.
     InvalidParameter,
+    /// Oracle `publish_time` is older than the market's staleness window. Trading against a
+    /// frozen price is the C-1 exploit; this is the gate that stops it.
+    PriceTooStale,
+    /// Oracle `publish_time` is dated further ahead of the cluster clock than clock drift
+    /// can explain. See [`crate::oracle::validate_publish_time`].
+    PriceFromFuture,
+    /// Spot deviates from the reference price by more than the market permits.
+    DeviationTooLarge,
 }
 
 impl fmt::Display for MathError {
@@ -28,6 +36,9 @@ impl fmt::Display for MathError {
             Self::ConfidenceTooWide => "oracle confidence exceeds market ceiling",
             Self::NotionalTooSmall => "notional below minimum",
             Self::InvalidParameter => "parameter out of range",
+            Self::PriceTooStale => "oracle price is stale",
+            Self::PriceFromFuture => "oracle price is dated in the future",
+            Self::DeviationTooLarge => "price deviates too far from reference",
         };
         f.write_str(s)
     }
@@ -50,6 +61,9 @@ mod tests {
             MathError::ConfidenceTooWide,
             MathError::NotionalTooSmall,
             MathError::InvalidParameter,
+            MathError::PriceTooStale,
+            MathError::PriceFromFuture,
+            MathError::DeviationTooLarge,
         ];
         let mut seen: Vec<String> = Vec::new();
         for e in all {

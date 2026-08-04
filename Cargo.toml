@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/solfx-math"]
+members = ["crates/solfx-math", "programs/solfx-core"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,9 +8,23 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/ahmedmustafakhan125-coder/SOLFX"
 
+[workspace.dependencies]
+solfx-math = { path = "crates/solfx-math" }
+anchor-lang = "1.1.2"
+anchor-spl = "1.1.2"
+pyth-solana-receiver-sdk = "2.0.0"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
+# Anchor's macros expand to `cfg(target_os = "solana")`, which cargo does not know about
+# when checking for the host. Declaring it here keeps the real `unexpected_cfgs` signal
+# useful instead of drowning it in one warning per macro invocation.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
 
+# The financial lints. `solfx-math` inherits these wholesale; `solfx-core` relaxes exactly
+# four of them at crate level because Anchor's derive macros generate code that trips them
+# (see the header of programs/solfx-core/src/lib.rs for the list and the reasoning).
+# The lints that guard against silent value corruption are denied in both crates.
 [workspace.lints.clippy]
 arithmetic_side_effects = "deny"
 integer_division = "deny"

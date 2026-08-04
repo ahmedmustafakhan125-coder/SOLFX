@@ -1,0 +1,34 @@
+[toolchain]
+anchor_version = "1.1.2"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+solfx_core = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi"
+
+[programs.devnet]
+solfx_core = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+# Phase 2 tests are Rust + LiteSVM (`cargo test -p solfx-core`), not the Mocha/TypeScript
+# suite Anchor scaffolds by default. They run in-process against the built BPF binary with
+# no validator, which keeps the invariant checks fast enough to run on every commit.
+# `anchor build` must therefore run first — see `just test` / docs/phase-2-report.md.
+[scripts]
+test = "cargo test -p solfx-core -- --nocapture"
+
+# The Pyth pull-oracle receiver. Cloned into the LiteSVM test environment so that
+# PriceUpdateV2 accounts deserialise against the real program owner (ADR-006, C-5).
+[test.validator]
+url = "https://api.mainnet-beta.solana.com"
+
+[[test.validator.clone]]
+address = "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"

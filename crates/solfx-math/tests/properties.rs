@@ -24,6 +24,7 @@ use solfx_math::fees::{self, FeeSplitBps, ONE_BPS_RATE};
 use solfx_math::fixed;
 use solfx_math::funding;
 use solfx_math::margin::{self, AccruedCosts};
+use solfx_math::oracle;
 use solfx_math::pnl;
 use solfx_math::pricing;
 use solfx_math::{Direction, QuoteConversion, Side, TradeAction};
@@ -693,6 +694,157 @@ proptest! {
         let twice = fixed::clamp_symmetric(once, bound).unwrap();
         prop_assert_eq!(once, twice);
         prop_assert!(once.abs() <= bound);
+    }
+}
+
+// --- oracle -------------------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(config(4096))]
+
+    /// The exponent that matches PRICE_PRECISION must leave the mantissa untouched.
+    #[test]
+    fn exponent_of_negative_nine_is_the_identity(price in 1_i64..i64::MAX / 2) {
+        prop_assert_eq!(oracle::normalize_price(price, -9).unwrap(), price);
+    }
+
+    /// Normalisation must preserve ordering. A rescaler that inverted two prices anywhere in
+    /// its range would silently reorder the book.
+    #[test]
+    fn normalisation_is_monotonic_in_price(
+        a in 1_i64..1_000_000_000_000,
+        b in 1_i64..1_000_000_000_000,
+        expo in -12_i32..0,
+    ) {
+        if let (Ok(na), Ok(nb)) = (
+            oracle::normalize_price(a, expo),
+            oracle::normalize_price(b, expo),
+        ) {
+            prop_assert_eq!(a < b, na < nb, "ordering flipped at expo {}", expo);
+        }
+    }
+
+    /// Price floors and confidence ceils. For the same mantissa the confidence must never
+    /// land below the price, or the rounding pair would be leaking the band.
+    #[test]
+    fn confidence_never_normalises_below_price(
+        mantissa in 1_u64..1_000_000_000_000,
+        expo in -12_i32..0,
+    ) {
+        let p = oracle::normalize_price(mantissa as i64, expo);
+        let c = oracle::normalize_conf(mantissa, expo);
+        if let (Ok(p), Ok(c)) = (p, c) {
+            prop_assert!(c >= p as u64, "conf {} < price {}", c, p);
+        }
+    }
+
+    /// A non-zero confidence must never round away to nothing. If it could, a market could
+    /// be quoted as if it were certain when it is not.
+    #[test]
+    fn a_non_zero_confidence_never_rounds_to_zero_bps(
+        price in 1_000_000_i64..100_000_000_000_000,
+        conf in 1_u64..1_000_000_000,
+    ) {
+        let v = oracle::ValidatedPrice::new(price, conf, 0, u16::MAX).unwrap();
+        prop_assert!(v.conf_bps >= 1, "a real band reported 0 bps");
+    }
+
+    /// The freshness window is closed at both ends, and open exactly on the boundary.
+    #[test]
+    fn freshness_accepts_exactly_the_configured_window(
+        publish_time in -1_000_000_000_i64..1_000_000_000,
+        age in -100_i64..100,
+        max_stale in 0_u32..60,
+        max_drift in 0_u32..10,
+    ) {
+        let now = publish_time + age;
+        let result = oracle::validate_publish_time(publish_time, now, max_stale, max_drift);
+        let expected_ok = age <= max_stale as i64 && -age <= max_drift as i64;
+        prop_assert_eq!(result.is_ok(), expected_ok);
+    }
+
+    /// Deviation must not depend on which side of the reference the price fell.
+    #[test]
+    fn deviation_is_symmetric_about_the_reference(
+        reference in 1_000_000_i64..1_000_000_000_000,
+        delta in 1_i64..500_000,
+    ) {
+        prop_assume!(reference > delta);
+        let up = oracle::deviation_bps(reference + delta, reference).unwrap();
+        let down = oracle::deviation_bps(reference - delta, reference).unwrap();
+        prop_assert_eq!(up, down);
+    }
+
+    /// Composition must never report a tighter band than either leg carried. This is the
+    /// property that makes the linear-sum choice safe: uncertainty only accumulates.
+    #[test]
+    fn composition_never_narrows_the_confidence_band(
+        base_price in 1_000_000_000_i64..10_000_000_000,
+        quote_price in 1_000_000_000_i64..10_000_000_000,
+        base_conf in 1_u64..10_000_000,
+        quote_conf in 1_u64..10_000_000,
+        invert in any::<bool>(),
+    ) {
+        let a = oracle::ValidatedPrice::new(base_price, base_conf, 0, u16::MAX).unwrap();
+        let b = oracle::ValidatedPrice::new(quote_price, quote_conf, 0, u16::MAX).unwrap();
+        let cross = oracle::compose_synthetic(a, b, invert, u16::MAX).unwrap();
+        prop_assert!(
+            cross.conf_bps >= a.conf_bps.max(b.conf_bps),
+            "composed {} bps below legs {} / {}", cross.conf_bps, a.conf_bps, b.conf_bps
+        );
+    }
+
+    /// Multiplicative composition is order-independent. If it were not, a cross and its
+    /// mirror would price differently and the difference would be arbitrageable.
+    #[test]
+    fn multiplicative_composition_is_commutative(
+        a_price in 1_000_000_000_i64..100_000_000_000,
+        b_price in 1_000_000_000_i64..100_000_000_000,
+        a_conf in 0_u64..1_000_000,
+        b_conf in 0_u64..1_000_000,
+    ) {
+        let a = oracle::ValidatedPrice::new(a_price, a_conf, 0, u16::MAX).unwrap();
+        let b = oracle::ValidatedPrice::new(b_price, b_conf, 0, u16::MAX).unwrap();
+        let ab = oracle::compose_synthetic(a, b, false, u16::MAX).unwrap();
+        let ba = oracle::compose_synthetic(b, a, false, u16::MAX).unwrap();
+        prop_assert_eq!(ab.price, ba.price);
+        prop_assert_eq!(ab.conf, ba.conf);
+    }
+
+    /// Dividing by a leg and multiplying it back must return to the starting price, within
+    /// the truncation two floored divisions can introduce.
+    #[test]
+    fn divide_then_multiply_returns_to_the_original_price(
+        base in 1_000_000_000_i64..100_000_000_000,
+        leg in 1_000_000_000_i64..100_000_000_000,
+    ) {
+        let b = oracle::ValidatedPrice::new(base, 0, 0, u16::MAX).unwrap();
+        let l = oracle::ValidatedPrice::new(leg, 0, 0, u16::MAX).unwrap();
+        let divided = oracle::compose_synthetic(b, l, true, u16::MAX).unwrap();
+        let back = oracle::compose_synthetic(divided, l, false, u16::MAX).unwrap();
+        // Each compose floors once; the error scales with the leg.
+        let tolerance = (leg / 1_000_000_000).max(1) + 1;
+        prop_assert!(
+            (back.price - base).abs() <= tolerance,
+            "round trip {} -> {} exceeded tolerance {}", base, back.price, tolerance
+        );
+    }
+
+    /// Every oracle entry point returns an error rather than panicking, for any input.
+    #[test]
+    fn no_oracle_input_can_panic(
+        price in any::<i64>(),
+        conf in any::<u64>(),
+        expo in -40_i32..40,
+        publish_time in any::<i64>(),
+        now in any::<i64>(),
+        max_conf in any::<u16>(),
+    ) {
+        let _ = oracle::normalize_price(price, expo);
+        let _ = oracle::normalize_conf(conf, expo);
+        let _ = oracle::validate_publish_time(publish_time, now, 30, 5);
+        let _ = oracle::deviation_bps(price, price);
+        let _ = oracle::ValidatedPrice::new(price, conf, publish_time, max_conf);
     }
 }
 

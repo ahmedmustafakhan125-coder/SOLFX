@@ -1,0 +1,54 @@
+[package]
+name = "solfx-core"
+description = "SolFX financial core: protocol config, markets, collateral vault and the validated Pyth read path."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "solfx_core"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# Declared because Anchor's `#[program]` and `#[derive(Accounts)]` macros expand to
+# `cfg(feature = "...")` checks against them. Undeclared, every macro invocation emits an
+# `unexpected_cfgs` warning, and CI runs clippy with `-D warnings`.
+custom-heap = []
+custom-panic = []
+anchor-debug = []
+
+[lints]
+workspace = true
+
+[dependencies]
+solfx-math.workspace = true
+anchor-lang = { workspace = true, features = ["init-if-needed"] }
+anchor-spl.workspace = true
+pyth-solana-receiver-sdk.workspace = true
+
+# Host-only. `cargo build-sbf` does not compile dev-dependencies, so none of this reaches
+# the BPF binary. LiteSVM runs the real .so in-process with no validator, which is what
+# makes it cheap enough to assert invariant I1 after every single instruction.
+#
+# `solana-sdk` is deliberately **not** listed. The umbrella crate at 4.1.0 requires
+# `solana-short-vec ^3.3.0` while litesvm 0.15.2 pins `~3.2.2`, and the two cannot coexist.
+# Depending on the individual crates instead avoids the conflict entirely, and `Pubkey` and
+# `Instruction` still come from `anchor_lang::solana_program`, so there is exactly one of
+# each type crossing the test boundary.
+[dev-dependencies]
+litesvm = "0.15.2"
+solana-account = "4"
+solana-keypair = "3"
+solana-signer = "3"
+solana-transaction = "4"
+# `no-entrypoint` is required, not optional: spl-token exports a symbol named `entrypoint`
+# and so does this program via `#[program]`. Linking a test binary against both without it
+# fails with "duplicate symbol: entrypoint".
+spl-token = { version = "9", features = ["no-entrypoint"] }
