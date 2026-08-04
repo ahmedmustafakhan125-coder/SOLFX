@@ -71,10 +71,15 @@ pub struct Protocol {
     /// here rather than silently absorbed — § 6.9's waterfall (insurance, then ADL, then LP
     /// NAV) is Phase 4's job, and it needs a number to reconcile against.
     pub total_bad_debt: u64,
+    /// Cumulative USDC paid out to liquidators.
+    ///
+    /// This is the only value that leaves the protocol other than a trader withdrawal, so
+    /// invariant I7 — *every USDC the program holds is accounted for* — needs it as a term.
+    pub total_liquidator_paid: u64,
 
     /// Forward-compatible padding (§ 5.6). New fields consume these bytes; nothing already
     /// on chain shifts. Append only — never reorder, never retype.
-    pub _reserved: [u8; 112],
+    pub _reserved: [u8; 104],
 }
 
 impl Protocol {

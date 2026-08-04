@@ -37,6 +37,8 @@ pub struct InitializeMarketParams {
 
     pub max_staleness_seconds: u32,
     pub max_conf_bps: u16,
+    /// Must be >= `max_conf_bps`. See `Market::liquidation_max_conf_bps`.
+    pub liquidation_max_conf_bps: u16,
     pub max_deviation_bps: u16,
 
     pub base_spread_bps: u16,
@@ -181,6 +183,7 @@ pub fn init_market(
 
     market.max_staleness_seconds = params.max_staleness_seconds;
     market.max_conf_bps = params.max_conf_bps;
+    market.liquidation_max_conf_bps = params.liquidation_max_conf_bps;
     market.max_deviation_bps = params.max_deviation_bps;
 
     market.base_spread_bps = params.base_spread_bps;

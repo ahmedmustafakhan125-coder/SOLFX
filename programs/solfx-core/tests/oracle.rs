@@ -174,20 +174,42 @@ fn a_price_goes_stale_as_the_clock_advances() {
 /// USD/IDR measured 30.11 bps p95 and was excluded from the listable set on exactly this
 /// test. At 50x leverage a band that wide is worth several percent of a trader's margin, and
 /// quoting the mid against it hands free optionality to anyone with a faster feed.
+///
+/// # The crank *observes*; it does not gate
+///
+/// A wide band **halts the market** rather than failing the crank. That distinction is
+/// load-bearing: the crank is what trips the breaker, so a crank that refused an uncertain
+/// price could never trip it — the market would stay `Active` holding a last-known price
+/// from before the blow-out, which is the failure mode looking exactly like the exploit.
+///
+/// The *rejection* happens on the trading path. See
+/// `positions::a_wide_confidence_band_blocks_opening_a_position`.
 #[test]
-fn a_band_wider_than_the_market_ceiling_is_rejected() {
+fn a_band_wider_than_the_market_ceiling_halts_the_market() {
     let mut env = env_with_market(&MarketSpec::eur_usd()); // max_conf_bps = 15
 
-    // 30.11 bps of 1.08543.
+    // 30.11 bps of 1.08543 — USD/IDR's measured p95.
     let wide = env.post_price(FEED_EUR_USD, PriceSpec::default().conf(326_823));
-    assert_err_contains(
-        env.crank(0, wide),
-        "Oracle confidence exceeds this market's ceiling",
+    env.crank(0, wide)
+        .expect("the crank must record a wide price, not refuse it");
+    assert_eq!(
+        env.market_state(0).status,
+        MarketStatus::Halted,
+        "a band twice the ceiling must trip the confidence breaker"
     );
+    assert_eq!(
+        env.market_state(0).last_price,
+        1_085_430_000,
+        "the observation is still recorded — halting is a response to it"
+    );
+}
 
-    // 14 bps passes.
-    let ok = env.post_price(FEED_EUR_USD, PriceSpec::default().conf(151_960));
+#[test]
+fn a_band_inside_the_ceiling_does_not_halt() {
+    let mut env = env_with_market(&MarketSpec::eur_usd());
+    let ok = env.post_price(FEED_EUR_USD, PriceSpec::default().conf(151_960)); // 14 bps
     env.crank(0, ok).unwrap();
+    assert_eq!(env.market_state(0).status, MarketStatus::Active);
 }
 
 /// Gold's ceiling is tighter than EUR/USD's, because its measured band is. Per-market
@@ -209,9 +231,18 @@ fn the_confidence_ceiling_is_per_market() {
     );
     let keeper = env.admin.insecure_clone();
     let ix = env.crank_ix(1, gold, None, None, keeper.pubkey());
-    assert_err_contains(
-        env.send(ix, &[&keeper]),
-        "Oracle confidence exceeds this market's ceiling",
+    env.send(ix, &[&keeper]).unwrap();
+
+    assert_eq!(
+        env.market_state(0).status,
+        MarketStatus::Active,
+        "12 bps is inside EUR/USD's 15 bps ceiling"
+    );
+    assert_eq!(
+        env.market_state(1).status,
+        MarketStatus::Halted,
+        "the same 12 bps is outside gold's tighter 10 bps ceiling — per-market ceilings are \
+         data, and the same price is acceptable on one market and not on another"
     );
 }
 
@@ -396,12 +427,17 @@ fn composed_confidence_is_gated_on_the_sum_not_the_legs() {
     let ix = env.crank_ix(0, eur12, Some(gbp12), None, keeper.pubkey());
     env.send(ix, &[&keeper]).unwrap();
 
+    assert_eq!(env.market_state(0).status, MarketStatus::Active);
+
     let eur20 = env.post_price(FEED_EUR_USD, PriceSpec::at(108_500_000).conf(217_000));
     let gbp20 = env.post_price(FEED_GBP_USD, PriceSpec::at(127_000_000).conf(254_000));
     let ix = env.crank_ix(0, eur20, Some(gbp20), None, keeper.pubkey());
-    assert_err_contains(
-        env.send(ix, &[&keeper]),
-        "Oracle confidence exceeds this market's ceiling",
+    env.send(ix, &[&keeper]).unwrap();
+    assert_eq!(
+        env.market_state(0).status,
+        MarketStatus::Halted,
+        "40 bps composed exceeds the 30 bps ceiling — quadrature would have reported ~28 bps \
+         and let it through"
     );
 }
 

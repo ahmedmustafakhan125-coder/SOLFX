@@ -62,6 +62,7 @@ pub mod errors;
 pub mod events;
 pub mod instructions;
 pub mod oracle;
+pub mod risk;
 pub mod state;
 
 use instructions::*;
@@ -239,10 +240,39 @@ pub mod solfx_core {
         instructions::lp::add_liquidity(ctx, amount, min_lp_out)
     }
 
+    /// Seed or top up the insurance fund (§ 6.9).
+    ///
+    /// Permissionless: there is nothing to gain by funding it and the protocol is strictly
+    /// safer for it, so requiring an authority would only add a way for the fund to sit
+    /// under-capitalised while someone waits for a multisig.
+    pub fn deposit_insurance_fund(ctx: Context<DepositInsuranceFund>, amount: u64) -> Result<()> {
+        instructions::keeper::liquidate::deposit_insurance_fund(ctx, amount)
+    }
+
     // --- keeper: permissionless -------------------------------------------------------
 
     /// Read the oracle, record the price, trip the deviation breaker if it fires.
     pub fn crank_market_price(ctx: Context<CrankMarketPrice>) -> Result<()> {
-        instructions::keeper::crank_market_price(ctx)
+        instructions::keeper::price::crank_market_price(ctx)
+    }
+
+    /// Advance the funding and carry indices (§ 6.7).
+    pub fn crank_funding(ctx: Context<CrankFunding>) -> Result<()> {
+        instructions::keeper::funding::crank_funding(ctx)
+    }
+
+    /// Advance the market's regime (§ 7.3). This is where C-1 is stopped.
+    pub fn crank_market_session(ctx: Context<CrankMarketSession>) -> Result<()> {
+        instructions::keeper::session::crank_market_session(ctx)
+    }
+
+    /// Close a position whose equity has fallen below its maintenance margin (§ 6.8).
+    pub fn liquidate_position(ctx: Context<LiquidatePosition>) -> Result<()> {
+        instructions::keeper::liquidate::liquidate_position(ctx)
+    }
+
+    /// Force-close a profitable position to socialise an uncovered shortfall (§ 6.9).
+    pub fn auto_deleverage(ctx: Context<AutoDeleverage>) -> Result<()> {
+        instructions::keeper::adl::auto_deleverage(ctx)
     }
 }

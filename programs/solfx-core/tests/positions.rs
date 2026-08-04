@@ -698,7 +698,7 @@ fn a_minimum_hold_time_blocks_a_same_slot_round_trip() {
     env.seed_pool(1_000_000 * ONE_USDC);
 
     // Turn the guard on: markets ship with it at zero, so this is the retune path too.
-    env.set_min_hold_slots(0, 5);
+    env.patch_market(0, |m| m.min_hold_slots = 5);
 
     let user = env.new_user(100_000 * ONE_USDC, Pubkey::default());
     env.deposit(&user, 50_000 * ONE_USDC).unwrap();
@@ -746,6 +746,35 @@ fn a_position_cannot_be_opened_on_a_stale_price() {
             stale,
         ),
         "Oracle price is stale",
+    );
+    env.assert_invariants();
+}
+
+/// Correction C-4 on the trading path. A band the protocol cannot price is a band it must
+/// not quote against — at 50x leverage a 2-pip uncertainty is ~4% of a trader's margin, and
+/// executing at the mid hands free optionality to anyone with a faster feed.
+///
+/// The *crank* records such a price and halts the market instead; see
+/// `oracle::a_band_wider_than_the_market_ceiling_halts_the_market` for why the two paths
+/// differ.
+#[test]
+fn a_wide_confidence_band_blocks_opening_a_position() {
+    let (mut env, user) = eur_env();
+
+    // 30.11 bps against the market's 15 bps ceiling — USD/IDR's measured p95.
+    let wide = env.post_price(FEED_EUR_USD, PriceSpec::default().conf(326_823));
+    assert_err_contains(
+        env.open(
+            &user,
+            0,
+            0,
+            Direction::Long,
+            MINI,
+            1_000 * ONE_USDC,
+            NO_BOUND_BUY,
+            wide,
+        ),
+        "Oracle confidence exceeds this market's ceiling",
     );
     env.assert_invariants();
 }

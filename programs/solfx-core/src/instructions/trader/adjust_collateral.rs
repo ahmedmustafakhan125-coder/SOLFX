@@ -1,12 +1,12 @@
 use anchor_lang::prelude::*;
-use solfx_math::{margin, pnl, Side, TradeAction};
+use solfx_math::margin;
 
 use crate::errors::{IntoProgramResult, SolfxError};
 use crate::events::PositionCollateralChanged;
 use crate::oracle::load_validated_price;
+use crate::risk;
 
 use super::close_position::DecreasePosition;
-use super::open_position::execution_price_for;
 
 /// Move USDC from free collateral into a position's isolated margin.
 ///
@@ -76,56 +76,44 @@ pub fn remove_position_collateral(ctx: Context<DecreasePosition>, amount: u64) -
         &clock,
     )?;
 
-    let position = &ctx.accounts.position;
-    let market = &ctx.accounts.market;
-
-    let remaining = position
+    let remaining = ctx
+        .accounts
+        .position
         .collateral
         .checked_sub(amount)
         .ok_or(SolfxError::InsufficientCollateral)?;
     require!(remaining > 0, SolfxError::PositionNotEmpty);
 
-    // Mark on the side the trader would have to cross to get out.
-    let side = Side::resolve(position.direction.into(), TradeAction::Close);
-    let mark = execution_price_for(market, &price, position.size_base, side)?;
-    let conversion_rate = price.quote_conversion_rate.unwrap_or(0);
-    let conversion = market.quote_conversion();
+    // Costs are **assessed, not settled**. `risk::assess` already nets accrued carry and
+    // funding into equity, so the check sees the position's true worth — and settling here
+    // would be wrong twice over: carry is revenue that needs the four-vault routing this
+    // instruction does not carry, and a margin *query* should not move money.
+    let health = risk::assess(&ctx.accounts.position, &ctx.accounts.market, &price)?;
 
-    let notional_quote = pnl::notional_in_quote(position.size_base, mark).or_program_err()?;
-    let notional = pnl::convert_cost_to_collateral(notional_quote, conversion, conversion_rate)
-        .or_program_err()?;
+    // Withdrawing margin from an underwater position is extracting value the pool is about
+    // to be owed.
+    require!(!health.is_liquidatable(), SolfxError::PositionLiquidatable);
 
-    let upnl_quote = pnl::upnl_in_quote(
-        position.size_base,
-        position.entry_price,
-        mark,
-        position.direction.into(),
-    )
-    .or_program_err()?;
-    let upnl =
-        pnl::convert_pnl_to_collateral(upnl_quote, conversion, conversion_rate).or_program_err()?;
-
-    // Costs are zero until Phase 4 wires funding and carry; the shape is already correct so
-    // that adding them is a change of inputs rather than of logic.
-    let costs = margin::AccruedCosts::default();
-
-    let equity_now = margin::equity(position.collateral, upnl, costs).or_program_err()?;
-    let mm = margin::maintenance_margin(notional, market.mmr_bps).or_program_err()?;
+    // The position must still meet **initial** margin afterwards, not merely maintenance: a
+    // trader must not be able to walk a position to the edge of liquidation and leave it
+    // there. That is the same standard it had to meet to exist.
+    //
+    // `health.equity` is computed on the current collateral, so the withdrawal is applied to
+    // it directly rather than reassessing — the mark, PnL and accrued costs are unchanged by
+    // moving margin.
+    let equity_after = i128::from(health.equity)
+        .checked_sub(i128::from(amount))
+        .ok_or(SolfxError::MathOverflow)?;
+    let imr =
+        margin::initial_margin(health.notional, ctx.accounts.market.imr_bps).or_program_err()?;
     require!(
-        !margin::is_liquidatable(equity_now, mm),
-        SolfxError::PositionLiquidatable
-    );
-
-    let equity_after = margin::equity(remaining, upnl, costs).or_program_err()?;
-    let imr = margin::initial_margin(notional, market.imr_bps).or_program_err()?;
-    require!(
-        equity_after >= i64::try_from(imr).map_err(|_| SolfxError::MathOverflow)?,
+        equity_after >= i128::from(imr),
         SolfxError::WouldBreachMaintenanceMargin
     );
 
-    let leverage = margin::effective_leverage(notional, remaining).or_program_err()?;
+    let leverage = margin::effective_leverage(health.notional, remaining).or_program_err()?;
     require!(
-        leverage <= u64::from(market.effective_max_leverage()),
+        leverage <= u64::from(ctx.accounts.market.effective_max_leverage()),
         SolfxError::LeverageTooHigh
     );
 

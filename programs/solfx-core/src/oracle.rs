@@ -89,9 +89,48 @@ pub struct MarketPrice {
     pub quote_conversion_rate: Option<i64>,
 }
 
-/// Read and fully validate a market's price. **Rejects** on excessive deviation.
+/// Which gates apply to a read.
 ///
-/// This is what every trading instruction calls, from Phase 3 onward.
+/// Three modes, because "is this price good enough?" has three different right answers
+/// depending on what is about to be done with it. Making that an explicit enum rather than a
+/// pair of booleans keeps the choke point auditable: there are exactly three ways to read a
+/// price, and each is named.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PriceGate {
+    /// **Opening or closing voluntarily.** Every gate at its strictest. Trading against a
+    /// band you cannot price is how latency arbitrageurs get paid (C-4), and a voluntary
+    /// trade can always simply not happen.
+    Trading,
+    /// **Liquidation and auto-deleveraging.** Staleness enforced; confidence checked against
+    /// the market's *liquidation* ceiling; deviation not checked at all.
+    ///
+    /// Both relaxations are deliberate, and both come from the same observation: **the
+    /// conditions that make a position liquidatable are the conditions that widen the band
+    /// and dislocate the price.** The CHF-depeg replay measured a confidence two orders of
+    /// magnitude above normal and a 30% deviation from the EMA. Under `Trading` gates, that
+    /// price is unusable — which means the position cannot be closed, keeps falling, and
+    /// turns a bounded loss into unbounded bad debt.
+    ///
+    /// Deviation specifically is *not* re-checked because the crank has already halted the
+    /// market on it and flagged it for a human. Blocking the liquidation too would leave the
+    /// position frozen in exactly the state the halt was called to contain.
+    ///
+    /// Staleness stays strict. A stale price is never acceptable for anything: it is the
+    /// C-1 exploit, and it is the one gate no argument justifies relaxing.
+    Liquidation,
+    /// **Observation.** Staleness only. Confidence and deviation are *measured* and returned
+    /// for the caller to act on rather than enforced.
+    ///
+    /// This is what the cranker uses, and the distinction is load-bearing: a price too
+    /// uncertain to trade on must still be *recordable*, because the crank is what trips the
+    /// breaker. Gating it would mean a market that never halts, holding a last-known price
+    /// from before the dislocation — the failure mode looking exactly like the exploit.
+    Observe,
+}
+
+/// Read and fully validate a market's price. Every gate at its strictest.
+///
+/// This is what trading instructions call.
 pub fn load_validated_price(
     market: &Market,
     primary: &PriceUpdateV2,
@@ -99,15 +138,36 @@ pub fn load_validated_price(
     quote_conversion: Option<&PriceUpdateV2>,
     clock: &Clock,
 ) -> Result<MarketPrice> {
-    read(market, primary, secondary, quote_conversion, clock, true)
+    read(
+        market,
+        primary,
+        secondary,
+        quote_conversion,
+        clock,
+        PriceGate::Trading,
+    )
 }
 
-/// Read and validate everything **except** the deviation gate, returning the measured
-/// deviation for the caller to act on.
-///
-/// Separating measurement from enforcement is what keeps a market recoverable. § 7.2 says a
-/// deviating market goes to `Halted` with a guardian alert — a different response from
-/// rejecting one trade, and one that a cranker forced through the gate could never reach.
+/// Read for liquidation or auto-deleveraging. See [`PriceGate::Liquidation`].
+pub fn load_price_for_liquidation(
+    market: &Market,
+    primary: &PriceUpdateV2,
+    secondary: Option<&PriceUpdateV2>,
+    quote_conversion: Option<&PriceUpdateV2>,
+    clock: &Clock,
+) -> Result<MarketPrice> {
+    read(
+        market,
+        primary,
+        secondary,
+        quote_conversion,
+        clock,
+        PriceGate::Liquidation,
+    )
+}
+
+/// Read without enforcing confidence or deviation, returning both for the caller to judge.
+/// See [`PriceGate::Observe`].
 pub fn observe_market_price(
     market: &Market,
     primary: &PriceUpdateV2,
@@ -115,7 +175,14 @@ pub fn observe_market_price(
     quote_conversion: Option<&PriceUpdateV2>,
     clock: &Clock,
 ) -> Result<MarketPrice> {
-    read(market, primary, secondary, quote_conversion, clock, false)
+    read(
+        market,
+        primary,
+        secondary,
+        quote_conversion,
+        clock,
+        PriceGate::Observe,
+    )
 }
 
 fn read(
@@ -124,9 +191,16 @@ fn read(
     secondary: Option<&PriceUpdateV2>,
     quote_conversion: Option<&PriceUpdateV2>,
     clock: &Clock,
-    gate_deviation: bool,
+    gate: PriceGate,
 ) -> Result<MarketPrice> {
-    let base = read_leg(primary, &market.pyth_feed_id, market, clock, gate_deviation)?;
+    let base = read_leg(primary, &market.pyth_feed_id, market, clock, gate)?;
+
+    // The confidence ceiling this read is judged against.
+    let conf_ceiling = match gate {
+        PriceGate::Trading => market.effective_max_conf_bps(),
+        PriceGate::Liquidation => market.liquidation_conf_ceiling(),
+        PriceGate::Observe => u16::MAX,
+    };
 
     let spot = match market.price_source {
         PriceSource::Direct => {
@@ -134,23 +208,12 @@ fn read(
             // mis-built the transaction or is probing for a path that ignores it. Reject
             // rather than silently discard: an ignored account is an unaudited one.
             require!(secondary.is_none(), SolfxError::UnexpectedPriceUpdate);
-            ValidatedPrice::new(
-                base.price,
-                base.conf,
-                base.publish_time,
-                market.effective_max_conf_bps(),
-            )
-            .or_program_err()?
+            ValidatedPrice::new(base.price, base.conf, base.publish_time, conf_ceiling)
+                .or_program_err()?
         }
         PriceSource::Synthetic { invert_quote } => {
             let quote_update = secondary.ok_or(SolfxError::MissingSecondaryPriceUpdate)?;
-            let quote_leg = read_leg(
-                quote_update,
-                &market.secondary_feed_id,
-                market,
-                clock,
-                gate_deviation,
-            )?;
+            let quote_leg = read_leg(quote_update, &market.secondary_feed_id, market, clock, gate)?;
 
             // Legs enter composition with the ceiling deferred; the composed band carries it.
             let base_vp = ValidatedPrice::new(base.price, base.conf, base.publish_time, u16::MAX)
@@ -163,25 +226,13 @@ fn read(
             )
             .or_program_err()?;
 
-            compose_synthetic(
-                base_vp,
-                quote_vp,
-                invert_quote,
-                market.effective_max_conf_bps(),
-            )
-            .or_program_err()?
+            compose_synthetic(base_vp, quote_vp, invert_quote, conf_ceiling).or_program_err()?
         }
     };
 
     let quote_conversion_rate = if market.needs_quote_conversion() {
         let update = quote_conversion.ok_or(SolfxError::MissingQuoteConversionPriceUpdate)?;
-        let leg = read_leg(
-            update,
-            &market.quote_conversion_feed,
-            market,
-            clock,
-            gate_deviation,
-        )?;
+        let leg = read_leg(update, &market.quote_conversion_feed, market, clock, gate)?;
         Some(leg.price)
     } else {
         require!(
@@ -206,7 +257,7 @@ fn read_leg(
     expected_feed_id: &[u8; 32],
     market: &Market,
     clock: &Clock,
-    gate_deviation: bool,
+    gate: PriceGate,
 ) -> Result<RawLeg> {
     // Gate 3: Full verification only. Checked before anything is read out of the account.
     require!(
@@ -247,7 +298,7 @@ fn read_leg(
     let ema = normalize_price(update.price_message.ema_price, p.exponent).unwrap_or(0);
     let deviation = if ema > 0 {
         let d = deviation_bps(price, ema).or_program_err()?;
-        if gate_deviation {
+        if gate == PriceGate::Trading {
             validate_deviation(d, market.max_deviation_bps).or_program_err()?;
         }
         d

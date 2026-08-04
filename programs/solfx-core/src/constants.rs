@@ -67,3 +67,51 @@ pub const MAX_ALLOWED_LEVERAGE: u16 = 100;
 
 /// Longest permitted market symbol, in bytes. Fits `USDCLP`, `XAUUSD`, `EURUSD`.
 pub const MAX_SYMBOL_LEN: usize = 16;
+
+// --- session regimes (§ 7.3) --------------------------------------------------------------
+
+/// How long before a session close a market stops accepting new positions.
+///
+/// § 7.3 specifies T−15min. The point is not the exact figure but that new risk stops being
+/// taken while the feed is still live enough to manage it — a position opened in the final
+/// seconds cannot be closed until the market reopens, and by then it has absorbed the whole
+/// weekend.
+pub const PRE_CLOSE_REDUCE_ONLY_SECONDS: i64 = 15 * 60;
+
+/// How long a market stays in `GapWindow` after reopening.
+///
+/// § 7.3 suggests ~5 minutes. Closes and liquidations are permitted; new positions are not.
+/// The first minutes after a session gap carry the whole weekend's news in one jump, and
+/// letting someone open into that is letting them trade a price nobody had a chance to react
+/// to.
+pub const GAP_WINDOW_SECONDS: i64 = 5 * 60;
+
+/// How long before a continuous market's underlying spot reopens that it stops accepting
+/// new positions (§ 7.3, `PreOpenWindow`).
+///
+/// Dormant: no market can currently occupy the continuous regime. Kept so that resolving Q1b
+/// is a configuration change rather than a code change.
+pub const PRE_OPEN_WINDOW_SECONDS: i64 = 30 * 60;
+
+/// The floor on a liquidator's reward, in USDC at `QUOTE_PRECISION`. $1.00.
+///
+/// # Why a floor exists at all
+///
+/// § 6.8's reward is a share of the penalty, and the penalty comes out of the position's
+/// remaining equity. In a severe gap there **is no remaining equity** — the CHF-depeg replay
+/// wipes it entirely — so the share is zero, and a liquidator who is paid nothing does not
+/// show up. The position then stays open and keeps falling, which is how a bounded loss
+/// becomes unbounded bad debt.
+///
+/// That is the exact failure § 6.8 warns about (*"an unprofitable liquidation is an
+/// unliquidated position, and unliquidated positions are how vaults die"*), reached from the
+/// opposite direction: not because the reward was set too low, but because there was nothing
+/// left to take it from.
+///
+/// So when the position cannot pay, the **insurance fund** does. That is what it is for, and
+/// the arithmetic is not close: a dollar to close a position now against a shortfall that
+/// grows every minute it stays open.
+///
+/// § 6.8 budgets a liquidation transaction at ~$0.002 and suggests being willing to pay
+/// $0.50 in priority fees during congestion. A dollar clears both with room.
+pub const MIN_LIQUIDATOR_REWARD: u64 = 1_000_000;

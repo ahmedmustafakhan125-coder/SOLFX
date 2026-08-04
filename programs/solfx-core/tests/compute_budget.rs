@@ -366,3 +366,97 @@ fn the_widest_instruction_still_fits_its_stack_frame() {
     );
     env.send(ix, &[&admin]).unwrap();
 }
+
+/// The risk engine (`ARCHITECTURE.md` § 6.7, § 6.8).
+///
+/// **`liquidate_position` is the one instruction with a hard ceiling.** § 6.8 requires it
+/// under 200k CU, because liquidations compete for blockspace during exactly the congestion
+/// spikes that cause them — and an unprofitable liquidation is an unliquidated position.
+#[test]
+fn risk_engine_instructions_stay_within_their_ceilings() {
+    println!("\n=== SolFX Phase 4 compute-unit baselines ===");
+
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+    env.seed_pool(1_000_000 * ONE_USDC);
+    env.seed_insurance(100_000 * ONE_USDC);
+
+    let admin = env.admin.insecure_clone();
+    let mini = ONE_LOT / 10;
+
+    // --- cranks ---
+    let ix = env.crank_funding_ix(0, admin.pubkey());
+    record("crank_funding", env.send_metered(ix, &[&admin]), 40_000);
+
+    let price = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let ix = env.crank_session_ix(0, admin.pubkey(), Some(price));
+    record(
+        "crank_market_session (live feed)",
+        env.send_metered(ix, &[&admin]),
+        40_000,
+    );
+
+    let ix = env.crank_session_ix(0, admin.pubkey(), None);
+    record(
+        "crank_market_session (dead feed)",
+        env.send_metered(ix, &[&admin]),
+        30_000,
+    );
+
+    // Reopen for the liquidation measurement.
+    let ix = env.set_status_ix(0, MarketStatus::Active);
+    env.send(ix, &[&admin]).unwrap();
+
+    // --- liquidation: the § 6.8 budget ---
+    let user = env.new_user(200_000 * ONE_USDC, Pubkey::default());
+    env.deposit(&user, 100_000 * ONE_USDC).unwrap();
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    env.open(
+        &user,
+        0,
+        0,
+        Direction::Long,
+        mini,
+        250 * ONE_USDC,
+        i64::MAX,
+        p,
+    )
+    .unwrap();
+    env.track_position(Env::position_pda(&user.account, 0, 0));
+
+    let (liq, liq_token) = env.new_liquidator();
+    let crashed = env.post_price_now(FEED_EUR_USD, PriceSpec::at(107_043_000).conf(13_893));
+    let ix = env.liquidate_ix(&user, 0, 0, liq.pubkey(), liq_token, crashed, None, None);
+    record(
+        "liquidate_position",
+        env.send_metered(ix, &[&liq]),
+        200_000, // § 6.8's hard ceiling
+    );
+
+    // --- ADL ---
+    let winner = env.new_user(200_000 * ONE_USDC, Pubkey::default());
+    env.deposit(&winner, 100_000 * ONE_USDC).unwrap();
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    env.open(
+        &winner,
+        0,
+        0,
+        Direction::Short,
+        mini,
+        5_000 * ONE_USDC,
+        1,
+        p,
+    )
+    .unwrap();
+    env.track_position(Env::position_pda(&winner.account, 0, 0));
+
+    // Manufacture a shortfall so the instruction is reachable.
+    env.patch_market(0, |m| m.pending_adl_debt = 100 * ONE_USDC);
+
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::at(107_043_000).conf(13_893));
+    let ix = env.adl_ix(&winner, 0, 0, admin.pubkey(), p);
+    record("auto_deleverage", env.send_metered(ix, &[&admin]), 150_000);
+
+    println!("===========================================\n");
+}

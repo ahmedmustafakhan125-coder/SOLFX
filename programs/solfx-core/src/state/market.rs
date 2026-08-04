@@ -214,6 +214,12 @@ pub struct Market {
     pub cum_borrow_index: u128,
     pub last_funding_update_ts: i64,
     pub funding_rate_cap_per_hour: i64,
+    /// The **protocol's markup** on carry, per hour at `RATE_PRECISION`. Always a charge, on
+    /// both directions, and always non-negative.
+    ///
+    /// This is *only* the markup. The interest differential it sits on top of comes from
+    /// `rate_base_annual` and `rate_quote_annual`, and the two are kept apart so the UI can
+    /// show them as separate lines (§ 6.7).
     pub carry_rate_per_hour: i64,
 
     // --- live state ---
@@ -248,7 +254,66 @@ pub struct Market {
     /// live positions.
     pub open_position_count: u64,
 
-    pub _reserved: [u8; 120],
+    // --- appended in Phase 4 -----------------------------------------------------------
+    // Taken from `_reserved`, which shrank from 120 bytes to 80. Existing offsets unchanged.
+    /// Funding paid in by the heavy side but not yet claimed by the light side, in USDC.
+    ///
+    /// Funding is a transfer *between traders* and never touches LP capital (§ 6.7, I3), so
+    /// it stays in the collateral vault the whole time — this is the part of that vault not
+    /// yet attributed to any particular position. **Invariant I1 counts it.**
+    pub funding_balance: u64,
+    /// Sensitivity of the funding rate to book skew, at `RATE_PRECISION`.
+    ///
+    /// `funding_rate = clamp(skew_ratio × k, ±cap)`. Zero disables funding entirely, which
+    /// is the correct setting for a market with no meaningful two-sided book yet.
+    pub funding_rate_k: u64,
+    /// Base-currency annual interest rate at `RATE_PRECISION` (4% = `40_000_000`).
+    ///
+    /// Stored alongside the quote rate and the markup rather than as one blended figure
+    /// because **publishing the split is the product** (§ 6.7): a trader can read the true
+    /// interest differential and the protocol's markup as separate line items instead of
+    /// discovering a combined number after rollover. That is the one concrete improvement on
+    /// XM/Exness opacity that costs nothing to build.
+    pub rate_base_annual: i64,
+    /// Quote-currency annual interest rate at `RATE_PRECISION`.
+    pub rate_quote_annual: i64,
+    /// When the session cranker last advanced this market's regime.
+    pub last_session_crank_ts: i64,
+    /// When `status` last changed.
+    ///
+    /// The `GapWindow` and `PreOpenWindow` timers need time-in-state, not time-since-crank.
+    /// Deriving it from the crank timestamp would make the window's length depend on how
+    /// often keepers happen to run, which is not a property a risk control should have.
+    pub status_changed_at: i64,
+    /// Bad debt the insurance fund could not cover, awaiting auto-deleveraging (§ 6.9).
+    ///
+    /// Non-zero means the pool is carrying a shortfall. `auto_deleverage` draws this down by
+    /// withholding PnL from the most profitable opposing positions; until it reaches zero the
+    /// market is in the state § 7.2 describes as insurance-exhausted.
+    pub pending_adl_debt: u64,
+    /// Confidence ceiling for the **liquidation** path, which must be wider than the
+    /// trading one.
+    ///
+    /// # Why liquidation needs its own ceiling
+    ///
+    /// § 7.1 gates every price on `conf / price <= max_conf_bps`, and for *opening* a
+    /// position that is exactly right (correction C-4): trading against a band you cannot
+    /// price is how latency arbitrageurs get paid.
+    ///
+    /// Applying the same ceiling to liquidation inverts the logic. Confidence blows out
+    /// during precisely the events that make positions liquidatable — the CHF depeg replay
+    /// measured a band two orders of magnitude wider than normal — so a single ceiling means
+    /// **liquidation stops working exactly when it is needed**, and positions keep falling
+    /// with nobody able to close them. That is not caution; it is bad debt with extra steps.
+    ///
+    /// Opening into uncertainty is optional. Closing an insolvent position is not, and the
+    /// alternative to liquidating at an uncertain price is not liquidating at all.
+    ///
+    /// Validated to be at least `max_conf_bps`. A market may set them equal, which restores
+    /// the § 7.1 behaviour exactly.
+    pub liquidation_max_conf_bps: u16,
+
+    pub _reserved: [u8; 62],
 }
 
 impl Market {
@@ -265,6 +330,13 @@ impl Market {
             .get(..end)
             .and_then(|s| core::str::from_utf8(s).ok())
             .unwrap_or("")
+    }
+
+    /// Confidence ceiling for the liquidation path. Never tightened by `WeekendMode`: a
+    /// derated weekend is a reason to open less, not a reason to be unable to close.
+    #[must_use]
+    pub fn liquidation_conf_ceiling(&self) -> u16 {
+        self.liquidation_max_conf_bps.max(self.max_conf_bps)
     }
 
     /// Confidence ceiling in force right now, tightened in `WeekendMode`.
@@ -349,6 +421,12 @@ impl Market {
         );
         require!(
             self.max_conf_bps > 0 && self.max_conf_bps <= MAX_ALLOWED_CONF_BPS,
+            SolfxError::InvalidConfidenceLimit
+        );
+        // A liquidation ceiling *below* the trading one would mean a position could be opened
+        // at a price it could never be liquidated at.
+        require!(
+            self.liquidation_max_conf_bps >= self.max_conf_bps,
             SolfxError::InvalidConfidenceLimit
         );
         require!(

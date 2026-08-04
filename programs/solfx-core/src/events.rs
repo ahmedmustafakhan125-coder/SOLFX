@@ -260,11 +260,89 @@ pub struct BadDebtIncurred {
     pub ts: i64,
 }
 
+// --- risk engine (Phase 4) ----------------------------------------------------------------
+
+/// The funding and carry indices advanced.
+///
+/// `funding_rate_per_hour` and `carry_rate_per_hour` are published separately because they
+/// are different mechanisms: carry is revenue charged on borrowed notional, funding is a
+/// transfer between traders that never touches LP capital (§ 6.7).
+#[event]
+pub struct FundingUpdated {
+    pub market_index: u16,
+    pub funding_rate_per_hour: i64,
+    pub carry_rate_per_hour: i64,
+    pub cum_funding_long: i128,
+    pub cum_funding_short: i128,
+    pub cum_borrow_index: u128,
+    pub skew_ratio: i64,
+    pub elapsed_seconds: i64,
+    pub ts: i64,
+}
+
+/// The session cranker ran.
+///
+/// Emitted on every crank, not only on a transition, because "the feed was alive and the
+/// calendar was open at time T" is the record that proves a market was *not* trading against
+/// a frozen price. Absence of a transition is the thing worth being able to audit.
+#[event]
+pub struct SessionCranked {
+    pub market_index: u16,
+    pub status: u8,
+    pub feed_live: bool,
+    pub calendar_open: bool,
+    pub seconds_to_close: i64,
+    pub ts: i64,
+}
+
+/// A position was liquidated (§ 6.8).
+#[event]
+pub struct PositionLiquidated {
+    pub position: Pubkey,
+    pub user_account: Pubkey,
+    pub liquidator: Pubkey,
+    pub market_index: u16,
+    pub size_base: u64,
+    pub exit_price: i64,
+    /// The § 6.8 equity that failed the test — excludes the close fee.
+    pub equity: i64,
+    pub maintenance_margin: u64,
+    pub penalty: u64,
+    pub liquidator_reward: u64,
+    /// Whatever survived the penalty. A liquidation takes what it is owed, not the account.
+    pub residual_to_owner: u64,
+    pub bad_debt: u64,
+    pub insurance_drawn: u64,
+    /// Bad debt the insurance fund could not cover. ADL must clear this.
+    pub uncovered_bad_debt: u64,
+    pub ts: i64,
+}
+
+/// A profitable position was force-closed to socialise a shortfall (§ 6.9 step 2).
+///
+/// Traders must be told ADL exists, in plain language, **before** they open a position.
+/// Every venue that hid it and then used it was destroyed on social media.
+#[event]
+pub struct PositionAutoDeleveraged {
+    pub position: Pubkey,
+    pub user_account: Pubkey,
+    pub market_index: u16,
+    pub size_base: u64,
+    pub exit_price: i64,
+    /// PnL the position would have realised.
+    pub gross_pnl: i64,
+    /// What was withheld to cover the shortfall.
+    pub socialised: u64,
+    pub paid_out: u64,
+    pub remaining_adl_debt: u64,
+    pub ts: i64,
+}
+
 /// A circuit breaker fired (§ 7.2).
 #[event]
 pub struct CircuitBreakerTripped {
     pub market_index: u16,
-    /// 0 = oracle deviation, 1 = oracle staleness.
+    /// 0 = oracle deviation, 1 = oracle staleness, 2 = oracle confidence.
     pub reason: u8,
     pub observed: u64,
     pub limit: u64,

@@ -147,6 +147,14 @@ pub enum SolfxError {
     InsufficientPoolLiquidity,
     #[msg("LP share calculation produced zero shares")]
     ZeroLpShares,
+
+    // --- risk engine (Phase 4) ---
+    #[msg("Position is not liquidatable: equity is at or above the maintenance margin")]
+    NotLiquidatable,
+    #[msg("There is no uncovered bad debt to auto-deleverage against")]
+    NoPendingAdlDebt,
+    #[msg("Auto-deleveraging requires a profitable position on the opposing side")]
+    NotAdlEligible,
 }
 
 /// Map the maths crate's errors onto program errors.

@@ -37,6 +37,7 @@ pub struct UpdateRiskParams {
     pub min_position_size: u64,
     pub max_staleness_seconds: u32,
     pub max_conf_bps: u16,
+    pub liquidation_max_conf_bps: u16,
     pub max_deviation_bps: u16,
     pub weekend_max_leverage: u16,
     pub weekend_oi_cap_bps: u16,
@@ -65,6 +66,7 @@ pub fn update_risk_params(ctx: Context<AdminMarket>, params: UpdateRiskParams) -
     market.min_position_size = params.min_position_size;
     market.max_staleness_seconds = params.max_staleness_seconds;
     market.max_conf_bps = params.max_conf_bps;
+    market.liquidation_max_conf_bps = params.liquidation_max_conf_bps;
     market.max_deviation_bps = params.max_deviation_bps;
     market.weekend_max_leverage = params.weekend_max_leverage;
     market.weekend_oi_cap_bps = params.weekend_oi_cap_bps;

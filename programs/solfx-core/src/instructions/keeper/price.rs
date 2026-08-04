@@ -105,17 +105,37 @@ pub fn crank_market_price(ctx: Context<CrankMarketPrice>) -> Result<()> {
         ts: clock.unix_timestamp,
     });
 
-    if observed.deviation_bps > u64::from(market.max_deviation_bps)
-        && market.status != MarketStatus::Halted
-    {
+    // Two breakers, both § 7.2, and both reachable *only* because this read observes rather
+    // than gates. A crank that refused a wide or dislocated price could never trip either —
+    // the market would stay Active holding a last-known price from before the event, which
+    // is the failure mode looking exactly like the exploit it is meant to prevent.
+    let deviation_tripped = observed.deviation_bps > u64::from(market.max_deviation_bps);
+    let confidence_tripped = observed.spot.conf_bps > u64::from(market.effective_max_conf_bps());
+
+    if (deviation_tripped || confidence_tripped) && market.status != MarketStatus::Halted {
         let old_status = market.status;
         market.status = MarketStatus::Halted;
+        market.status_changed_at = clock.unix_timestamp;
+
+        let (reason, observed_value, limit) = if deviation_tripped {
+            (
+                0u8,
+                observed.deviation_bps,
+                u64::from(market.max_deviation_bps),
+            )
+        } else {
+            (
+                2u8,
+                observed.spot.conf_bps,
+                u64::from(market.effective_max_conf_bps()),
+            )
+        };
 
         emit!(CircuitBreakerTripped {
             market_index: market.market_index,
-            reason: 0, // oracle deviation
-            observed: observed.deviation_bps,
-            limit: u64::from(market.max_deviation_bps),
+            reason,
+            observed: observed_value,
+            limit,
             ts: clock.unix_timestamp,
         });
         emit!(MarketStatusChanged {

@@ -1,6 +1,6 @@
 # Compute Budget
 
-**Measured:** Phase 3, against `solfx_core.so` built with `anchor build` (release profile,
+**Measured:** Phase 4, against `solfx_core.so` built with `anchor build` (release profile,
 `lto = "fat"`, `codegen-units = 1`).
 **Source of truth:** [`programs/solfx-core/tests/compute_budget.rs`](../programs/solfx-core/tests/compute_budget.rs).
 Every figure below is asserted against a ceiling in CI, so a regression fails the build
@@ -64,19 +64,37 @@ CPIs.
 | `remove_position_collateral` | 45,248 | — | 80,000 | 43% |
 | `add_liquidity` | 20,612 | — | 60,000 | 66% |
 
-Program binary: **683 KB**.
+## Phase 4 measurements — the risk engine
 
-### What the numbers say about Phase 4
+| Instruction | CU | § budget | Ceiling | Headroom |
+|---|---:|---:|---:|---:|
+| **`liquidate_position`** | **59,223** | **< 200,000** (§ 6.8) | 200,000 | **70%** |
+| `auto_deleverage` | 51,281 | — | 150,000 | 66% |
+| `crank_funding` | 9,347 | — | 40,000 | 77% |
+| `crank_market_session` (live feed) | 12,629 | — | 40,000 | 68% |
+| `crank_market_session` (dead feed) | 10,818 | — | 30,000 | 64% |
 
-`open_position` lands at **55,584 CU against a 120,000 budget** — less than half. That matters
-because Phase 4's liquidation is the instruction with a hard ceiling: § 6.8 requires it under
-200k CU, because *an unprofitable liquidation is an unliquidated position, and unliquidated
-positions are how vaults die.*
+Program binary: **813 KB**.
 
-Liquidation does strictly more than `close_position` (51,724 CU): the same oracle read, the
-same settlement, plus a health-factor computation, a penalty split three ways and an extra
-transfer. On these numbers that is comfortably inside 200k — the CU budget is not what will
-make Phase 4 hard.
+### Liquidation has the only hard ceiling, and it clears it by 70%
+
+§ 6.8 requires liquidation under 200k CU for a specific reason: liquidations compete for
+blockspace during exactly the congestion spikes that cause them. An instruction that grows
+past the limit stops landing when it matters most, and *an unprofitable liquidation is an
+unliquidated position, and unliquidated positions are how vaults die.*
+
+At 59,223 CU it does strictly more than `close_position` (52,200) — the same oracle read, the
+same settlement, plus a health assessment, funding and carry settlement, a three-way penalty
+split and up to two extra transfers — for about 7k CU more. The margin is not close.
+
+### The cranks are cheap enough to run at their required cadence
+
+§ 9.1 wants `crank_market_session` every 60 seconds on every market and `crank_funding`
+hourly. At ~10–13k CU each, a 30-market deployment costs under 400k CU per session sweep —
+a fraction of one block, and negligible against the ~$0.002 a transaction costs.
+
+That matters for the operating model: the session cranker is the mechanism that stops C-1, so
+it has to be affordable enough that nobody is ever tempted to run it less often.
 
 ### Where the cost actually is
 
@@ -165,3 +183,4 @@ addition fails with a message that says what happened instead of an access viola
 |---|---|
 | 2 | Baselines established. Oracle read path measured at 11,766 CU. |
 | 3 | Position lifecycle added. `open_position` at 55,584 CU, 54% under the § 5.5 budget. Binary 472 KB → 683 KB. |
+| 4 | Risk engine added. `liquidate_position` at 59,223 CU, 70% under § 6.8's hard ceiling. Binary 683 KB → 813 KB. |

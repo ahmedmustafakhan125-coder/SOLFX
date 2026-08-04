@@ -177,6 +177,18 @@ impl MarketSpec {
 
                 max_staleness_seconds: 10,
                 max_conf_bps: 15,
+                // 3%, against a 15 bps trading ceiling — a factor of 200.
+                //
+                // That gap looks extreme until you size it against the event it exists for.
+                // During the CHF depeg, quoted spreads went from ~2 pips to 500+; on a 1.20
+                // price that is over 400 bps of uncertainty. A liquidation ceiling set at
+                // "a few times normal" simply does not fire during a depeg, and a position
+                // that cannot be liquidated keeps falling.
+                //
+                // This ceiling is a **tail-event parameter**. It is not there to judge price
+                // quality — the trading ceiling does that — but to reject a feed so broken
+                // its number is meaningless.
+                liquidation_max_conf_bps: 300,
                 max_deviation_bps: 300,
 
                 base_spread_bps: 1,
@@ -273,7 +285,9 @@ pub struct Env {
     pub now: i64,
     users: Vec<Pubkey>,
     positions: Vec<Pubkey>,
-    lp_deposited: u64,
+    /// USDC put into the protocol by anyone other than a trader depositing collateral:
+    /// LP capital and insurance-fund seeding. Invariant I7 has to account for both.
+    external_deposits: u64,
 }
 
 impl Env {
@@ -315,7 +329,7 @@ impl Env {
             now: T0,
             users: Vec::new(),
             positions: Vec::new(),
-            lp_deposited: 0,
+            external_deposits: 0,
         };
 
         env.write_mint_with_decimals(usdc_mint, USDC_DECIMALS);
@@ -685,6 +699,17 @@ impl Env {
     }
 
     // --- oracle ------------------------------------------------------------------------
+
+    /// Write a price stamped at the **current clock**.
+    ///
+    /// `PriceSpec::default()` carries `publish_time: T0`, so any test that advances the clock
+    /// — every funding and carry test does — would otherwise post a price the staleness gate
+    /// correctly rejects. Wanting a stale price is the unusual case, so it stays explicit via
+    /// `published_at`.
+    pub fn post_price_now(&mut self, feed_id: [u8; 32], spec: PriceSpec) -> Pubkey {
+        let now = self.now;
+        self.post_price(feed_id, spec.published_at(now))
+    }
 
     /// Write a `PriceUpdateV2` account owned by the Pyth receiver program.
     pub fn post_price(&mut self, feed_id: [u8; 32], spec: PriceSpec) -> Pubkey {
@@ -1107,29 +1132,6 @@ impl Env {
         }
     }
 
-    /// Turn on the minimum-hold guard (§ 6.6). Markets ship with it at zero, so this is also
-    /// the retune path: risk parameters are data, never constants.
-    pub fn set_min_hold_slots(&mut self, index: u16, slots: u64) {
-        let mut m = self.market_state(index);
-        m.min_hold_slots = slots;
-        let key = Self::market_pda(index);
-        let mut data = Market::DISCRIMINATOR.to_vec();
-        m.serialize(&mut data).unwrap();
-        let existing = self.svm.get_account(&key).unwrap();
-        self.svm
-            .set_account(
-                key,
-                SvmAccount {
-                    lamports: existing.lamports,
-                    data,
-                    owner: existing.owner,
-                    executable: false,
-                    rent_epoch: 0,
-                },
-            )
-            .unwrap();
-    }
-
     // --- liquidity -----------------------------------------------------------------------
 
     /// Seed the counterparty pool. Without it the vault cannot pay a winning trade, so only
@@ -1167,7 +1169,240 @@ impl Env {
             .data(),
         };
         self.send(ix, &[&provider]).expect("add_liquidity failed");
-        self.lp_deposited += amount;
+        self.external_deposits += amount;
+    }
+
+    // --- risk engine (Phase 4) -----------------------------------------------------------
+
+    pub fn crank_funding_ix(&self, index: u16, keeper: Pubkey) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::CrankFunding {
+                keeper,
+                protocol: self.protocol,
+                market: Self::market_pda(index),
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::CrankFunding {}.data(),
+        }
+    }
+
+    pub fn crank_funding(&mut self, index: u16) -> TestResult {
+        let keeper = self.admin.insecure_clone();
+        let ix = self.crank_funding_ix(index, keeper.pubkey());
+        self.send(ix, &[&keeper])
+    }
+
+    pub fn crank_session_ix(
+        &self,
+        index: u16,
+        keeper: Pubkey,
+        price: Option<Pubkey>,
+    ) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::CrankMarketSession {
+                keeper,
+                protocol: self.protocol,
+                market: Self::market_pda(index),
+                price_update: price,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::CrankMarketSession {}.data(),
+        }
+    }
+
+    /// Crank the session. `price: None` models a feed that has stopped publishing entirely —
+    /// which is what a closed market looks like from on chain.
+    pub fn crank_session(&mut self, index: u16, price: Option<Pubkey>) -> TestResult {
+        let keeper = self.admin.insecure_clone();
+        let ix = self.crank_session_ix(index, keeper.pubkey(), price);
+        self.send(ix, &[&keeper])
+    }
+
+    /// A liquidator with a funded USDC account, ready to be paid.
+    pub fn new_liquidator(&mut self) -> (Keypair, Pubkey) {
+        let kp = Keypair::new();
+        self.svm.airdrop(&kp.pubkey(), 100 * 1_000_000_000).unwrap();
+        let token = Pubkey::new_unique();
+        let mint = self.usdc_mint;
+        self.write_token_account(token, mint, kp.pubkey(), 0);
+        (kp, token)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn liquidate_ix(
+        &self,
+        owner: &User,
+        market_index: u16,
+        nonce: u8,
+        liquidator: Pubkey,
+        liquidator_token: Pubkey,
+        price: Pubkey,
+        secondary: Option<Pubkey>,
+        quote_conv: Option<Pubkey>,
+    ) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::LiquidatePosition {
+                liquidator,
+                protocol: self.protocol,
+                user_account: owner.account,
+                market: Self::market_pda(market_index),
+                position: Self::position_pda(&owner.account, market_index, nonce),
+                rent_destination: owner.pubkey(),
+                liquidator_token_account: liquidator_token,
+                collateral_vault: self.collateral_vault,
+                lp_pool: self.lp_pool,
+                lp_vault: self.lp_vault,
+                insurance_fund: self.insurance_fund,
+                insurance_vault: self.insurance_vault,
+                fee_vault: self.fee_vault,
+                price_update: price,
+                secondary_price_update: secondary,
+                quote_conversion_price_update: quote_conv,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::LiquidatePosition {}.data(),
+        }
+    }
+
+    pub fn liquidate(
+        &mut self,
+        owner: &User,
+        market_index: u16,
+        nonce: u8,
+        liquidator: &Keypair,
+        liquidator_token: Pubkey,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix = self.liquidate_ix(
+            owner,
+            market_index,
+            nonce,
+            liquidator.pubkey(),
+            liquidator_token,
+            price,
+            None,
+            None,
+        );
+        let kp = liquidator.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn adl_ix(
+        &self,
+        owner: &User,
+        market_index: u16,
+        nonce: u8,
+        keeper: Pubkey,
+        price: Pubkey,
+    ) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::AutoDeleverage {
+                keeper,
+                protocol: self.protocol,
+                user_account: owner.account,
+                market: Self::market_pda(market_index),
+                position: Self::position_pda(&owner.account, market_index, nonce),
+                rent_destination: owner.pubkey(),
+                collateral_vault: self.collateral_vault,
+                lp_pool: self.lp_pool,
+                lp_vault: self.lp_vault,
+                insurance_fund: self.insurance_fund,
+                insurance_vault: self.insurance_vault,
+                fee_vault: self.fee_vault,
+                price_update: price,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::AutoDeleverage {}.data(),
+        }
+    }
+
+    pub fn auto_deleverage(
+        &mut self,
+        owner: &User,
+        market_index: u16,
+        nonce: u8,
+        price: Pubkey,
+    ) -> TestResult {
+        let keeper = self.admin.insecure_clone();
+        let ix = self.adl_ix(owner, market_index, nonce, keeper.pubkey(), price);
+        self.send(ix, &[&keeper])
+    }
+
+    /// Fund the insurance fund. § 6.9: never launch with this empty — the first gap event
+    /// hits LPs directly and they do not come back.
+    pub fn seed_insurance(&mut self, amount: u64) {
+        let payer = Keypair::new();
+        self.svm
+            .airdrop(&payer.pubkey(), 100 * 1_000_000_000)
+            .unwrap();
+        let token = Pubkey::new_unique();
+        let mint = self.usdc_mint;
+        self.write_token_account(token, mint, payer.pubkey(), amount);
+
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::DepositInsuranceFund {
+                payer: payer.pubkey(),
+                protocol: self.protocol,
+                insurance_fund: self.insurance_fund,
+                insurance_vault: self.insurance_vault,
+                payer_token_account: token,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::DepositInsuranceFund { amount }.data(),
+        };
+        self.send(ix, &[&payer]).expect("insurance deposit failed");
+        self.external_deposits += amount;
+    }
+
+    /// Rewrite a market's risk and rate parameters in place.
+    ///
+    /// Some Phase 4 fields have no admin instruction yet (funding `k`, the two interest
+    /// rates), so tests set them directly. That is a harness affordance, not a protocol
+    /// hole — an admin instruction for them belongs with the frontend that would use it.
+    pub fn patch_market(&mut self, index: u16, f: impl FnOnce(&mut Market)) {
+        let mut m = self.market_state(index);
+        f(&mut m);
+        let key = Self::market_pda(index);
+        let mut data = Market::DISCRIMINATOR.to_vec();
+        m.serialize(&mut data).unwrap();
+        let existing = self.svm.get_account(&key).unwrap();
+        self.svm
+            .set_account(
+                key,
+                SvmAccount {
+                    lamports: existing.lamports,
+                    data,
+                    owner: existing.owner,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
+    /// Sum of every vault the protocol controls. The figure conservation is measured on.
+    pub fn total_vault_balance(&self) -> u64 {
+        self.token_balance(&self.collateral_vault)
+            + self.token_balance(&self.lp_vault)
+            + self.token_balance(&self.insurance_vault)
+            + self.token_balance(&self.fee_vault)
+    }
+
+    /// Crank a market's recorded price. Named to distinguish it from `crank_session`.
+    pub fn crank_price(&mut self, index: u16, price: Pubkey) -> TestResult {
+        self.crank(index, price)
     }
 
     // --- invariants (§ 12.3) ------------------------------------------------------------
@@ -1304,19 +1539,31 @@ impl Env {
 
     /// **I7**: every USDC the program holds is accounted for.
     ///
-    /// `Σ(all vaults) == Σ(deposits) − Σ(withdrawals) + Σ(LP deposits)`. Nothing is created
-    /// and nothing is destroyed; trades only move value *between* the four vaults, which is
-    /// the property [`flows::Flows::is_conservative`] enforces on the way in.
+    /// ```text
+    /// Σ(vaults) == Σ(collateral deposits)
+    ///            − Σ(collateral withdrawals)
+    ///            + Σ(LP and insurance deposits)
+    ///            − Σ(liquidator rewards)
+    /// ```
+    ///
+    /// Nothing is created and nothing is destroyed. Trades only move value *between* the
+    /// four vaults — the property `trader::flows::Flows::is_conservative` enforces before any
+    /// token moves — so the only ways USDC crosses the protocol boundary are a trader
+    /// withdrawing, someone funding the pool or the insurance fund, and a liquidator being
+    /// paid. Every one of those has a term here.
     pub fn assert_i7(&self) {
         let total = self.token_balance(&self.collateral_vault)
             + self.token_balance(&self.lp_vault)
             + self.token_balance(&self.insurance_vault)
             + self.token_balance(&self.fee_vault);
         let p = self.protocol_state();
-        let expected = p.total_deposits - p.total_withdrawals + self.lp_deposited;
+        let expected = p.total_deposits - p.total_withdrawals + self.external_deposits
+            - p.total_liquidator_paid;
         assert_eq!(
             total, expected,
-            "I7 broken: vaults hold {total}, deposits-withdrawals+lp is {expected}"
+            "I7 broken: vaults hold {total}, expected {expected} \
+             (deposits {} − withdrawals {} + external {} − liquidator rewards {})",
+            p.total_deposits, p.total_withdrawals, self.external_deposits, p.total_liquidator_paid
         );
     }
 
