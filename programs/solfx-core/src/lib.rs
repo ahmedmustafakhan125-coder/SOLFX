@@ -240,6 +240,29 @@ pub mod solfx_core {
         instructions::lp::add_liquidity(ctx, amount, min_lp_out)
     }
 
+    /// Start the LP withdrawal cooldown (threat T6). Records a time, never a price.
+    pub fn request_remove_liquidity(
+        ctx: Context<RequestRemoveLiquidity>,
+        lp_amount: u64,
+    ) -> Result<()> {
+        instructions::lp::request_remove_liquidity(ctx, lp_amount)
+    }
+
+    /// Abandon a pending exit and reclaim the request account's rent. No penalty.
+    pub fn cancel_remove_liquidity(ctx: Context<CancelRemoveLiquidity>) -> Result<()> {
+        instructions::lp::cancel_remove_liquidity(ctx)
+    }
+
+    /// Settle a matured exit, priced at today's NAV.
+    pub fn remove_liquidity(ctx: Context<RemoveLiquidity>, min_usdc_out: u64) -> Result<()> {
+        instructions::lp::remove_liquidity(ctx, min_usdc_out)
+    }
+
+    /// Sweep the treasury's accumulated fees to a destination.
+    pub fn withdraw_treasury_fees(ctx: Context<WithdrawTreasuryFees>, amount: u64) -> Result<()> {
+        instructions::admin::protocol_admin::withdraw_treasury_fees(ctx, amount)
+    }
+
     /// Seed or top up the insurance fund (§ 6.9).
     ///
     /// Permissionless: there is nothing to gain by funding it and the protocol is strictly

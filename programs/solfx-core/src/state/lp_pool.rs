@@ -36,10 +36,67 @@ pub struct LpPool {
     /// High-water mark for the LP performance fee (§ 8.1, stream 4).
     pub high_water_mark_per_share: u64,
 
+    // --- appended in Phase 5 -----------------------------------------------------------
+    // Taken from `_reserved`, which shrank from 128 bytes to 96. Existing offsets unchanged.
+    /// Performance fee in bps, charged on the gain above the high-water mark. § 8.1 sets 10%.
+    pub performance_fee_bps: u16,
+    /// Shares with a withdrawal request outstanding.
+    ///
+    /// Tracked so the pool can report how much of its supply is queued to leave — a figure
+    /// the frontend needs and a run is visible in.
+    pub pending_withdrawal_shares: u64,
+    pub total_performance_fees: u64,
+    pub total_exit_fees: u64,
+    /// Cumulative USDC deposited by providers, and cumulative USDC paid back out.
+    ///
+    /// Withdrawals are one of the few ways USDC crosses the protocol boundary, so invariant
+    /// I7 — *every USDC the program holds is accounted for* — needs the outflow as a term.
+    /// The pair also gives the LP dashboard lifetime inflow and outflow without walking the
+    /// event stream.
+    pub total_deposited: u64,
+    pub total_withdrawn: u64,
+
     pub bump: u8,
     pub lp_vault_bump: u8,
     pub lp_mint_bump: u8,
-    pub _reserved: [u8; 128],
+    pub _reserved: [u8; 80],
+}
+
+/// A pending LP exit. PDA at `["lp_withdraw", authority]`.
+///
+/// # Why the cooldown is the whole defence
+///
+/// Threat T6 is the just-in-time attack: an LP deposits ahead of a trader loss the pool is
+/// about to collect, and withdraws ahead of a gain it is about to pay. They capture the
+/// pool's edge without ever carrying its risk, and the LPs who did carry it are diluted.
+///
+/// The defence is not the exit fee — 0.05% is trivially outrun by a large enough known move.
+/// It is that **redemption is priced at NAV when it settles, not when it is requested.** An
+/// LP who requests must then hold the position for the whole cooldown, exposed to everything
+/// that happens in it. That converts the attack from "free" into "carry a day of risk", which
+/// is precisely the risk they were trying to avoid.
+///
+/// It follows that this account must **not** snapshot a price. It records only *when* the
+/// request may settle.
+///
+/// # Why the shares are not escrowed
+///
+/// Escrowing would need another token account and another set of transfers. It buys nothing:
+/// the burn at settlement comes from the provider's own account, so a request for shares they
+/// no longer hold simply fails. Moving tokens away cancels the request by making it
+/// unsettleable, which is the correct outcome and costs no code.
+#[account]
+#[derive(InitSpace)]
+pub struct LpWithdrawRequest {
+    pub authority: Pubkey,
+    /// Shares this request will burn.
+    pub shares: u64,
+    /// When the request was made. Kept for the audit trail and so a UI can show progress.
+    pub requested_at: i64,
+    /// Earliest timestamp at which `remove_liquidity` may settle.
+    pub unlock_at: i64,
+    pub bump: u8,
+    pub _reserved: [u8; 32],
 }
 
 /// Bad-debt reserve. PDA at `["insurance_fund"]`.

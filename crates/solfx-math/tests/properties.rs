@@ -23,6 +23,7 @@ use solfx_math::constants::{MIN_NOTIONAL_QUOTE, RATE_PRECISION};
 use solfx_math::fees::{self, FeeSplitBps, ONE_BPS_RATE};
 use solfx_math::fixed;
 use solfx_math::funding;
+use solfx_math::lp;
 use solfx_math::margin::{self, AccruedCosts};
 use solfx_math::oracle;
 use solfx_math::pnl;
@@ -855,6 +856,163 @@ proptest! {
         let _ = oracle::validate_publish_time(publish_time, now, 30, 5);
         let _ = oracle::deviation_bps(price, price);
         let _ = oracle::ValidatedPrice::new(price, conf, publish_time, max_conf);
+    }
+}
+
+// --- liquidity pool -----------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(config(4096))]
+
+    /// **The property the whole module exists for.** A deposit must never dilute the LPs
+    /// already in the pool.
+    ///
+    /// The failure this guards against is not a crash. It is a slow leak that shows up only
+    /// as LPs quietly earning less than they should, which is exactly the kind of bug that
+    /// survives to production.
+    #[test]
+    fn a_deposit_never_dilutes_the_existing_pool(
+        aum in 1_000_000_u64..1_000_000_000_000,
+        supply in 1_000_000_u64..1_000_000_000_000,
+        deposit in 1_u64..1_000_000_000_000,
+    ) {
+        let before = lp::nav_per_share(aum, supply).unwrap();
+        let shares = lp::shares_for_deposit(deposit, aum, supply).unwrap();
+        prop_assume!(supply.checked_add(shares).is_some());
+        prop_assume!(aum.checked_add(deposit).is_some());
+
+        let after = lp::nav_per_share(aum + deposit, supply + shares).unwrap();
+        prop_assert!(
+            after >= before,
+            "NAV/share fell from {} to {} on a deposit of {}", before, after, deposit
+        );
+    }
+
+    /// The mirror: a withdrawal must never dilute those who stay.
+    #[test]
+    fn a_withdrawal_never_dilutes_the_remaining_pool(
+        aum in 1_000_000_u64..1_000_000_000_000,
+        supply in 1_000_000_u64..1_000_000_000_000,
+        fraction_bps in 1_u64..10_000,
+    ) {
+        let before = lp::nav_per_share(aum, supply).unwrap();
+        let shares = (supply as u128 * fraction_bps as u128 / 10_000) as u64;
+        prop_assume!(shares > 0 && shares < supply);
+
+        let paid = lp::usdc_for_shares(shares, aum, supply).unwrap();
+        prop_assume!(paid < aum);
+
+        let after = lp::nav_per_share(aum - paid, supply - shares).unwrap();
+        prop_assert!(
+            after >= before,
+            "NAV/share fell from {} to {} when {} shares left", before, after, shares
+        );
+    }
+
+    /// **The LP mirror of `round_trip_at_the_same_price_always_loses`.**
+    ///
+    /// Depositing and immediately redeeming must never return more than went in. If it could,
+    /// an LP could mint value out of rounding — and unlike a trader they pay no spread, so
+    /// rounding is the only thing standing in the way.
+    #[test]
+    fn depositing_and_redeeming_immediately_never_profits(
+        aum in 1_000_000_u64..1_000_000_000_000,
+        supply in 1_000_000_u64..1_000_000_000_000,
+        deposit in 1_000_u64..1_000_000_000,
+    ) {
+        let shares = lp::shares_for_deposit(deposit, aum, supply).unwrap();
+        prop_assume!(shares > 0);
+        prop_assume!(supply.checked_add(shares).is_some());
+        prop_assume!(aum.checked_add(deposit).is_some());
+
+        let back = lp::usdc_for_shares(shares, aum + deposit, supply + shares).unwrap();
+        prop_assert!(
+            back <= deposit,
+            "an instant round trip returned {} on a deposit of {}", back, deposit
+        );
+    }
+
+    /// Redeeming the entire supply must return the entire pool — no dust may be stranded
+    /// where nobody can ever claim it.
+    #[test]
+    fn redeeming_everything_returns_everything(
+        aum in 0_u64..1_000_000_000_000,
+        supply in 1_u64..1_000_000_000_000,
+    ) {
+        prop_assert_eq!(lp::usdc_for_shares(supply, aum, supply).unwrap(), aum);
+    }
+
+    /// Splitting a redemption into two must never beat doing it in one go. If it could,
+    /// every LP would be forced to exit in slices to avoid losing to rounding.
+    #[test]
+    fn splitting_a_redemption_never_beats_one_redemption(
+        aum in 1_000_000_u64..1_000_000_000_000,
+        supply in 1_000_000_u64..1_000_000_000_000,
+        first_bps in 1_u64..9_999,
+    ) {
+        let half = (supply as u128 * first_bps as u128 / 10_000) as u64;
+        prop_assume!(half > 0 && half < supply);
+
+        let whole = lp::usdc_for_shares(supply, aum, supply).unwrap();
+
+        let a = lp::usdc_for_shares(half, aum, supply).unwrap();
+        let b = lp::usdc_for_shares(supply - half, aum - a, supply - half).unwrap();
+
+        prop_assert!(
+            a + b <= whole,
+            "splitting returned {} vs {} in one go", a + b, whole
+        );
+    }
+
+    /// The exit fee always rounds toward the remaining pool, and never exceeds the payout.
+    #[test]
+    fn the_exit_fee_rounds_up_but_never_takes_everything(
+        gross in 1_u64..1_000_000_000_000,
+        bps in 1_u16..500,
+    ) {
+        let fee = lp::exit_fee(gross, bps).unwrap();
+        prop_assert!(fee >= 1, "a non-zero fee rate must charge at least one unit");
+        prop_assert!(fee <= gross, "the fee took more than the payout");
+    }
+
+    /// The performance fee is zero at or below the mark, and monotonic above it.
+    #[test]
+    fn the_performance_fee_only_applies_above_the_mark(
+        shares in 1_u64..1_000_000_000_000,
+        hwm in 1_u64..10_000_000,
+        delta in 0_u64..10_000_000,
+        bps in 0_u16..2_000,
+    ) {
+        let below = lp::performance_fee(shares, hwm, hwm, bps).unwrap();
+        prop_assert_eq!(below, 0, "a fee was charged at the high-water mark");
+
+        if let Some(nav) = hwm.checked_add(delta) {
+            let above = lp::performance_fee(shares, nav, hwm, bps).unwrap();
+            if delta == 0 || bps == 0 {
+                prop_assert_eq!(above, 0);
+            }
+            // Never more than the gain itself.
+            let gain = (shares as u128 * delta as u128 / 1_000_000) as u64;
+            prop_assert!(
+                above <= gain.max(1),
+                "fee {} exceeded the gain {}", above, gain
+            );
+        }
+    }
+
+    /// No LP input can panic, for any combination.
+    #[test]
+    fn no_lp_input_can_panic(
+        a in any::<u64>(),
+        b in any::<u64>(),
+        c in any::<u64>(),
+        bps in any::<u16>(),
+    ) {
+        let _ = lp::nav_per_share(a, b);
+        let _ = lp::shares_for_deposit(a, b, c);
+        let _ = lp::usdc_for_shares(a, b, c);
+        let _ = lp::exit_fee(a, bps);
+        let _ = lp::performance_fee(a, b, c, bps);
     }
 }
 

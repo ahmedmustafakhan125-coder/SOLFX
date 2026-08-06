@@ -214,7 +214,30 @@ pub fn open_position(
 
     let market = &mut ctx.accounts.market;
     market.add_open_interest(direction, notional, size_base)?;
+
+    // The § 7.2 and § 7.4 vault controls, checked on the resulting book.
+    //
+    // All three are *pool-relative* rather than per-market, which is why they arrived with
+    // Phase 5 rather than Phase 4: each one is a statement about whether the vault can still
+    // stand behind the trade, and the vault's own instructions did not exist until now.
     market.check_oi_cap(direction)?;
+    market.check_skew_cap(
+        direction,
+        ctx.accounts.protocol.max_skew_bps,
+        ctx.accounts.lp_pool.aum,
+    )?;
+
+    check_utilisation(
+        market,
+        ctx.accounts.lp_pool.aum,
+        ctx.accounts.protocol.max_utilisation_bps,
+    )?;
+    check_insurance_floor(
+        ctx.accounts.insurance_fund.balance,
+        ctx.accounts.insurance_fund.target_balance,
+        ctx.accounts.protocol.min_insurance_ratio_bps,
+    )?;
+
     market.open_position_count = market
         .open_position_count
         .checked_add(1)
@@ -305,4 +328,60 @@ pub fn execution_price_for(
 /// computation, and a second copy is a second place for the rounding direction to drift.
 fn spread_of(oracle: i64, exec: i64) -> u64 {
     solfx_math::oracle::deviation_bps(exec, oracle).unwrap_or(0)
+}
+
+/// § 7.2's vault utilisation ceiling.
+///
+/// A pool cannot credibly stand behind unlimited open interest. Past the ceiling it stops
+/// taking on more, whatever the per-market caps allow — the per-market caps bound one
+/// instrument's risk, this bounds the *pool's*.
+///
+/// Measured against total notional rather than § 7.4's "max loss exposure", because max loss
+/// is not knowable without walking every position. Notional is the conservative reading and
+/// the only one an instruction can compute.
+fn check_utilisation(market: &Market, aum: u64, max_utilisation_bps: u16) -> Result<()> {
+    if max_utilisation_bps == 0 {
+        return Ok(());
+    }
+    // An empty pool backs nothing. Rejecting here rather than dividing by zero also means a
+    // market cannot be traded before anyone has provided liquidity.
+    require!(aum > 0, SolfxError::UtilisationCapReached);
+
+    let exposure = u128::from(market.oi_long)
+        .checked_add(u128::from(market.oi_short))
+        .ok_or(SolfxError::MathOverflow)?;
+    let utilisation = exposure
+        .checked_mul(10_000)
+        .ok_or(SolfxError::MathOverflow)?
+        .checked_div(u128::from(aum))
+        .ok_or(SolfxError::DivideByZero)?;
+
+    require!(
+        utilisation <= u128::from(max_utilisation_bps),
+        SolfxError::UtilisationCapReached
+    );
+    Ok(())
+}
+
+/// § 7.2: below a fraction of its target, the insurance fund can no longer absorb a gap, so
+/// markets stop accepting new risk.
+///
+/// This is the control that makes the § 6.9 waterfall honest. Without it the protocol would
+/// keep opening positions it has no reserve behind, and the first gap would go straight past
+/// insurance to ADL and then to LPs — the two steps the fund exists to prevent reaching.
+fn check_insurance_floor(balance: u64, target: u64, min_ratio_bps: u16) -> Result<()> {
+    if min_ratio_bps == 0 || target == 0 {
+        return Ok(());
+    }
+    let ratio = u128::from(balance)
+        .checked_mul(10_000)
+        .ok_or(SolfxError::MathOverflow)?
+        .checked_div(u128::from(target))
+        .ok_or(SolfxError::DivideByZero)?;
+
+    require!(
+        ratio >= u128::from(min_ratio_bps),
+        SolfxError::InsuranceFundDepleted
+    );
+    Ok(())
 }

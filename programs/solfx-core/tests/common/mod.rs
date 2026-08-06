@@ -257,6 +257,20 @@ impl MarketSpec {
     }
 }
 
+/// A liquidity provider. Separate from [`User`] because the two hold different token
+/// accounts and can never be the same role in a test.
+pub struct LiquidityProvider {
+    pub keypair: Keypair,
+    pub token_account: Pubkey,
+    pub lp_account: Pubkey,
+}
+
+impl LiquidityProvider {
+    pub fn pubkey(&self) -> Pubkey {
+        self.keypair.pubkey()
+    }
+}
+
 pub struct User {
     pub keypair: Keypair,
     pub account: Pubkey,
@@ -285,8 +299,8 @@ pub struct Env {
     pub now: i64,
     users: Vec<Pubkey>,
     positions: Vec<Pubkey>,
-    /// USDC put into the protocol by anyone other than a trader depositing collateral:
-    /// LP capital and insurance-fund seeding. Invariant I7 has to account for both.
+    /// Insurance-fund seeding. The only inflow the program does not record itself —
+    /// trader collateral is on `Protocol` and LP capital is on `LpPool`.
     external_deposits: u64,
 }
 
@@ -409,6 +423,7 @@ impl Env {
             fee_split_referral_bps: 1_000,
             lp_withdrawal_cooldown_seconds: 86_400,
             lp_exit_fee_bps: 5,
+            lp_performance_fee_bps: 1_000, // § 8.1: 10% of LP profit above the mark
             insurance_target_balance: 100_000 * ONE_USDC,
         }
     }
@@ -1169,7 +1184,6 @@ impl Env {
             .data(),
         };
         self.send(ix, &[&provider]).expect("add_liquidity failed");
-        self.external_deposits += amount;
     }
 
     // --- risk engine (Phase 4) -----------------------------------------------------------
@@ -1405,6 +1419,216 @@ impl Env {
         self.crank(index, price)
     }
 
+    // --- liquidity exit (Phase 5) --------------------------------------------------------
+
+    pub fn lp_withdraw_request_pda(authority: &Pubkey) -> Pubkey {
+        pda(&[LP_WITHDRAW_SEED, authority.as_ref()])
+    }
+
+    pub fn request_remove_ix(&self, lp: &LiquidityProvider, shares: u64) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::RequestRemoveLiquidity {
+                provider: lp.pubkey(),
+                protocol: self.protocol,
+                lp_pool: self.lp_pool,
+                withdraw_request: Self::lp_withdraw_request_pda(&lp.pubkey()),
+                provider_lp_account: lp.lp_account,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::RequestRemoveLiquidity { lp_amount: shares }.data(),
+        }
+    }
+
+    pub fn request_remove(&mut self, lp: &LiquidityProvider, shares: u64) -> TestResult {
+        let ix = self.request_remove_ix(lp, shares);
+        let kp = lp.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn cancel_remove_ix(&self, lp: &LiquidityProvider) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::CancelRemoveLiquidity {
+                provider: lp.pubkey(),
+                lp_pool: self.lp_pool,
+                withdraw_request: Self::lp_withdraw_request_pda(&lp.pubkey()),
+                authority: lp.pubkey(),
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::CancelRemoveLiquidity {}.data(),
+        }
+    }
+
+    pub fn cancel_remove(&mut self, lp: &LiquidityProvider) -> TestResult {
+        let ix = self.cancel_remove_ix(lp);
+        let kp = lp.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn remove_liquidity_ix(&self, lp: &LiquidityProvider, min_out: u64) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::RemoveLiquidity {
+                provider: lp.pubkey(),
+                protocol: self.protocol,
+                lp_pool: self.lp_pool,
+                lp_vault: self.lp_vault,
+                lp_mint: self.lp_mint,
+                fee_vault: self.fee_vault,
+                withdraw_request: Self::lp_withdraw_request_pda(&lp.pubkey()),
+                provider_token_account: lp.token_account,
+                provider_lp_account: lp.lp_account,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::RemoveLiquidity {
+                min_usdc_out: min_out,
+            }
+            .data(),
+        }
+    }
+
+    pub fn remove_liquidity(&mut self, lp: &LiquidityProvider, min_out: u64) -> TestResult {
+        let ix = self.remove_liquidity_ix(lp, min_out);
+        let kp = lp.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    /// A liquidity provider with their own USDC and `slpUSD` accounts.
+    ///
+    /// Distinct from [`Env::seed_pool`], which deposits anonymously to make the pool solvent
+    /// for trading tests. This one can be tracked, redeemed and measured.
+    pub fn new_lp(&mut self, usdc: u64) -> LiquidityProvider {
+        let keypair = Keypair::new();
+        let authority = keypair.pubkey();
+        self.svm.airdrop(&authority, 100 * 1_000_000_000).unwrap();
+
+        let token_account = Pubkey::new_unique();
+        let mint = self.usdc_mint;
+        self.write_token_account(token_account, mint, authority, usdc);
+
+        let lp_account = Pubkey::new_unique();
+        let lp_mint = self.lp_mint;
+        self.write_token_account(lp_account, lp_mint, authority, 0);
+
+        LiquidityProvider {
+            keypair,
+            token_account,
+            lp_account,
+        }
+    }
+
+    /// Deposit and receive shares, tracking the inflow for invariant I7.
+    pub fn lp_deposit(&mut self, lp: &LiquidityProvider, amount: u64) -> TestResult {
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::AddLiquidity {
+                provider: lp.pubkey(),
+                protocol: self.protocol,
+                lp_pool: self.lp_pool,
+                lp_vault: self.lp_vault,
+                lp_mint: self.lp_mint,
+                provider_token_account: lp.token_account,
+                provider_lp_account: lp.lp_account,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::AddLiquidity {
+                amount,
+                min_lp_out: 0,
+            }
+            .data(),
+        };
+        let kp = lp.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn lp_deposit_ix(&self, lp: &LiquidityProvider, amount: u64) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::AddLiquidity {
+                provider: lp.pubkey(),
+                protocol: self.protocol,
+                lp_pool: self.lp_pool,
+                lp_vault: self.lp_vault,
+                lp_mint: self.lp_mint,
+                provider_token_account: lp.token_account,
+                provider_lp_account: lp.lp_account,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::AddLiquidity {
+                amount,
+                min_lp_out: 0,
+            }
+            .data(),
+        }
+    }
+
+    /// Drop USDC straight into the fee vault.
+    ///
+    /// Only for measuring the sweep — there is no instruction that credits the treasury
+    /// directly, and generating the fee through a trade would measure the trade instead.
+    pub fn seed_fee_vault(&mut self, amount: u64) {
+        let current = self.token_balance(&self.fee_vault);
+        let key = self.fee_vault;
+        let mint = self.usdc_mint;
+        let protocol = self.protocol;
+        self.write_token_account(key, mint, protocol, current + amount);
+        self.external_deposits += amount;
+    }
+
+    pub fn lp_shares(&self, lp: &LiquidityProvider) -> u64 {
+        self.token_balance(&lp.lp_account)
+    }
+
+    pub fn nav_per_share(&self) -> u64 {
+        let pool = self.lp_state();
+        solfx_math::lp::nav_per_share(pool.aum, pool.lp_token_supply).unwrap()
+    }
+
+    pub fn withdraw_treasury_ix(&self, destination: Pubkey, amount: u64) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::WithdrawTreasuryFees {
+                admin: self.admin.pubkey(),
+                protocol: self.protocol,
+                fee_vault: self.fee_vault,
+                destination,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::WithdrawTreasuryFees { amount }.data(),
+        }
+    }
+
+    /// Rewrite protocol config in place.
+    ///
+    /// The § 7.2 and § 7.4 breaker thresholds have no admin instruction yet — they belong
+    /// with the frontend that would tune them (Phase 8) — so tests set them directly.
+    pub fn patch_protocol(&mut self, f: impl FnOnce(&mut Protocol)) {
+        let mut p = self.protocol_state();
+        f(&mut p);
+        let key = self.protocol;
+        let mut data = Protocol::DISCRIMINATOR.to_vec();
+        p.serialize(&mut data).unwrap();
+        let existing = self.svm.get_account(&key).unwrap();
+        self.svm
+            .set_account(
+                key,
+                SvmAccount {
+                    lamports: existing.lamports,
+                    data,
+                    owner: existing.owner,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
     // --- invariants (§ 12.3) ------------------------------------------------------------
 
     /// **I1**: `CollateralVault.amount == Σ(UserAccount.free) + Σ(Position.collateral)`.
@@ -1537,13 +1761,28 @@ impl Env {
         );
     }
 
+    /// **I8**: LP shares exist if and only if the pool holds assets.
+    ///
+    /// A supply with no assets behind it is worthless paper; assets with no supply are
+    /// unclaimable. Either one means the accounting has come apart.
+    pub fn assert_i8(&self) {
+        let pool = self.lp_state();
+        assert_eq!(
+            pool.lp_token_supply > 0,
+            pool.aum > 0,
+            "I8 broken: supply {} against aum {}",
+            pool.lp_token_supply,
+            pool.aum
+        );
+    }
+
     /// **I7**: every USDC the program holds is accounted for.
     ///
     /// ```text
-    /// Σ(vaults) == Σ(collateral deposits)
-    ///            − Σ(collateral withdrawals)
-    ///            + Σ(LP and insurance deposits)
-    ///            − Σ(liquidator rewards)
+    /// Σ(vaults) == Σ(collateral deposits)   − Σ(collateral withdrawals)
+    ///            + Σ(LP deposits)           − Σ(LP withdrawals)
+    ///            + Σ(insurance deposits)
+    ///                                       − Σ(liquidator rewards)
     /// ```
     ///
     /// Nothing is created and nothing is destroyed. Trades only move value *between* the
@@ -1557,13 +1796,24 @@ impl Env {
             + self.token_balance(&self.insurance_vault)
             + self.token_balance(&self.fee_vault);
         let p = self.protocol_state();
-        let expected = p.total_deposits - p.total_withdrawals + self.external_deposits
-            - p.total_liquidator_paid;
+        let pool = self.lp_state();
+        let expected = p.total_deposits + pool.total_deposited + self.external_deposits
+            - p.total_withdrawals
+            - pool.total_withdrawn
+            - p.total_liquidator_paid
+            - p.total_treasury_withdrawn;
         assert_eq!(
-            total, expected,
+            total,
+            expected,
             "I7 broken: vaults hold {total}, expected {expected} \
-             (deposits {} − withdrawals {} + external {} − liquidator rewards {})",
-            p.total_deposits, p.total_withdrawals, self.external_deposits, p.total_liquidator_paid
+             (trader in {} out {} | LP in {} out {} | seeded {} | liquidators {} | treasury {})",
+            p.total_deposits,
+            p.total_withdrawals,
+            pool.total_deposited,
+            pool.total_withdrawn,
+            self.external_deposits,
+            p.total_liquidator_paid,
+            p.total_treasury_withdrawn
         );
     }
 
@@ -1576,6 +1826,7 @@ impl Env {
         self.assert_i5();
         self.assert_i6();
         self.assert_i7();
+        self.assert_i8();
         for i in 0..self.protocol_state().num_markets {
             self.assert_i4(i);
         }

@@ -348,3 +348,54 @@ pub struct CircuitBreakerTripped {
     pub limit: u64,
     pub ts: i64,
 }
+
+// --- liquidity exit (Phase 5) -------------------------------------------------------------
+
+/// An LP started the cooldown clock.
+///
+/// Deliberately carries no price. The request is a *time*, not a quote — pricing at request
+/// would hand the JIT attacker exactly the option the cooldown exists to take away.
+#[event]
+pub struct WithdrawalRequested {
+    pub provider: Pubkey,
+    pub shares: u64,
+    pub unlock_at: i64,
+    pub pending_shares_after: u64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct WithdrawalCancelled {
+    pub provider: Pubkey,
+    pub shares: u64,
+    pub pending_shares_after: u64,
+    pub ts: i64,
+}
+
+/// An LP exited. Both fees are published separately because they go to different places and
+/// answer different questions: the exit fee to the LPs who stayed, the performance fee to the
+/// treasury.
+#[event]
+pub struct LiquidityRemoved {
+    pub provider: Pubkey,
+    pub shares: u64,
+    /// Value of the shares before fees.
+    pub gross: u64,
+    /// Stays in the pool, accruing to the remaining LPs.
+    pub exit_fee: u64,
+    /// Leaves for the treasury. Zero while the pool is below its high-water mark.
+    pub performance_fee: u64,
+    pub payout: u64,
+    pub aum_after: u64,
+    pub supply_after: u64,
+    pub nav_per_share_after: u64,
+    pub ts: i64,
+}
+
+/// Treasury fees were swept to a destination.
+#[event]
+pub struct TreasuryFeesWithdrawn {
+    pub destination: Pubkey,
+    pub amount: u64,
+    pub ts: i64,
+}

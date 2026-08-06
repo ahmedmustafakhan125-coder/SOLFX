@@ -22,6 +22,8 @@ pub struct InitializeProtocolParams {
     /// Anti-JIT delay on LP withdrawals (threat T6). Phase 5 enforces it.
     pub lp_withdrawal_cooldown_seconds: u32,
     pub lp_exit_fee_bps: u16,
+    /// § 8.1 stream 4: 10% of LP profit above the high-water mark.
+    pub lp_performance_fee_bps: u16,
     /// § 6.9 targets 2% of maximum OI. Below 25% of this, markets go `ReduceOnly`.
     pub insurance_target_balance: u64,
 }
@@ -181,7 +183,16 @@ pub fn init_protocol(
     lp.lp_token_supply = 0;
     lp.withdrawal_cooldown_seconds = params.lp_withdrawal_cooldown_seconds;
     lp.exit_fee_bps = params.lp_exit_fee_bps;
-    lp.high_water_mark_per_share = 0;
+    lp.performance_fee_bps = params.lp_performance_fee_bps;
+    // Par. The pool starts at $1.00 per share, so there is no gain to charge on until it
+    // exceeds that — starting at zero would charge a performance fee on the first dollar.
+    lp.high_water_mark_per_share = u64::try_from(solfx_math::constants::QUOTE_PRECISION)
+        .map_err(|_| SolfxError::MathOverflow)?;
+    lp.pending_withdrawal_shares = 0;
+    lp.total_performance_fees = 0;
+    lp.total_exit_fees = 0;
+    lp.total_deposited = 0;
+    lp.total_withdrawn = 0;
     lp.bump = ctx.bumps.lp_pool;
     lp.lp_vault_bump = ctx.bumps.lp_vault;
     lp.lp_mint_bump = ctx.bumps.lp_mint;

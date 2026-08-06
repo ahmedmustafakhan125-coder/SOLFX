@@ -1,6 +1,6 @@
 # Compute Budget
 
-**Measured:** Phase 4, against `solfx_core.so` built with `anchor build` (release profile,
+**Measured:** Phase 5, against `solfx_core.so` built with `anchor build` (release profile,
 `lto = "fat"`, `codegen-units = 1`).
 **Source of truth:** [`programs/solfx-core/tests/compute_budget.rs`](../programs/solfx-core/tests/compute_budget.rs).
 Every figure below is asserted against a ceiling in CI, so a regression fails the build
@@ -96,6 +96,23 @@ a fraction of one block, and negligible against the ~$0.002 a transaction costs.
 That matters for the operating model: the session cranker is the mechanism that stops C-1, so
 it has to be affordable enough that nobody is ever tempted to run it less often.
 
+## Phase 5 measurements — the LP vault
+
+| Instruction | CU | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `add_liquidity` | 20,476 | 60,000 | 66% |
+| `request_remove_liquidity` | 14,072 | 40,000 | 65% |
+| `cancel_remove_liquidity` | 7,886 | 30,000 | 74% |
+| `remove_liquidity` | 26,890 | 80,000 | 66% |
+| `withdraw_treasury_fees` | 11,486 | 40,000 | 71% |
+
+Program binary: **867 KB**.
+
+The exit path is cheap because it touches no oracle. Redemption is priced from `aum` and
+`lp_token_supply` — both already on the pool account — so there is no price to validate and no
+feed to read. That is a consequence of the design rather than an optimisation: an LP's claim
+is on the pool's assets, not on any market's mark.
+
 ### Where the cost actually is
 
 | Component | ~CU |
@@ -184,3 +201,4 @@ addition fails with a message that says what happened instead of an access viola
 | 2 | Baselines established. Oracle read path measured at 11,766 CU. |
 | 3 | Position lifecycle added. `open_position` at 55,584 CU, 54% under the § 5.5 budget. Binary 472 KB → 683 KB. |
 | 4 | Risk engine added. `liquidate_position` at 59,223 CU, 70% under § 6.8's hard ceiling. Binary 683 KB → 813 KB. |
+| 5 | LP exit path added. `remove_liquidity` at 26,890 CU — no oracle read on the exit path. Binary 813 KB → 867 KB. |

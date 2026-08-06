@@ -460,3 +460,59 @@ fn risk_engine_instructions_stay_within_their_ceilings() {
 
     println!("===========================================\n");
 }
+
+/// The LP vault (`ARCHITECTURE.md` § 5.4 LP, § 8.1 streams 4–5).
+#[test]
+fn liquidity_instructions_stay_within_their_ceilings() {
+    println!("\n=== SolFX Phase 5 compute-unit baselines ===");
+
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+
+    let lp = env.new_lp(500_000 * ONE_USDC);
+
+    let ix = env.lp_deposit_ix(&lp, 100_000 * ONE_USDC);
+    let kp = lp.keypair.insecure_clone();
+    record("add_liquidity", env.send_metered(ix, &[&kp]), 60_000);
+
+    let shares = env.lp_shares(&lp);
+    let ix = env.request_remove_ix(&lp, shares);
+    record(
+        "request_remove_liquidity",
+        env.send_metered(ix, &[&kp]),
+        40_000,
+    );
+
+    let ix = env.cancel_remove_ix(&lp);
+    record(
+        "cancel_remove_liquidity",
+        env.send_metered(ix, &[&kp]),
+        30_000,
+    );
+
+    let ix = env.request_remove_ix(&lp, shares);
+    env.send(ix, &[&kp]).unwrap();
+    env.advance_clock(86_401);
+
+    let ix = env.remove_liquidity_ix(&lp, 0);
+    record("remove_liquidity", env.send_metered(ix, &[&kp]), 80_000);
+
+    // --- treasury ---
+    let destination = Pubkey::new_unique();
+    let mint = env.usdc_mint;
+    let admin_key = env.admin.pubkey();
+    env.write_token_account(destination, mint, admin_key, 0);
+    // Put something in the fee vault to sweep.
+    env.seed_fee_vault(1_000 * ONE_USDC);
+
+    let admin = env.admin.insecure_clone();
+    let ix = env.withdraw_treasury_ix(destination, 1_000 * ONE_USDC);
+    record(
+        "withdraw_treasury_fees",
+        env.send_metered(ix, &[&admin]),
+        40_000,
+    );
+
+    println!("===========================================\n");
+}

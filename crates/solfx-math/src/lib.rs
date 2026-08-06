@@ -49,6 +49,7 @@ pub mod error;
 pub mod fees;
 pub mod fixed;
 pub mod funding;
+pub mod lp;
 pub mod margin;
 pub mod oracle;
 pub mod pnl;

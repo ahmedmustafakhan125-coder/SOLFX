@@ -3,6 +3,7 @@ use solfx_math::QuoteConversion;
 
 use crate::constants::{
     MAX_ALLOWED_CONF_BPS, MAX_ALLOWED_LEVERAGE, MAX_ALLOWED_STALENESS_SECONDS, MAX_SYMBOL_LEN,
+    SKEW_CAP_MIN_IMBALANCE_BPS_OF_AUM,
 };
 use crate::errors::SolfxError;
 use crate::state::position::Direction;
@@ -542,6 +543,83 @@ impl Market {
             Direction::Short => (self.oi_short, self.max_oi_short),
         };
         require!(oi <= cap, SolfxError::OpenInterestCapReached);
+        Ok(())
+    }
+
+    /// The § 7.4 skew cap: block opens on the heavy side once the book is too one-sided
+    /// **and** the imbalance is large enough to matter against the pool's capital.
+    ///
+    /// # Why funding is not enough on its own
+    ///
+    /// Funding is the *continuous* lever — it pays traders to correct skew, and at moderate
+    /// imbalances that works. At extremes it is simply too slow: the vault's directional
+    /// exposure grows faster than a per-hour rate can pull back, and § 7.4 says so directly.
+    /// Past the threshold the heavy side closes to new opens entirely.
+    ///
+    /// # Why the ratio needs an absolute floor beside it
+    ///
+    /// § 7.4 specifies the ratio alone. That would make a market untradeable from empty — the
+    /// first position is 100% one-sided by definition — and it asks the wrong question on a
+    /// small book, where a lopsided ratio carries no real risk. See
+    /// [`crate::constants::SKEW_CAP_MIN_IMBALANCE_BPS_OF_AUM`].
+    ///
+    /// # What is never blocked
+    ///
+    /// Trades that *reduce* skew. A cap that stopped the correcting trade would entrench the
+    /// imbalance it exists to fix.
+    ///
+    /// Checked after the addition, like the OI cap: the limit describes the resulting book.
+    pub fn check_skew_cap(&self, direction: Direction, max_skew_bps: u16, aum: u64) -> Result<()> {
+        if max_skew_bps == 0 {
+            return Ok(());
+        }
+
+        // Adding to the light side always reduces skew, whatever the numbers say.
+        let light_side = if self.base_oi_long >= self.base_oi_short {
+            Direction::Short
+        } else {
+            Direction::Long
+        };
+        if direction == light_side {
+            return Ok(());
+        }
+
+        let total = self
+            .base_oi_long
+            .checked_add(self.base_oi_short)
+            .ok_or(SolfxError::MathOverflow)?;
+        if total <= 0 {
+            return Ok(());
+        }
+
+        // Gate 1: is the imbalance material against the pool's capital?
+        let imbalance_quote = u128::from(self.oi_long.abs_diff(self.oi_short));
+        let floor = u128::from(aum)
+            .checked_mul(SKEW_CAP_MIN_IMBALANCE_BPS_OF_AUM)
+            .ok_or(SolfxError::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(SolfxError::DivideByZero)?;
+        if imbalance_quote <= floor {
+            return Ok(());
+        }
+
+        // Gate 2: § 7.4's ratio.
+        let diff = self
+            .base_oi_long
+            .checked_sub(self.base_oi_short)
+            .ok_or(SolfxError::MathOverflow)?
+            .checked_abs()
+            .ok_or(SolfxError::MathOverflow)?;
+        let skew_bps = diff
+            .checked_mul(10_000)
+            .ok_or(SolfxError::MathOverflow)?
+            .checked_div(total)
+            .ok_or(SolfxError::DivideByZero)?;
+
+        require!(
+            skew_bps <= i128::from(max_skew_bps),
+            SolfxError::SkewCapReached
+        );
         Ok(())
     }
 

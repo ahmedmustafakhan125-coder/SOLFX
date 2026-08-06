@@ -1,9 +1,11 @@
 use anchor_lang::prelude::*;
 use solfx_math::fees::FeeSplitBps;
 
-use crate::constants::PROTOCOL_SEED;
+use crate::constants::{FEE_VAULT_SEED, PROTOCOL_SEED};
 use crate::errors::SolfxError;
-use crate::events::{AdminTransferAccepted, AdminTransferInitiated, FeeSplitUpdated};
+use crate::events::{
+    AdminTransferAccepted, AdminTransferInitiated, FeeSplitUpdated, TreasuryFeesWithdrawn,
+};
 use crate::state::Protocol;
 
 #[derive(Accounts)]
@@ -113,5 +115,75 @@ pub fn set_guardian(ctx: Context<AdminOnly>, new_guardian: Pubkey) -> Result<()>
         SolfxError::InvalidParameter
     );
     ctx.accounts.protocol.guardian = new_guardian;
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct WithdrawTreasuryFees<'info> {
+    pub admin: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [PROTOCOL_SEED],
+        bump = protocol.bump,
+        has_one = admin @ SolfxError::NotAdmin,
+    )]
+    pub protocol: Box<Account<'info, Protocol>>,
+
+    #[account(mut, seeds = [FEE_VAULT_SEED], bump = protocol.fee_vault_bump)]
+    pub fee_vault: Box<Account<'info, anchor_spl::token::TokenAccount>>,
+
+    #[account(
+        mut,
+        constraint = destination.mint == protocol.usdc_mint @ SolfxError::WrongCollateralMint,
+    )]
+    pub destination: Box<Account<'info, anchor_spl::token::TokenAccount>>,
+
+    pub token_program: Program<'info, anchor_spl::token::Token>,
+}
+
+/// Move accumulated treasury fees out of the protocol.
+///
+/// # What this can and cannot reach
+///
+/// **Only `fee_vault`.** The collateral vault, the LP vault and the insurance vault are all
+/// out of reach, because there is no instruction anywhere that lets the admin sign a transfer
+/// from them — that is the structural form of the non-custodial claim, and it has to be true
+/// by construction rather than by policy.
+///
+/// `fee_vault` holds the treasury's own share of fees, already split off at collection
+/// (§ 8.3). Sweeping it moves no user, LP or insurance money.
+pub fn withdraw_treasury_fees(ctx: Context<WithdrawTreasuryFees>, amount: u64) -> Result<()> {
+    require!(amount > 0, SolfxError::ZeroAmount);
+    require!(
+        ctx.accounts.fee_vault.amount >= amount,
+        SolfxError::InsufficientPoolLiquidity
+    );
+
+    let seeds: &[&[&[u8]]] = &[&[PROTOCOL_SEED, &[ctx.accounts.protocol.bump]]];
+    anchor_spl::token::transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.key(),
+            anchor_spl::token::Transfer {
+                from: ctx.accounts.fee_vault.to_account_info(),
+                to: ctx.accounts.destination.to_account_info(),
+                authority: ctx.accounts.protocol.to_account_info(),
+            },
+            seeds,
+        ),
+        amount,
+    )?;
+
+    let protocol = &mut ctx.accounts.protocol;
+    protocol.total_treasury_withdrawn = protocol
+        .total_treasury_withdrawn
+        .checked_add(amount)
+        .ok_or(SolfxError::MathOverflow)?;
+
+    emit!(TreasuryFeesWithdrawn {
+        destination: ctx.accounts.destination.key(),
+        amount,
+        ts: Clock::get()?.unix_timestamp,
+    });
     Ok(())
 }

@@ -29,6 +29,8 @@ pub const LP_POOL_SEED: &[u8] = b"lp_pool";
 pub const LP_VAULT_SEED: &[u8] = b"lp_vault";
 /// `["lp_mint"]` — the `slpUSD` mint.
 pub const LP_MINT_SEED: &[u8] = b"lp_mint";
+/// `["lp_withdraw", authority]`
+pub const LP_WITHDRAW_SEED: &[u8] = b"lp_withdraw";
 
 /// USDC has six decimals, matching `solfx_math::constants::QUOTE_PRECISION`.
 ///
@@ -115,3 +117,21 @@ pub const PRE_OPEN_WINDOW_SECONDS: i64 = 30 * 60;
 /// § 6.8 budgets a liquidation transaction at ~$0.002 and suggests being willing to pay
 /// $0.50 in priority fees during congestion. A dollar clears both with room.
 pub const MIN_LIQUIDATOR_REWARD: u64 = 1_000_000;
+
+/// The imbalance floor below which § 7.4's skew ratio is not applied, in bps of pool AUM.
+///
+/// # Why the ratio alone deadlocks a market
+///
+/// § 7.4 blocks opens on the heavy side once
+/// `|oi_long − oi_short| / (oi_long + oi_short) > 0.6`. Taken literally that makes a market
+/// **untradeable from empty**: the first position is 100% one-sided by definition, so it is
+/// refused, so a book can never form. Same shape as the deviation-gate deadlock Phase 2
+/// found — a control that is correct in steady state and impossible at the boundary.
+///
+/// The ratio is also the wrong question on a small book. What threatens the vault is the
+/// *absolute* directional exposure it is carrying against its capital; a 100% skew on $100 of
+/// open interest is noise, a 60% skew on $10M is not.
+///
+/// So both must be exceeded: the ratio from § 7.4, and an imbalance worth at least 10% of
+/// AUM. That keeps the specified control and makes it well-defined at zero.
+pub const SKEW_CAP_MIN_IMBALANCE_BPS_OF_AUM: u128 = 1_000;

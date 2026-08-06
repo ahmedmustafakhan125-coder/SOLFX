@@ -155,6 +155,20 @@ pub enum SolfxError {
     NoPendingAdlDebt,
     #[msg("Auto-deleveraging requires a profitable position on the opposing side")]
     NotAdlEligible,
+
+    // --- liquidity exit (Phase 5) ---
+    #[msg("Withdrawal cooldown has not elapsed")]
+    WithdrawalCooldownActive,
+    #[msg("Insufficient LP shares")]
+    InsufficientLpShares,
+
+    // --- vault circuit breakers (§ 7.2, § 7.4) ---
+    #[msg("Open interest is too one-sided; opens are closed on the heavy side")]
+    SkewCapReached,
+    #[msg("Vault utilisation is at its ceiling; no new positions")]
+    UtilisationCapReached,
+    #[msg("Insurance fund is below its minimum; markets are reduce-only")]
+    InsuranceFundDepleted,
 }
 
 /// Map the maths crate's errors onto program errors.

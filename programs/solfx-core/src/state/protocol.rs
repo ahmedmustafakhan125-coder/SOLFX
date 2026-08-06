@@ -77,9 +77,27 @@ pub struct Protocol {
     /// invariant I7 — *every USDC the program holds is accounted for* — needs it as a term.
     pub total_liquidator_paid: u64,
 
+    // --- appended in Phase 5 -----------------------------------------------------------
+    /// § 7.4's skew cap, in bps of total open interest. `6000` == 0.6, the figure § 7.4
+    /// gives. Zero disables the check.
+    pub max_skew_bps: u16,
+    /// § 7.2's vault utilisation ceiling, in bps of AUM. Total open interest above this
+    /// blocks new opens. Zero disables the check.
+    ///
+    /// § 7.2 sets 80% and § 7.4 sets 60% against a different denominator (max *loss*
+    /// exposure rather than notional). Notional is used here because max-loss exposure is
+    /// not knowable without walking every position — it is the conservative reading, and it
+    /// is the one that can actually be computed in an instruction.
+    pub max_utilisation_bps: u16,
+    /// Below this fraction of `InsuranceFund::target_balance`, markets stop accepting new
+    /// positions (§ 7.2). `2500` == 25%, the figure § 7.2 gives. Zero disables the check.
+    pub min_insurance_ratio_bps: u16,
+    /// Cumulative USDC swept out of the fee vault. The last term invariant I7 needs.
+    pub total_treasury_withdrawn: u64,
+
     /// Forward-compatible padding (§ 5.6). New fields consume these bytes; nothing already
     /// on chain shifts. Append only — never reorder, never retype.
-    pub _reserved: [u8; 104],
+    pub _reserved: [u8; 88],
 }
 
 impl Protocol {
