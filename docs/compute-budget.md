@@ -106,7 +106,7 @@ it has to be affordable enough that nobody is ever tempted to run it less often.
 | `remove_liquidity` | 26,890 | 80,000 | 66% |
 | `withdraw_treasury_fees` | 11,486 | 40,000 | 71% |
 
-Program binary: **867 KB**.
+Program binary: **888 KB**.
 
 The exit path is cheap because it touches no oracle. Redemption is priced from `aum` and
 `lp_token_supply` — both already on the pool account — so there is no price to validate and no
@@ -201,4 +201,4 @@ addition fails with a message that says what happened instead of an access viola
 | 2 | Baselines established. Oracle read path measured at 11,766 CU. |
 | 3 | Position lifecycle added. `open_position` at 55,584 CU, 54% under the § 5.5 budget. Binary 472 KB → 683 KB. |
 | 4 | Risk engine added. `liquidate_position` at 59,223 CU, 70% under § 6.8's hard ceiling. Binary 683 KB → 813 KB. |
-| 5 | LP exit path added. `remove_liquidity` at 26,890 CU — no oracle read on the exit path. Binary 813 KB → 867 KB. |
+| 5 | LP exit path added. `remove_liquidity` at 26,890 CU — no oracle read on the exit path. Binary 813 KB → 888 KB. |
