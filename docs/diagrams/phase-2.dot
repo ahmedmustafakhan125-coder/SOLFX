@@ -1,0 +1,47 @@
+digraph phase2 {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.3, ranksep=0.5, dpi=135,
+         label="Phase 2 — Vault, markets and the validated Pyth read path\n(the oracle choke point: ADR-006 — no instruction reads a price any other way)", labelloc=t];
+  node [fontname="Helvetica", fontsize=11, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=9.5, color="#6b7280"];
+
+  subgraph cluster_gates {
+    label="the six gates — solfx_core::oracle (every price passes here or nowhere)"; style="rounded,filled"; fillcolor="#eff6ff"; color="#1d4ed8"; fontcolor="#1d4ed8";
+    g0 [label="PriceUpdateV2 account\n(posted by the caller — pull oracle, C-5)", fillcolor="#dbeafe"];
+    g1 [label="1 · OWNERSHIP\nAnchor: owner must be the\nPyth receiver program", fillcolor="#dbeafe"];
+    g2 [label="2 · FEED IDENTITY\nupdate.feed_id == market.pyth_feed_id\n(a real SOL/USD update cannot price EUR/USD)", fillcolor="#dbeafe"];
+    g3 [label="3 · VERIFICATION = Full\n(Partial lowers the guardian-collusion bar)", fillcolor="#dbeafe"];
+    g4 [label="4 · FRESHNESS, BOTH ENDS\nage ≤ max_staleness (C-1!)\nAND not future-dated beyond drift\n(the SDK helper only checks one side)", fillcolor="#dbeafe", penwidth=2];
+    g5 [label="5 · CONFIDENCE\nconf/price ≤ max_conf_bps (C-4)\n(USD/IDR was excluded on exactly this)", fillcolor="#dbeafe"];
+    g6 [label="6 · DEVIATION\n|spot − Pyth's own EMA| ≤ max_deviation\n(own EMA avoids the stored-reference deadlock)", fillcolor="#dbeafe"];
+    ok [label="ValidatedPrice\nnormalised to 1e9, conf_bps precomputed", fillcolor="#dcfce7", color="#15803d", penwidth=2];
+    g0 -> g1 -> g2 -> g3 -> g4 -> g5 -> g6 -> ok;
+    rej [label="named error → frontend renders\na real message, not 'failed'", fillcolor="#fee2e2", color="#b91c1c"];
+    g2 -> rej [style=dashed, label="mismatch"]; g4 -> rej [style=dashed, label="stale /\nfuture"]; g5 -> rej [style=dashed, label="too wide"];
+  }
+
+  crank [label="crank_market_price (keeper, permissionless)\nOBSERVES (staleness only) → records last_price / ema\n→ trips breaker → Halted on deviation or confidence", fillcolor="#ede9fe", color="#6d28d9"];
+
+  subgraph cluster_accounts {
+    label="account map — code is the formula, markets are rows (§5.6: list without redeploy)"; style="rounded,filled"; fillcolor="#f0fdf4"; color="#15803d"; fontcolor="#15803d";
+    prot [label="Protocol [\"protocol\"]\nadmin · guardian · fee split\ntotal_user_collateral (I1 leg)", fillcolor="#dcfce7"];
+    mkt [label="Market [\"market\", i]  × N\nfeed ids · session calendar ·\nrisk params · OI · funding indices\n(append-only, 128 B reserved)", fillcolor="#dcfce7"];
+    ua [label="UserAccount [\"user\", authority]\nfree_collateral · referrer\n(IMMUTABLE — the IB moat, §8.5)", fillcolor="#dcfce7"];
+    cv [label="CollateralVault (USDC)\n= Σ free + Σ position margin  (I1)", fillcolor="#ccfbf1", color="#0f766e"];
+    fv [label="FeeVault (treasury)", fillcolor="#ccfbf1", color="#0f766e"];
+    iv [label="InsuranceFund + Vault (I6)", fillcolor="#ccfbf1", color="#0f766e"];
+    lp [label="LpPool + LpVault + slpUSD mint\n(aum == vault balance — I2)", fillcolor="#ccfbf1", color="#0f766e"];
+    prot -> mkt [label="initialize_market:\n1 tx, no redeploy"];
+    prot -> cv; prot -> fv; prot -> iv; prot -> lp; ua -> cv [label="deposit /\nwithdraw"];
+  }
+
+  subgraph cluster_auth {
+    label="authority model (ADR-008)"; style="rounded,filled"; fillcolor="#fefce8"; color="#a16207"; fontcolor="#a16207";
+    adm [label="admin (multisig on mainnet)\nlist markets · retune params ·\ntwo-step handover · unpause", fillcolor="#fef9c3"];
+    gua [label="guardian (hot, pause-ONLY)\ncan halt, can NEVER move funds\nor unpause — blast radius capped", fillcolor="#fef9c3"];
+    usr [label="user — deposits/withdrawals\nwork even while PAUSED\n(the non-custodial claim, enforced)", fillcolor="#fef9c3"];
+    kpr [label="keeper — permissionless\n(no single point of failure)", fillcolor="#fef9c3"];
+  }
+
+  ok -> crank; crank -> mkt [label="last_price, ema,\nstatus"];
+  adm -> prot [style=dashed]; gua -> prot [style=dashed]; usr -> ua [style=dashed]; kpr -> crank [style=dashed];
+}

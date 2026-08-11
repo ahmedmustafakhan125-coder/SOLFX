@@ -1,0 +1,48 @@
+digraph phase0 {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.3, ranksep=0.5, dpi=135,
+         label="Phase 0 — Explainer + Oracle Feasibility: measure before you build\n(0a: FOREX-EXPLAINED.md · 0b: 7-day Pyth probe incl. the decisive Saturday)", labelloc=t];
+  node [fontname="Helvetica", fontsize=11, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=9.5, color="#6b7280"];
+
+  subgraph cluster_claims {
+    label="v0 proposal — unverified assumptions"; style="rounded,filled"; fillcolor="#fff7ed"; color="#c2410c"; fontcolor="#c2410c";
+    c1 [label="\"Pyth Indices publishes 24/7\ngold & silver\" → weekend product", fillcolor="#ffedd5"];
+    c2 [label="\"EM symbol in the catalogue\n⇒ feed exists and is listable\"", fillcolor="#ffedd5"];
+    c3 [label="\"Crosses must be synthesised:\nEUR/GBP = EUR/USD ÷ GBP/USD\"", fillcolor="#ffedd5"];
+  }
+
+  a0 [label="Phase 0a — FOREX-EXPLAINED.md\nplain-English companion; corrections C-1…C-7\napplied to ARCHITECTURE.md", shape=note, fillcolor="#fef9c3", color="#a16207"];
+
+  subgraph cluster_probe {
+    label="Phase 0b — the probe (scratch/feed-probe/)"; style="rounded,filled"; fillcolor="#eff6ff"; color="#1d4ed8"; fontcolor="#1d4ed8";
+    p1 [label="feeds.txt — 34 candidate feeds\n(majors, crosses, EM, metals, + BTC/SOL)", fillcolor="#dbeafe"];
+    p2 [label="probe.py — polls Hermes /v2\nevery second, appends daily CSVs", fillcolor="#dbeafe"];
+    p3 [label="analyse.py — conf p50/p95/p99,\ncadence from prev_publish_time,\nsession windows, PASS/FAIL verdicts", fillcolor="#dbeafe"];
+    p4 [label="Instrument fix: BTC/SOL liveness controls\n(probe downtime ≠ feed outage —\nthe bug behind the bogus 'hourly LATAM')", fillcolor="#dbeafe"];
+    p1 -> p2 -> p3; p2 -> p4 [style=dashed];
+  }
+
+  sat [label="Saturday 2026-08-01, 18:13–18:24 UTC\nsweep of ALL 3,056 catalogue feeds\nwhile crypto controls tick at ~1 s", shape=box, fillcolor="#dbeafe", color="#1d4ed8", penwidth=2];
+
+  subgraph cluster_findings {
+    label="findings — measurements, not opinions"; style="rounded,filled"; fillcolor="#fafafa"; color="#374151";
+    f1 [label="8 EM symbols NEVER published\n(publish_time = 0): PKR NGN EGP VND\nBDT LKR THB MYR → DEAD", fillcolor="#fee2e2", color="#b91c1c"];
+    f2 [label="ALL 137 Metal/Commodities feeds frozen\nat Fri 21:00 UTC — no metals index exists\nin the public catalogue → weekend gold\nWITHDRAWN (Q1b: commercial question)", fillcolor="#fee2e2", color="#b91c1c", penwidth=2];
+    f3 [label="LATAM 'hourly' was a probe artefact:\nBRL/CLP/PEN publish at 1 s in-session\n→ listable behind a LOCAL calendar\n(COP still fails — 68 bps conf)", fillcolor="#dcfce7", color="#15803d"];
+    f4 [label="~180 crosses are NATIVE and tighter\nthan majors (EUR/JPY 0.59 bps vs\nEUR/USD 1.28) → synthetic composition\nOFF the v1 critical path", fillcolor="#dcfce7", color="#15803d"];
+    f5 [label="Confidence tiers ⇒ leverage tiers\n≤2.5 bps→50x · ≤5→30x · ≤11→20x\n≤29→10x · >30 bps → DO NOT LIST", fillcolor="#dcfce7", color="#15803d"];
+  }
+
+  subgraph cluster_decisions {
+    label="decisions that gate every later phase"; style="rounded,filled"; fillcolor="#f0fdf4"; color="#15803d"; fontcolor="#15803d";
+    d1 [label="29 listable markets\n(exit criterion ≥20 met on breadth)", fillcolor="#dcfce7"];
+    d2 [label="Positioning revised: EM pairs +\nbroker UX + auditable IB ledger\n(weekend clause struck everywhere)", fillcolor="#dcfce7"];
+    d3 [label="RULE: a catalogue listing is NOT\nevidence a feed exists → live-data\ncheck in the Phase 9 listing checklist", fillcolor="#dcfce7"];
+    d4 [label="Session calendars are PER-MARKET data\n(EM pairs follow local hours)\n→ Market.session_* fields in Phase 2", fillcolor="#dcfce7"];
+  }
+
+  c1 -> a0; c2 -> a0; c3 -> a0;
+  a0 -> p1 [label="claims become\nmeasurements"];
+  p3 -> sat; sat -> f2; p3 -> f1; p3 -> f3; p3 -> f4; p3 -> f5;
+  f2 -> d2; f1 -> d3; f3 -> d4; f3 -> d1; f4 -> d1; f5 -> d1;
+}

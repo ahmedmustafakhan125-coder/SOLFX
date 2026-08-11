@@ -1,0 +1,46 @@
+digraph phase1 {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.3, ranksep=0.5, dpi=135,
+         label="Phase 1 — solfx-math: the financial engine as a pure, property-tested crate\n(no floats, no panics, no I/O, no Anchor — every rounding favours the protocol)", labelloc=t];
+  node [fontname="Helvetica", fontsize=11, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=9.5, color="#6b7280"];
+
+  subgraph cluster_mods {
+    label="module dependency graph (crates/solfx-math/src/)"; style="rounded,filled"; fillcolor="#eff6ff"; color="#1d4ed8"; fontcolor="#1d4ed8";
+    constants [label="constants.rs\nQUOTE 1e6 · BASE 1e9 · PRICE 1e9\nRATE 1e9 · NOTIONAL_DIVISOR 1e12\nLOT = 100,000 base · MIN_NOTIONAL $1", fillcolor="#dbeafe"];
+    error [label="error.rs\nMathError — every failure named,\nno unwrap/panic anywhere", fillcolor="#dbeafe"];
+    types [label="types.rs\nDirection · TradeAction · Side\nQuoteConversion (C-3)", fillcolor="#dbeafe"];
+    fixed [label="fixed.rs — THE ROUNDING CORE\nmul_div_floor / mul_div_ceil\nmul_div_floor_signed (toward −∞)\nmul_div_ceil_signed · checked casts", fillcolor="#bfdbfe", penwidth=2];
+    pnl   [label="pnl.rs\nnotional · uPnL · quote→USDC\nconversion · weighted entry ·\nproportional close", fillcolor="#dbeafe"];
+    margin [label="margin.rs\nIMR / MMR (size-tiered) · equity\nis_liquidatable (strict) ·\nliquidation_price (conservative)", fillcolor="#dbeafe"];
+    pricing [label="pricing.rs\nconf_bps · conf spread · skew impact\nexecution_price (adverse side) ·\nslippage · $1 notional floor", fillcolor="#dbeafe"];
+    fees [label="fees.rs\nvolume-tiered rate (1.5→0.6 bps)\nfee_amount (ceil, min 1 unit)\nsplit_fee 55/25/10/10 · penalty 40/40/20", fillcolor="#dbeafe"];
+    funding [label="funding.rs\ncarry (interest diff + markup)\nfunding (skew, nets to zero — I3)\ncumulative-index model, O(1)/position", fillcolor="#dbeafe"];
+    constants -> fixed; error -> fixed;
+    fixed -> pnl; fixed -> margin; fixed -> pricing; fixed -> fees; fixed -> funding;
+    types -> pnl; types -> pricing;
+  }
+
+  subgraph cluster_round {
+    label="the one rule every function obeys"; style="rounded,filled"; fillcolor="#fefce8"; color="#a16207"; fontcolor="#a16207";
+    r1 [label="fees, margin requirements,\ncosts charged to the trader\n→ round UP", fillcolor="#fef9c3"];
+    r2 [label="payouts to the trader\n→ round DOWN", fillcolor="#fef9c3"];
+    r3 [label="signed trader PnL\n→ floor toward −∞\n(Rust / truncates toward 0 —\nthat would leak on every loss)", fillcolor="#fef9c3"];
+    rall [label="every rounding error accrues\nTO the protocol, never away from it", fillcolor="#fde68a", penwidth=2];
+    r1 -> rall; r2 -> rall; r3 -> rall;
+  }
+
+  subgraph cluster_flow {
+    label="one trade through the maths (worked in every guide)"; style="rounded,filled"; fillcolor="#f0fdf4"; color="#15803d"; fontcolor="#15803d";
+    s1 [label="size_base, oracle price", fillcolor="#dcfce7"];
+    s2 [label="notional = size × price / 1e12\n(1 lot EUR/USD @1.08543 → $108,543)", fillcolor="#dcfce7"];
+    s3 [label="exec = oracle ± (base + conf·mult + skew)\nalways the trader-adverse side", fillcolor="#dcfce7"];
+    s4 [label="IMR = notional × imr_bps /1e4 (ceil)\nfee = notional × rate /1e9 (ceil, ≥1)", fillcolor="#dcfce7"];
+    s5 [label="uPnL = ±size × (exit − entry) / 1e12\nthen QuoteConversion → USDC (C-3)", fillcolor="#dcfce7"];
+    s1 -> s2 -> s3 -> s4 -> s5;
+  }
+
+  prop [label="properties.rs — 38 invariants over the whole parameter space\n★ round_trip_at_the_same_price_always_loses ★\n(if this ever fails there is free money and bots drain the vault)\n+ PnL antisymmetry · fees round to protocol · liquidation never pays the trader\nCI: fmt · clippy -D warnings · tests · 100k-case deep run", fillcolor="#dcfce7", color="#15803d", penwidth=2];
+
+  fixed -> r1 [style=dashed]; fixed -> r2 [style=dashed]; fixed -> r3 [style=dashed];
+  rall -> prop; s5 -> prop;
+}

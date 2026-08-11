@@ -1,0 +1,35 @@
+digraph phase5 {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.3, ranksep=0.45, dpi=135,
+         label="Phase 5 — LP vault: the provider lifecycle and the T6 (just-in-time) defence\n(the cooldown is the defence, not the exit fee — a request records a TIME, never a price)", labelloc=t];
+  node [fontname="Helvetica", fontsize=11, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=9.5, color="#6b7280"];
+
+  l1 [label="add_liquidity(amount, min_lp_out)\nshares = amount × supply / aum  (floor)\nfirst deposit mints 1:1 at $1.00 NAV\n→ mint slpUSD to the provider", fillcolor="#dcfce7", color="#15803d"];
+  l2 [label="holding: NAV per share = aum / supply\nmoves with trader PnL (pool is the\ncounterparty) + 55% of every fee\n+ exit fees of LPs who left", fillcolor="#ccfbf1", color="#0f766e"];
+  l3 [label="request_remove_liquidity(shares)\nrecords unlock_at = now + cooldown\nA TIME, NEVER A PRICE — pricing at\nrequest would hand back the free option", fillcolor="#ede9fe", color="#6d28d9", penwidth=2];
+  l4 [label="cooldown (24 h)\nTHE T6 DEFENCE: the attacker must\ncarry the pool's risk for the whole\nwindow — exactly what they were avoiding\n(0.05% alone is trivially outrun)", fillcolor="#fef9c3", color="#a16207", penwidth=2];
+  l5 [label="cancel_remove_liquidity\nfree, rent back — staying in the pool\nis the outcome the cooldown wants", fillcolor="#f3f4f6"];
+  l6 [label="remove_liquidity(min_usdc_out)\npriced at SETTLE-time NAV:\ngross = shares × aum / supply (floor)", fillcolor="#dcfce7", color="#15803d"];
+  l7 [label="exit fee (ceil) STAYS IN THE POOL\n→ accrues to the LPs who stayed\n(waived if the redemption empties the\npool — I8 caught stranded USDC)", fillcolor="#dcfce7", color="#15803d"];
+  l8 [label="performance fee → TREASURY\n10% × gain above the high-water mark\nzero while below the previous peak\n(one global mark — errs toward the LP)", fillcolor="#ccfbf1", color="#0f766e"];
+  l9 [label="payout ≥ min_usdc_out?\nburn shares → pay USDC → ratchet HWM", shape=diamond, fillcolor="#ffedd5", color="#c2410c"];
+
+  l1 -> l2 -> l3 -> l4 -> l6 -> l7 -> l8 -> l9;
+  l3 -> l5 [style=dashed, label="change of mind"];
+  l5 -> l2 [style=dashed];
+  early [label="remove before unlock_at →\nWithdrawalCooldownActive\n(exact to the second)", fillcolor="#fee2e2", color="#b91c1c"];
+  l4 -> early [style=dashed, label="too soon"];
+
+  subgraph cluster_breakers {
+    label="vault circuit breakers (§7.2 / §7.4 — deferred from Phase 4 because they are pool-relative)"; style="rounded,filled"; fillcolor="#fff7ed"; color="#c2410c"; fontcolor="#c2410c";
+    b1 [label="utilisation: Σ notional ≤ cap × AUM\n(the pool cannot credibly back\nunlimited open interest)", fillcolor="#ffedd5"];
+    b2 [label="skew cap: ratio > 0.6 AND\nimbalance > 10% of AUM → heavy side\nclosed to opens (the floor fixes the\nempty-market deadlock; reducing trades\nare NEVER blocked)", fillcolor="#ffedd5", penwidth=2];
+    b3 [label="insurance floor: below 25% of target\n→ no new positions (makes the §6.9\nwaterfall honest — no reserve, no risk)", fillcolor="#ffedd5"];
+  }
+
+  subgraph cluster_treasury {
+    label="treasury"; style="rounded,filled"; fillcolor="#f0fdf4"; color="#15803d"; fontcolor="#15803d";
+    t1 [label="withdraw_treasury_fees (admin)\ncan reach the FEE VAULT ONLY —\nno instruction lets any key sign a\ntransfer from collateral/LP/insurance\n(the non-custodial claim, by construction)", fillcolor="#dcfce7"];
+  }
+  l9 -> b1 [style=invis]; l8 -> t1 [style=invis];
+}

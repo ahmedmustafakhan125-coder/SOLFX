@@ -1,0 +1,32 @@
+digraph phasenext {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.35, ranksep=0.5, dpi=135,
+         label="What remains — Phases 6–9 to the capstone, then the gated commercial track\n(estimates from ARCHITECTURE.md §15; exit criteria are testable, not calendar-based)", labelloc=t];
+  node [fontname="Helvetica", fontsize=11, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=10, color="#6b7280"];
+
+  done [label="DONE — Phases 0–5\n442+ tests · 888 KB program · 24 instructions\nmath engine · oracle gates · position lifecycle ·\nrisk engine + regimes · LP vault + T6 defence", fillcolor="#dcfce7", color="#15803d", penwidth=2];
+
+  p6 [label="Phase 6 — IB programme (~2 wks)  ← NEXT\nsolfx-referral: SEPARATE program (growth iterates,\ncore stays frozen for audit)\n• referrer already immutable on UserAccount\n• 10% referral share already split at collection\n• per-trade accrual → PDA · permissionless claim\n• tiers Bronze 8% → Diamond 16% · 2-level (sub-IB 20%)\nEXIT: rebates accrue & claim correctly; every rebate\nemits a verifiable event; tier boundaries tested\n(§8.5: the ledger IS the moat)", fillcolor="#ede9fe", color="#6d28d9", penwidth=2];
+
+  p7 [label="Phase 7 — Keepers (~3 wks)\nRust liquidator: Geyser state + Hermes SSE,\ndanger list, pre-built txs, <2 s to landed\ntrigger executor + on-chain TP/SL (deferred here\nso orders never exist before something fires them)\nfunding/session crankers · 3 instances · monitoring\nMEASURE: real Hermes payload vs 1232-byte tx limit\nEXIT: sub-2s liquidations under load; survives\nan instance being killed", fillcolor="#dbeafe", color="#1d4ed8"];
+
+  p8 [label="Phase 8 — Frontend + SDK (~5 wks)\nbroker terminal, NOT a perps UI: lots & pips ·\nall-in cost before submit · live liquidation price ·\nswap-rate table with the markup SPLIT OUT ·\nregime clock · TS SDK from IDL · indexer from events\n+ admin instructions for breaker thresholds & rates\nEXIT: end-to-end browser trade on devnet", fillcolor="#dbeafe", color="#1d4ed8"];
+
+  p9 [label="Phase 9 — Expansion + hardening (~4 wks)\nlist Tiers 2–3 (~15 more markets, CONFIG ONLY)\nlisting checklist: validate every feed against live\ndata first (the Phase-0b lesson as process)\nTrident fuzz 24 h clean · >90% coverage\n§12.5 extensibility proof: list a market on a RUNNING\ndevnet deployment, binary hash unchanged\nEXIT: ≥20 live markets · 30 days zero fund-loss bugs", fillcolor="#dbeafe", color="#1d4ed8"];
+
+  capstone [label="CAPSTONE COMPLETE\npublic devnet · ~29 listable markets ·\nfull keeper coverage · auditable from genesis", fillcolor="#dcfce7", color="#15803d", penwidth=2];
+
+  comm [label="Commercial track — GATED on traction or grants\n(apply during Phase 6–7 with the working risk engine:\nSolana Foundation · Pyth · Colosseum)\naudit #1 core ($40–80k) → audit #2 full ($60–150k)\nlegal opinion per jurisdiction (R9 — EM raises it)\nSquads 3-of-5 + timelock · insurance seeding\nguarded mainnet: TVL caps $250k → $1M → $5M", fillcolor="#fef9c3", color="#a16207"];
+
+  subgraph cluster_open {
+    label="open questions carried forward"; style="rounded,filled"; fillcolor="#fff1f2"; color="#be123c"; fontcolor="#be123c";
+    q1 [label="Q1b: Pyth Indices entitlement (email Pyth)\n— the only route weekend metals returns;\ncontinuous regime is built & waiting", fillcolor="#fee2e2"];
+    q2 [label="Q2: EM session boundaries need a clean\n7-day run before those markets list", fillcolor="#fee2e2"];
+    q3 [label="tx size with 3 real Pyth payloads\n(compute is settled; bytes are not) → Phase 7", fillcolor="#fee2e2"];
+    q4 [label="R13: recruit a second engineer before\nPhase 7 — keeper ops need cover", fillcolor="#fee2e2"];
+  }
+
+  done -> p6 -> p7 -> p8 -> p9 -> capstone -> comm;
+  q1 -> p9 [style=dashed, label="if resolved:\nconfig change only"];
+  q3 -> p7 [style=dashed]; q4 -> p7 [style=dashed]; q2 -> p9 [style=dashed];
+}

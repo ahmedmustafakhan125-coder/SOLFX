@@ -19,6 +19,9 @@ Read in this order:
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The full technical specification |
 | [`docs/oracle-feasibility.md`](docs/oracle-feasibility.md) | Phase 0b measurements — gates every risk parameter |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | How to find things and run them |
+| [`docs/guides/`](docs/guides/README.md) | Per-phase guides: every function, formula and financial rule, with a PNG flowchart each |
+| [`docs/test-cases/`](docs/test-cases/README.md) | The full test catalogue — 422 tests documented per phase |
+| [`docs/diagrams/`](docs/diagrams/) | Flowcharts (PNG + editable Graphviz sources) |
 
 ## Progress
 

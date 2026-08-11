@@ -1,0 +1,34 @@
+digraph phase3 {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.3, ranksep=0.45, dpi=135,
+         label="Phase 3 — Position engine: one trade through open_position, and the four-vault settlement\n(every step is a named check; the whole path costs ~56k CU against a 120k budget)", labelloc=t];
+  node [fontname="Helvetica", fontsize=11, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=9.5, color="#6b7280"];
+
+  o1 [label="open_position(market, direction,\nsize_base, collateral, max_price)", fillcolor="#ede9fe", color="#6d28d9", penwidth=2];
+  o2 [label="market.status.allows_open()?\n(Active / WeekendMode only)\n+ protocol not paused", shape=diamond, fillcolor="#ffedd5", color="#c2410c"];
+  o3 [label="load_validated_price — Trading gate\n1 feed (direct) · 2 (synthetic legs)\n· +1 (quote conversion, C-3)", fillcolor="#dbeafe", color="#1d4ed8"];
+  o4 [label="execution price (§6.6)\nexec = oracle × (1 ± total_spread/1e4)\ntotal = base + conf_bps×mult + skew_impact\nALWAYS the trader-adverse side\n(the anti-latency-arbitrage layer, C-4/T2)", fillcolor="#dbeafe", color="#1d4ed8", penwidth=2];
+  o5 [label="slippage: exec within max_price?\n(buy: exec ≤ bound · sell: exec ≥ bound)", shape=diamond, fillcolor="#ffedd5", color="#c2410c"];
+  o6 [label="notional = size × exec / 1e12\nthen → USDC by QuoteConversion:\nNone (fast path) · ÷rate (USD/JPY, USD/INR)\n· ×rate (EUR-quoted) — correction C-3", fillcolor="#dcfce7", color="#15803d"];
+  o7 [label="floors & bounds: notional ≥ $1 (T14)\nsize within [min, max] position size", shape=diamond, fillcolor="#ffedd5", color="#c2410c"];
+  o8 [label="margin: collateral ≥ IMR = notional×imr (ceil)\nleverage = notional/collateral ≤ market cap\n(EM 20x, majors 50x — data, not code)", shape=diamond, fillcolor="#ffedd5", color="#c2410c"];
+  o9 [label="fee = notional × open_fee_rate / 1e9\n(ceil, minimum 1 unit)\nsplit 55 LP / 25 treasury / 10 insurance / 10 referral", fillcolor="#dcfce7", color="#15803d"];
+  o10 [label="compute_flows → Flows::is_conservative\n(every unit leaving one vault arrives in another\n— checked BEFORE any token moves, I7 by construction)", fillcolor="#dcfce7", color="#15803d", penwidth=2];
+  o11 [label="settle: SPL transfers between\nCollateral / LP / Insurance / Fee vaults\n(LP fee share netted against PnL leg: −1 CPI)", fillcolor="#ccfbf1", color="#0f766e"];
+  o12 [label="add OI (quote + base units)\ncheck per-side OI cap (§7.4)", fillcolor="#dcfce7", color="#15803d"];
+  o13 [label="write Position PDA\nsize · entry price · collateral ·\nentry_notional (OI removed at SAME value later)\ncum_funding / cum_borrow snapshots ·\nopened_at_slot (min-hold, §6.6)", fillcolor="#ede9fe", color="#6d28d9"];
+  o14 [label="emit PositionOpened\n(events are the indexer's data source)", shape=note, fillcolor="#fef9c3", color="#a16207"];
+
+  o1 -> o2; o2 -> o3 [label="yes"]; o3 -> o4 -> o5; o5 -> o6 [label="ok"]; o6 -> o7; o7 -> o8 [label="ok"]; o8 -> o9 [label="ok"]; o9 -> o10 -> o11 -> o12 -> o13 -> o14;
+  rej [label="named SolfxError\n(MarketClosedForOpens · SlippageExceeded ·\nInsufficientMargin · LeverageTooHigh …)", fillcolor="#fee2e2", color="#b91c1c"];
+  o2 -> rej [style=dashed, label="no"]; o5 -> rej [style=dashed]; o7 -> rej [style=dashed]; o8 -> rej [style=dashed];
+
+  subgraph cluster_close {
+    label="the rest of the lifecycle (same gates, mirrored)"; style="rounded,filled"; fillcolor="#fafafa"; color="#374151";
+    c1 [label="close / decrease:\nmin_hold_slots first (§6.6 — a same-slot\nround trip must never be free) → adverse exit\n→ uPnL (floor) → convert (C-3) → settle ± pool claim\n→ remove OI at entry_notional → rent back", fillcolor="#f3f4f6"];
+    c2 [label="increase: weighted entry =\n(old×oldsize + fill×delta)/(total) →\nre-check margin on the whole position", fillcolor="#f3f4f6"];
+    c3 [label="add/remove margin: reclassify only —\nremove re-checks INITIAL margin\n(can't park a position at the edge)", fillcolor="#f3f4f6"];
+    c4 [label="add_liquidity (shipped early):\nthe pool must be fundable before\nwinning trades can be tested", fillcolor="#f3f4f6"];
+  }
+  o14 -> c1 [style=invis];
+}

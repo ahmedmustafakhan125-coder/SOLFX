@@ -1,0 +1,43 @@
+digraph phase4 {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.3, ranksep=0.45, dpi=135,
+         label="Phase 4 — Risk engine: the liquidation waterfall (§6.8–6.9) and the market regimes (§7.3)\n(the CHF-depeg replay is the exit gate — it found four real defects)", labelloc=t];
+  node [fontname="Helvetica", fontsize=10.5, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.16,0.09"];
+  edge [fontname="Helvetica", fontsize=9.5, color="#6b7280"];
+
+  subgraph cluster_wf {
+    label="liquidation + bad-debt waterfall"; style="rounded,filled"; fillcolor="#fff1f2"; color="#be123c"; fontcolor="#be123c";
+    w1 [label="liquidate_position (keeper, permissionless,\npaid — an unprofitable liquidation is\nan unliquidated position)", fillcolor="#ede9fe", color="#6d28d9"];
+    w2 [label="PriceGate::Liquidation\nstaleness STRICT · wider conf ceiling\n(tail-event parameter: depeg spreads hit\n400+ bps) · deviation NOT re-checked", fillcolor="#dbeafe", color="#1d4ed8", penwidth=2];
+    w3 [label="settle carry & funding FIRST\n(judge the position after its accrued costs)", fillcolor="#dcfce7", color="#15803d"];
+    w4 [label="equity = collateral + uPnL\n(EXCLUDES close fee — the penalty replaces it)\nequity < maintenance margin? STRICT (T7)", shape=diamond, fillcolor="#ffedd5", color="#c2410c"];
+    w5 [label="penalty = min(liq_fee × notional, max(equity,0))\nsplit: liquidator 40 / insurance 40 / treasury 20\nreward floored at $1 — insurance tops up\n(a zero reward means nobody shows up)", fillcolor="#dcfce7", color="#15803d"];
+    w6 [label="pool receives ≤ the position's collateral\n(NEVER other traders' money — defect #1\nthe replay caught) · residual → back to owner", fillcolor="#dcfce7", color="#15803d", penwidth=2];
+    w7 [label="equity < 0 → BAD DEBT", fillcolor="#fee2e2", color="#b91c1c"];
+    w8 [label="1) insurance fund pays\n(pool made whole)", fillcolor="#ccfbf1", color="#0f766e"];
+    w9 [label="2) uncovered → pending_adl_debt\nauto_deleverage: force-close the most\nprofitable OPPOSING winner — socialise\nPROFIT ONLY, never principal (§6.9)", fillcolor="#ffedd5", color="#c2410c"];
+    w10 [label="3) whatever remains:\nLP vault NAV absorbs pro-rata", fillcolor="#fee2e2", color="#b91c1c"];
+    w1 -> w2 -> w3 -> w4; w4 -> w5 [label="yes"]; w5 -> w6; w6 -> w7 [label="shortfall"]; w7 -> w8 -> w9 -> w10;
+    nl [label="NotLiquidatable\n(healthy positions are untouchable)", fillcolor="#dcfce7", color="#15803d"];
+    w4 -> nl [style=dashed, label="no"];
+  }
+
+  subgraph cluster_regimes {
+    label="market regimes — crank_market_session (this is where C-1 is stopped)"; style="rounded,filled"; fillcolor="#eff6ff"; color="#1d4ed8"; fontcolor="#1d4ed8";
+    r0 [label="two independent signals:\nfeed alive? AND calendar open?\nEITHER says closed → close. Fail closed.", fillcolor="#dbeafe", penwidth=2];
+    a [label="Active", fillcolor="#dcfce7", color="#15803d"];
+    ro [label="ReduceOnly\n(T−15 min to close:\nno new risk)", fillcolor="#fef9c3", color="#a16207"];
+    h [label="Halted\nvoluntary exits FROZEN,\nliquidation still allowed", fillcolor="#fee2e2", color="#b91c1c"];
+    gw [label="GapWindow (5 min)\ncloses + liquidations only —\nthe weekend's news lands in one tick", fillcolor="#ffedd5", color="#c2410c"];
+    a -> ro [label="T−15m"]; ro -> h [label="close /\nfeed dead"]; a -> h [label="feed dead"]; h -> gw [label="open + live"]; gw -> a [label="5 min\n(time-in-state,\nnot crank cadence)"];
+    cont [label="Continuous regime (blocked pending Q1b):\nActive → WeekendMode (derated) →\nPreOpenWindow → Active — written & tested,\nunreachable until a 24/7 feed exists\nCrypto: Active ↔ Halted on feed only", fillcolor="#f3f4f6", style="rounded,filled,dashed"];
+  }
+
+  subgraph cluster_extra {
+    label="also in phase 4"; style="rounded,filled"; fillcolor="#fafafa"; color="#374151";
+    e1 [label="crank_funding — no oracle read:\ncarry index (interest diff + markup, revenue)\nfunding indices (skew; trader↔trader, nets 0 — I3;\nmoves NO tokens: reallocates inside collateral vault)", fillcolor="#f3f4f6"];
+    e2 [label="risk::assess — ONE health function\nfor liquidation, ADL and margin withdrawal\n(two equities: §6.5 display vs §6.8 test)", fillcolor="#f3f4f6"];
+    e3 [label="scenarios: CHF depeg 2015 ✓\nGBP flash crash 2016 ✓ · weekend gap ✓\nEM holiday ✓ · exploit attempts refused ✓", fillcolor="#dcfce7", color="#15803d", penwidth=2];
+  }
+  r0 -> a [style=dashed];
+  nl -> e2 [style=invis]; cont -> e1 [style=invis];
+}
