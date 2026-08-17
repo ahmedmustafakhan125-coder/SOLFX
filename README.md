@@ -15,6 +15,7 @@ Read in this order:
 
 | Document | What it is |
 |---|---|
+| [`docs/ESSENTIALS.md`](docs/ESSENTIALS.md) | **What you need to be able to explain** — every key concept with a worked example |
 | [`docs/FOREX-EXPLAINED.md`](docs/FOREX-EXPLAINED.md) | Plain English, assumes no FX or DeFi background. **Start here.** |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The full technical specification |
 | [`docs/oracle-feasibility.md`](docs/oracle-feasibility.md) | Phase 0b measurements — gates every risk parameter |
