@@ -12,10 +12,11 @@ catalogue.
 | 3 — Position engine | [phase-3-guide.md](phase-3-guide.md) | [png](../diagrams/phase-3.png) | [cases](../test-cases/phase-3-tests.md) |
 | 4 — Risk engine & regimes | [phase-4-guide.md](phase-4-guide.md) | [png](../diagrams/phase-4.png) | [cases](../test-cases/phase-4-tests.md) |
 | 5 — LP vault | [phase-5-guide.md](phase-5-guide.md) | [png](../diagrams/phase-5.png) | [cases](../test-cases/phase-5-tests.md) |
-| **Next** — Phases 6–9 + commercial | [phase-next-guide.md](phase-next-guide.md) | [png](../diagrams/phase-next.png) | — |
+| 6 — IB programme (`solfx-referral`) | [phase-6-guide.md](phase-6-guide.md) | [png](../diagrams/phase-6.png) | [cases](../test-cases/phase-6-tests.md) |
+| **Next** — Phases 7–9 + commercial | [phase-next-guide.md](phase-next-guide.md) | [png](../diagrams/phase-next.png) | — |
 
 Companion documents: [`ARCHITECTURE.md`](../ARCHITECTURE.md) (the spec) ·
 [`FOREX-EXPLAINED.md`](../FOREX-EXPLAINED.md) (plain English) ·
 [`oracle-feasibility.md`](../oracle-feasibility.md) (Phase 0b data) ·
 [`compute-budget.md`](../compute-budget.md) (CU ledger) · per-phase reports
-(`phase-1-report.md` … `phase-5-report.md`).
+(`phase-1-report.md` … `phase-6-report.md`).

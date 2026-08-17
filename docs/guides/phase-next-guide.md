@@ -1,36 +1,14 @@
-# What Remains — Phases 6–9 and the Commercial Track
+# What Remains — Phases 7–9 and the Commercial Track
 
 **Flowchart:** [`../diagrams/phase-next.png`](../diagrams/phase-next.png)
-**Where we stand:** Phases 0–5 complete. 442+ tests, 24 instructions, ~888 KB program, all
+**Where we stand:** Phases 0–6 complete. 454 tests, two programs (~905 KB + 257 KB), all
 invariants (I1–I8) asserted after every instruction, the CHF-depeg replay passing.
 Everything below is specified in `ARCHITECTURE.md` § 15 with **testable exit criteria** —
 a phase finishes when its criteria pass, not when time runs out.
 
 ---
 
-## Phase 6 — the IB programme (`solfx-referral`) — NEXT, ~2 weeks
-
-**What:** the on-chain introducing-broker ledger. A separate program by design (§ 5.1): the
-growth engine will iterate far faster than the financial core, which wants to freeze for
-audit.
-
-**Why it is the moat (§ 8.5):** XM and Exness won on IB networks, and every IB in that
-industry has the same complaint — *the broker controls the ledger*. Rebates miscounted,
-clients reassigned, payouts delayed. The fix is structural: binding immutable, accrual
-per-trade in the same instruction that charges the fee, claims permissionless, every rebate
-a public event. *"The smart contract is replicable in a few months by anyone. A network of
-IBs who trust your ledger because they can audit it is not."*
-
-**Already in place from earlier phases:** `UserAccount.referrer` written once at creation
-and mutable by no instruction; `Position.referrer` copied at open; the 10% referral share
-already split off by `fees::split_fee` on every trade.
-
-**To build:** IB account PDA + per-trade accrual (tier: Bronze 8% → Silver 10% → Gold 13% →
-Diamond 16% of fees by referred 30-day volume, 2-level with sub-IBs at 20% of the parent's
-rate) · permissionless `claim` · events for every accrual and claim.
-
-**Exit criteria:** rebates accrue and claim correctly; every rebate emits a verifiable
-event; tier boundaries tested.
+*(Phase 6 is complete — see [`phase-6-guide.md`](phase-6-guide.md).)*
 
 ## Phase 7 — Keepers, ~3 weeks
 
@@ -110,7 +88,7 @@ after is **gated on traction or grant funding**, not started speculatively:
 
 | Step | Cost | Note |
 |---|---|---|
-| Grant applications | — | **Apply during Phases 6–7, not at the end** — a working risk engine that survives a CHF-depeg replay is a stronger application than a finished protocol asking for audit money. Targets: Solana Foundation, Pyth (SolFX is a flagship consumer of their EM feeds), Colosseum |
+| Grant applications | — | **Apply now, during Phase 7, not at the end** — a working risk engine that survives a CHF-depeg replay is a stronger application than a finished protocol asking for audit money. Targets: Solana Foundation, Pyth (SolFX is a flagship consumer of their EM feeds), Colosseum |
 | Audit #1 (core) | $40–80k | before public devnet marketing |
 | Audit #2 (full, different firm) | $60–150k | before mainnet |
 | Legal opinion | $5–20k | per-jurisdiction (R9 — the EM strategy *raises* regulatory risk; India/Indonesia/Korea analysis before the fee switch, not after) |

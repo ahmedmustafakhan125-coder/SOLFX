@@ -1,0 +1,38 @@
+digraph phase6 {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.3, ranksep=0.45, dpi=135,
+         label="Phase 6 — the IB programme (solfx-referral): a ledger brokers can audit\n(§8.5's moat — the dependency points ONE way, and recording a rebate costs the trading path +0.3%)", labelloc=t];
+  node [fontname="Helvetica", fontsize=11, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=9.5, color="#6b7280"];
+
+  subgraph cluster_core {
+    label="solfx-core — knows only a pubkey and one constraint"; style="rounded,filled"; fillcolor="#eff6ff"; color="#1d4ed8"; fontcolor="#1d4ed8";
+    c1 [label="initialize_user_account(referrer)\nreferrer written ONCE — no instruction in\neither program can ever change it.\nClients cannot be reassigned.", fillcolor="#dbeafe", penwidth=2];
+    c2 [label="every trade → settle()\nfee split 55/25/10/10 (§8.3)\nreferral share → fee vault", fillcolor="#dbeafe"];
+    c3 [label="UserAccount counters (+180 CU, no CPI,\nno extra account — the account was\nalready loaded)\n• referral_fees_generated += share\n• lifetime_volume += notional\nZero if no referrer → sweeps to treasury", fillcolor="#dbeafe", penwidth=2];
+    c4 [label="Protocol.total_referral_accrued += share", fillcolor="#dbeafe"];
+    c5 [label="pay_referral(amount)\nsigner must == Protocol.referral_authority\nAND total_claimed + amount ≤ total_accrued\n(the fee vault holds TREASURY money too —\nthis is what stops a rebate reaching it)", fillcolor="#bfdbfe", penwidth=2];
+    c1 -> c2 -> c3 -> c4;
+  }
+
+  subgraph cluster_ref {
+    label="solfx-referral — owns all the policy, iterates independently"; style="rounded,filled"; fillcolor="#f5f3ff"; color="#6d28d9"; fontcolor="#6d28d9";
+    r1 [label="initialize_referral(override_bps)\n+ core admin calls set_referral_authority\nTWO steps, TWO authorities — a deployed\nbut unregistered program is harmless", fillcolor="#ede9fe"];
+    r2 [label="register_ib(parent)\npermissionless · parent link IMMUTABLE\nself-recruitment refused", fillcolor="#ede9fe"];
+    r3 [label="sync_trader — PERMISSIONLESS + IDEMPOTENT\nreads core's UserAccount (Anchor owner-checks it)\ndelta = generated − TraderLink watermark\n→ credit → advance watermark\nA stranger can call it; a repeat credits nothing.", fillcolor="#ddd6fe", penwidth=2];
+    r4 [label="tier from referred volume (§8.5)\nBronze <$5M 8% · Silver <$25M 10%\nGold <$100M 13% · Diamond ≥$100M 16%\napplied at sync, never retroactively", fillcolor="#ede9fe"];
+    r5 [label="entitlement = min(tier% × fees, pool share)\n★ the §8.3/§8.5 reconciliation ★\npool is 10% of fees but Diamond wants 16% —\ncapped at the pool; remainder sweeps to treasury.\nWidening fee_split_referral_bps funds the top\ntiers, as a decision made when a Gold IB exists.", fillcolor="#ddd6fe", penwidth=2];
+    r6 [label="parent override = 20% of the CHILD's rebate\n(not a second bite of the trader's fees)\ncapped at the remaining budget → a 2-level\nchain never costs more than a 1-level one", fillcolor="#ede9fe"];
+    r7 [label="claim — no approval, no schedule,\nno counterparty", fillcolor="#ede9fe"];
+    r1 -> r2 -> r3 -> r4 -> r5 -> r6 -> r7;
+  }
+
+  ev [label="every accrual emits RebateAccrued carrying its INPUTS\n(watermark delta, volume delta, tier applied) as well as the result —\nan IB recomputes the figure from public data instead of being handed a number", shape=note, fillcolor="#fef9c3", color="#a16207", penwidth=2];
+
+  c3 -> r3 [label="reads (owner-checked,\nnever forged)", style=dashed, color="#6d28d9"];
+  r7 -> c5 [label="CPI, signed by\nthe config PDA", color="#6d28d9", penwidth=2];
+  c5 -> pay [label="SPL transfer\nout of the fee vault"];
+  pay [label="IB's USDC account", fillcolor="#dcfce7", color="#15803d"];
+  r5 -> ev [style=dashed];
+
+  note [label="Why separate (§5.1): the core freezes for audit; tiers, overrides and\ncampaign logic will not. Core depends on NOTHING here — it holds the\nmoney and honours a signature. The worst a broken referral program can\ndo is misallocate the referral pool among IBs.", shape=note, fillcolor="#fafafa", color="#374151"];
+}
