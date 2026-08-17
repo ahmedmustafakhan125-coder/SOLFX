@@ -61,6 +61,31 @@ why every mutation has emitted an event since Phase 2). Plus the deferred admin
 instructions for breaker thresholds and interest rates — deferred *to* here because tuning
 belongs with the surface that displays it.
 
+**User-added requirements (2026-08-12):**
+
+- **Design system supplied by the owner** — colour combinations and layout will be
+  provided before build; the terminal is skinned to that spec rather than a default theme.
+- **TradingView integration** — the § 10 stack already plans TradingView Lightweight
+  Charts; the price relayer (Hermes SSE cache) doubles as the chart datafeed, so candles,
+  the live confidence-driven spread, and the trader's entry/liquidation lines can all be
+  drawn on the same chart. If the full TradingView Charting Library is wanted instead
+  (drawing tools, indicators), it drops into the same datafeed interface.
+- **Admin analytics panel (admin wallet only):**
+  - leaderboards: most profitable traders and single trades (realised PnL from
+    `PositionClosed` / `PositionLiquidated` events)
+  - volume per day / per market, fees per stream, LP NAV history, insurance-fund level
+  - **live terminal**: a real-time feed of protocol activity — deposits, opens, closes,
+    liquidations as they land — streamed over websocket from the indexer
+  - Access control is wallet-signature auth on the BFF (admin pubkey allowlist). Honest
+    caveat, stated here so it is never oversold: **every trade is already public on-chain**
+    (traders are pseudonymous wallet addresses). The admin gate restricts the convenient
+    aggregated view, not the underlying data — anyone could rebuild it from the event
+    stream, which is by design (§ 8.5's auditable-ledger pitch depends on it).
+
+  No new on-chain work is needed for any of this: every mutation has emitted a typed event
+  since Phase 2 precisely so the indexer can reconstruct the whole ledger. The panel is an
+  indexer query surface plus a websocket.
+
 **Exit criteria:** an end-to-end browser trade on devnet.
 
 ## Phase 9 — Expansion + hardening, ~4 weeks
