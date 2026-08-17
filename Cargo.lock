@@ -4397,6 +4397,7 @@ dependencies = [
  "solana-signer",
  "solana-transaction",
  "solfx-math",
+ "solfx-referral",
  "spl-token",
 ]
 
@@ -4405,6 +4406,16 @@ name = "solfx-math"
 version = "0.1.0"
 dependencies = [
  "proptest",
+]
+
+[[package]]
+name = "solfx-referral"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "solfx-core",
+ "solfx-math",
 ]
 
 [[package]]

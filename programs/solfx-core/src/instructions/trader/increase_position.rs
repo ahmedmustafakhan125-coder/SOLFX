@@ -175,6 +175,14 @@ pub fn increase_position(
 
     let user = &mut ctx.accounts.user_account;
     user.thirty_day_volume = user.thirty_day_volume.saturating_add(added_notional);
+    // Record the referral-pool contribution alongside volume. The share is zero when the
+    // trader has no referrer, matching what `settle` earmarked (§ 8.3).
+    let referral_share = if user.referrer == Pubkey::default() {
+        0
+    } else {
+        alloc.referral
+    };
+    user.record_trade(added_notional, referral_share)?;
 
     emit!(PositionIncreased {
         position: position.key(),

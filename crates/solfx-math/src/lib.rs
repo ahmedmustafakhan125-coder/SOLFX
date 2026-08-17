@@ -54,6 +54,7 @@ pub mod margin;
 pub mod oracle;
 pub mod pnl;
 pub mod pricing;
+pub mod referral;
 pub mod types;
 
 pub use error::{MathError, MathResult};

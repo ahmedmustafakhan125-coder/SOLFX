@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/solfx-math", "programs/solfx-core"]
+members = ["crates/solfx-math", "programs/solfx-core", "programs/solfx-referral"]
 
 [workspace.package]
 version = "0.1.0"

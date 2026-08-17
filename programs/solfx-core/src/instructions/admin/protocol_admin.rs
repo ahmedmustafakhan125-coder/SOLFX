@@ -187,3 +187,104 @@ pub fn withdraw_treasury_fees(ctx: Context<WithdrawTreasuryFees>, amount: u64) -
     });
     Ok(())
 }
+
+/// Register (or clear) the referral programme's authority.
+///
+/// Admin-only, and the only knowledge core ever has of the IB programme. Setting
+/// `Pubkey::default()` switches referral payouts off — which is also the launch state,
+/// since a referral program that has not been deployed cannot be trusted with a signature.
+pub fn set_referral_authority(ctx: Context<AdminOnly>, authority: Pubkey) -> Result<()> {
+    ctx.accounts.protocol.referral_authority = authority;
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct PayReferral<'info> {
+    /// The referral programme's PDA, signing via CPI. Checked against the pubkey the admin
+    /// registered — a signature from anyone else is not a rebate.
+    pub referral_authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [PROTOCOL_SEED],
+        bump = protocol.bump,
+        constraint = protocol.referral_authority != Pubkey::default() @ SolfxError::ReferralDisabled,
+        constraint = protocol.referral_authority == referral_authority.key() @ SolfxError::NotReferralAuthority,
+    )]
+    pub protocol: Box<Account<'info, Protocol>>,
+
+    #[account(mut, seeds = [FEE_VAULT_SEED], bump = protocol.fee_vault_bump)]
+    pub fee_vault: Box<Account<'info, anchor_spl::token::TokenAccount>>,
+
+    #[account(
+        mut,
+        constraint = destination.mint == protocol.usdc_mint @ SolfxError::WrongCollateralMint,
+    )]
+    pub destination: Box<Account<'info, anchor_spl::token::TokenAccount>>,
+
+    pub token_program: Program<'info, anchor_spl::token::Token>,
+}
+
+/// Release accrued referral money from the fee vault. **Called only by `solfx-referral`.**
+///
+/// # What this instruction deliberately does not know
+///
+/// Nothing about tiers, IB accounts, sub-broker overrides or who is owed what. Core holds
+/// the money and enforces one arithmetic constraint; the referral programme owns the policy
+/// and can be rewritten, re-audited or replaced without touching a line of the financial
+/// core (§ 5.1).
+///
+/// # The constraint that matters
+///
+/// ```text
+/// total_referral_claimed + amount <= total_referral_accrued
+/// ```
+///
+/// The fee vault holds treasury money as well as referral money. Without this check a bug
+/// — or a compromised referral program — could drain the treasury through a door built for
+/// rebates. With it, the worst a broken referral programme can do is misallocate the
+/// referral pool *among IBs*: bad, visible in the event stream, and bounded by what
+/// referred traders actually generated.
+pub fn pay_referral(ctx: Context<PayReferral>, amount: u64) -> Result<()> {
+    require!(amount > 0, SolfxError::ZeroAmount);
+
+    let protocol = &ctx.accounts.protocol;
+    let claimed_after = protocol
+        .total_referral_claimed
+        .checked_add(amount)
+        .ok_or(SolfxError::MathOverflow)?;
+    require!(
+        claimed_after <= protocol.total_referral_accrued,
+        SolfxError::ReferralClaimExceedsAccrual
+    );
+    require!(
+        ctx.accounts.fee_vault.amount >= amount,
+        SolfxError::InsufficientPoolLiquidity
+    );
+
+    let seeds: &[&[&[u8]]] = &[&[PROTOCOL_SEED, &[protocol.bump]]];
+    anchor_spl::token::transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.key(),
+            anchor_spl::token::Transfer {
+                from: ctx.accounts.fee_vault.to_account_info(),
+                to: ctx.accounts.destination.to_account_info(),
+                authority: ctx.accounts.protocol.to_account_info(),
+            },
+            seeds,
+        ),
+        amount,
+    )?;
+
+    let protocol = &mut ctx.accounts.protocol;
+    protocol.total_referral_claimed = claimed_after;
+
+    emit!(crate::events::ReferralPaid {
+        destination: ctx.accounts.destination.key(),
+        amount,
+        total_claimed: claimed_after,
+        total_accrued: protocol.total_referral_accrued,
+        ts: Clock::get()?.unix_timestamp,
+    });
+    Ok(())
+}

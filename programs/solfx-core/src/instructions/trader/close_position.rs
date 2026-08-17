@@ -422,6 +422,14 @@ fn reduce(
     }
 
     user_account.thirty_day_volume = user_account.thirty_day_volume.saturating_add(notional);
+    // Record the referral-pool contribution alongside volume. The share is zero when the
+    // trader has no referrer, matching what `settle` earmarked (§ 8.3).
+    let referral_share = if user_account.referrer == Pubkey::default() {
+        0
+    } else {
+        alloc.referral
+    };
+    user_account.record_trade(notional, referral_share)?;
 
     emit!(PositionDecreased {
         position: position_key,

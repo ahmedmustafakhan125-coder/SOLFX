@@ -1,6 +1,6 @@
 # Compute Budget
 
-**Measured:** Phase 5, against `solfx_core.so` built with `anchor build` (release profile,
+**Measured:** Phase 6, against `solfx_core.so` built with `anchor build` (release profile,
 `lto = "fat"`, `codegen-units = 1`).
 **Source of truth:** [`programs/solfx-core/tests/compute_budget.rs`](../programs/solfx-core/tests/compute_budget.rs).
 Every figure below is asserted against a ceiling in CI, so a regression fails the build
@@ -113,6 +113,29 @@ The exit path is cheap because it touches no oracle. Redemption is priced from `
 feed to read. That is a consequence of the design rather than an optimisation: an LP's claim
 is on the pool's assets, not on any market's mark.
 
+## Phase 6 measurements — the IB programme
+
+| Instruction | CU | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `open_position` (referred trader) | 59,886 | 120,000 | 50% |
+| `sync_trader` (solfx-referral) | 16,740 | 60,000 | 72% |
+| `claim` → CPI into `solfx-core::pay_referral` | 25,171 | 80,000 | 69% |
+
+Binaries: `solfx_core.so` **905 KB** · `solfx_referral.so` **257 KB**.
+
+### The number that matters is the one that did not move
+
+`open_position` for a **referred** trader costs 59,886 CU against 59,705 for an unreferred
+one — about 180 CU, or 0.3%. Recording a rebate adds two `checked_add`s to an account the
+instruction had already loaded: no CPI, no extra account, no measurable cost.
+
+That is the whole point of deriving accrual from a counter rather than pushing it. § 8.5
+wants the IB ledger to be a growth engine, and a growth engine that taxes every trade is a
+growth engine that eventually gets switched off.
+
+The claim's 25,171 CU includes the cross-program invocation and the SPL transfer, and it is
+paid by the IB at whatever cadence they choose — never on the trading path.
+
 ### Where the cost actually is
 
 | Component | ~CU |
@@ -202,3 +225,4 @@ addition fails with a message that says what happened instead of an access viola
 | 3 | Position lifecycle added. `open_position` at 55,584 CU, 54% under the § 5.5 budget. Binary 472 KB → 683 KB. |
 | 4 | Risk engine added. `liquidate_position` at 59,223 CU, 70% under § 6.8's hard ceiling. Binary 683 KB → 813 KB. |
 | 5 | LP exit path added. `remove_liquidity` at 26,890 CU — no oracle read on the exit path. Binary 813 KB → 888 KB. |
+| 6 | IB programme added as a second program. Referred trades cost +180 CU (+0.3%); the ledger lives in `solfx-referral` (257 KB). Core 888 KB → 905 KB. |

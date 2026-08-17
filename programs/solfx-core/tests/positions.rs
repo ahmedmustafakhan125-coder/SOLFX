@@ -1018,9 +1018,14 @@ fn invariants_hold_across_a_busy_multi_market_session() {
         "treasury took nothing"
     );
     assert!(env.insurance_state().balance > 0, "insurance took nothing");
-    assert!(
-        env.protocol_state().total_referral_accrued > 0,
-        "no referral accrual was recorded"
+    // Neither trader named a referrer, so the referral share is **not** earmarked — it
+    // stays in the fee vault as treasury money (§ 8.3, "unclaimed portion sweeps to
+    // treasury"). Counting it would promise introducing brokers, collectively, more than
+    // was ever set aside for them.
+    assert_eq!(
+        env.protocol_state().total_referral_accrued,
+        0,
+        "an unreferred trader must not accrue a rebate for nobody"
     );
 }
 

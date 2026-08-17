@@ -169,6 +169,14 @@ pub enum SolfxError {
     UtilisationCapReached,
     #[msg("Insurance fund is below its minimum; markets are reduce-only")]
     InsuranceFundDepleted,
+
+    // --- referral (Phase 6) ---
+    #[msg("No referral authority is registered; referral payouts are disabled")]
+    ReferralDisabled,
+    #[msg("Signer is not the registered referral authority")]
+    NotReferralAuthority,
+    #[msg("Claim would exceed the referral pool: the fee vault also holds treasury money")]
+    ReferralClaimExceedsAccrual,
 }
 
 /// Map the maths crate's errors onto program errors.

@@ -154,10 +154,16 @@ pub fn settle(
         .ok_or(SolfxError::MathOverflow)?;
 
     apply_signed(&mut protocol.total_user_collateral, flows.collateral_delta)?;
-    protocol.total_referral_accrued = protocol
-        .total_referral_accrued
-        .checked_add(alloc.referral)
-        .ok_or(SolfxError::MathOverflow)?;
+    // Only earmark the referral share when there is somebody to pay it to. With no
+    // referrer the share stays in the fee vault as treasury money (§ 8.3, "unclaimed
+    // portion sweeps to treasury") — counting it here would promise IBs, collectively,
+    // more than was ever set aside for them.
+    if input.referrer != Pubkey::default() {
+        protocol.total_referral_accrued = protocol
+            .total_referral_accrued
+            .checked_add(alloc.referral)
+            .ok_or(SolfxError::MathOverflow)?;
+    }
 
     market.total_fees_collected = market
         .total_fees_collected

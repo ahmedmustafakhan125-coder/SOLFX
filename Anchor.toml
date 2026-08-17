@@ -6,9 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
+solfx_referral = "J7dwkNcyPjHtRyqkpnqq3wgE6XmYCaENhYZozX2MHsyt"
 solfx_core = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi"
 
 [programs.devnet]
+solfx_referral = "J7dwkNcyPjHtRyqkpnqq3wgE6XmYCaENhYZozX2MHsyt"
 solfx_core = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi"
 
 [registry]

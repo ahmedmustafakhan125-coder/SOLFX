@@ -516,3 +516,64 @@ fn liquidity_instructions_stay_within_their_ceilings() {
 
     println!("===========================================\n");
 }
+
+/// The IB programme (`ARCHITECTURE.md` § 8.5), including the cross-program claim.
+///
+/// The figure that matters here is **zero**: recording a rebate costs the trading path
+/// nothing, because core only bumps two counters on an account it had already loaded. The
+/// referral programme's own instructions are called rarely and by IBs, not on the hot path.
+#[test]
+fn referral_instructions_stay_within_their_ceilings() {
+    println!("\n=== SolFX Phase 6 compute-unit baselines ===");
+
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+    env.seed_pool(1_000_000 * ONE_USDC);
+    env.init_referral(2_000);
+
+    let admin = env.admin.insecure_clone();
+    let ib = env.register_ib(Pubkey::default());
+    let trader = env.new_user(200_000 * ONE_USDC, ib.pubkey());
+    env.deposit(&trader, 100_000 * ONE_USDC).unwrap();
+
+    // A referred trade, for comparison against the unreferred figure above.
+    let mini = ONE_LOT / 10;
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let ix = env.open_ix(
+        &trader,
+        0,
+        0,
+        Direction::Long,
+        mini,
+        5_000 * ONE_USDC,
+        i64::MAX,
+        p,
+        None,
+        None,
+    );
+    let kp = trader.keypair.insecure_clone();
+    record(
+        "open_position (referred trader)",
+        env.send_metered(ix, &[&kp]),
+        120_000,
+    );
+    env.track_position(Env::position_pda(&trader.account, 0, 0));
+
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    env.close(&trader, 0, 0, 1, p).unwrap();
+
+    let ix = env.sync_trader_ix(&ib.pubkey(), None, &trader, admin.pubkey());
+    record("sync_trader", env.send_metered(ix, &[&admin]), 60_000);
+
+    let dest = env.new_token_account_for(ib.pubkey());
+    let ix = env.claim_rebate_ix(&ib, dest);
+    let ib_kp = ib.insecure_clone();
+    record(
+        "claim (CPI into solfx-core)",
+        env.send_metered(ix, &[&ib_kp]),
+        80_000,
+    );
+
+    println!("===========================================\n");
+}

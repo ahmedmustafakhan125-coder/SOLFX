@@ -258,6 +258,16 @@ pub mod solfx_core {
         instructions::lp::remove_liquidity(ctx, min_usdc_out)
     }
 
+    /// Register the referral programme's authority (§ 5.1). Admin only.
+    pub fn set_referral_authority(ctx: Context<AdminOnly>, authority: Pubkey) -> Result<()> {
+        instructions::admin::protocol_admin::set_referral_authority(ctx, authority)
+    }
+
+    /// Release accrued referral money. Callable only by the registered referral programme.
+    pub fn pay_referral(ctx: Context<PayReferral>, amount: u64) -> Result<()> {
+        instructions::admin::protocol_admin::pay_referral(ctx, amount)
+    }
+
     /// Sweep the treasury's accumulated fees to a destination.
     pub fn withdraw_treasury_fees(ctx: Context<WithdrawTreasuryFees>, amount: u64) -> Result<()> {
         instructions::admin::protocol_admin::withdraw_treasury_fees(ctx, amount)

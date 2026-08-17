@@ -62,7 +62,11 @@ pub struct Protocol {
     /// is exactly the ledger they cannot audit — which is the complaint the whole programme
     /// exists to answer (§ 8.5).
     pub total_referral_accrued: u64,
-    /// Lifetime referral paid out. Phase 6 increments this on claim.
+    /// Lifetime referral paid out. Incremented on every claim.
+    ///
+    /// `total_referral_claimed <= total_referral_accrued` is the constraint that keeps a
+    /// claim inside the referral pool: the fee vault also holds treasury money, and nothing
+    /// about a rebate entitles an IB to reach it.
     pub total_referral_claimed: u64,
     /// Cumulative shortfall where a position closed owing more than its collateral.
     ///
@@ -95,9 +99,25 @@ pub struct Protocol {
     /// Cumulative USDC swept out of the fee vault. The last term invariant I7 needs.
     pub total_treasury_withdrawn: u64,
 
+    // --- appended in Phase 6 -----------------------------------------------------------
+    /// The PDA of `solfx-referral` that may draw accrued rebates out of the fee vault.
+    ///
+    /// # Why core stores only a key
+    ///
+    /// § 5.1 keeps the referral programme separate so the growth engine can iterate without
+    /// touching a financial core that wants to be frozen after audit. That only works if the
+    /// dependency points **one way**: the referral program reads core's public state and
+    /// calls in to claim, while core knows nothing about it beyond this pubkey. Core has no
+    /// referral logic, no tier table, and no idea what a rebate is — it holds the money and
+    /// honours a signature.
+    ///
+    /// `Pubkey::default()` disables referral payouts entirely, which is the state the
+    /// protocol launches in until a referral program is deployed and registered.
+    pub referral_authority: Pubkey,
+
     /// Forward-compatible padding (§ 5.6). New fields consume these bytes; nothing already
     /// on chain shifts. Append only — never reorder, never retype.
-    pub _reserved: [u8; 88],
+    pub _reserved: [u8; 56],
 }
 
 impl Protocol {

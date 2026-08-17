@@ -320,6 +320,12 @@ impl Env {
         });
         svm.add_program(solfx_core::ID, &so).unwrap();
 
+        // The referral programme, loaded alongside core so the Phase 6 suite can exercise
+        // the real CPI rather than a stand-in. Optional: every earlier suite runs without it.
+        if let Ok(ref_so) = std::fs::read(referral_so_path()) {
+            svm.add_program(solfx_referral::ID, &ref_so).unwrap();
+        }
+
         let admin = Keypair::new();
         let guardian = Keypair::new();
         svm.airdrop(&admin.pubkey(), 1_000 * 1_000_000_000).unwrap();
@@ -1629,6 +1635,199 @@ impl Env {
             .unwrap();
     }
 
+    // --- referral programme (Phase 6) ----------------------------------------------------
+
+    pub fn referral_config_pda() -> Pubkey {
+        Pubkey::find_program_address(&[solfx_referral::CONFIG_SEED], &solfx_referral::ID).0
+    }
+
+    pub fn ib_pda(authority: &Pubkey) -> Pubkey {
+        Pubkey::find_program_address(
+            &[solfx_referral::IB_SEED, authority.as_ref()],
+            &solfx_referral::ID,
+        )
+        .0
+    }
+
+    pub fn link_pda(ib: &Pubkey, user_account: &Pubkey) -> Pubkey {
+        Pubkey::find_program_address(
+            &[
+                solfx_referral::LINK_SEED,
+                ib.as_ref(),
+                user_account.as_ref(),
+            ],
+            &solfx_referral::ID,
+        )
+        .0
+    }
+
+    /// Stand up the referral programme and register it with core, in the two steps the
+    /// design requires: the referral admin creates the config, then the *core* admin decides
+    /// to trust its PDA.
+    pub fn init_referral(&mut self, override_bps: u16) {
+        let admin = self.admin.insecure_clone();
+        let ix = Instruction {
+            program_id: solfx_referral::ID,
+            accounts: solfx_referral::accounts::InitializeReferral {
+                admin: admin.pubkey(),
+                config: Self::referral_config_pda(),
+                protocol: self.protocol,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_referral::instruction::InitializeReferral { override_bps }.data(),
+        };
+        self.send(ix, &[&admin])
+            .expect("initialize_referral failed");
+
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::AdminOnly {
+                admin: admin.pubkey(),
+                protocol: self.protocol,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::SetReferralAuthority {
+                authority: Self::referral_config_pda(),
+            }
+            .data(),
+        };
+        self.send(ix, &[&admin])
+            .expect("set_referral_authority failed");
+    }
+
+    /// Register an introducing broker, optionally under a parent.
+    pub fn register_ib(&mut self, parent: Pubkey) -> Keypair {
+        let kp = Keypair::new();
+        self.svm.airdrop(&kp.pubkey(), 100 * 1_000_000_000).unwrap();
+        let ix = Instruction {
+            program_id: solfx_referral::ID,
+            accounts: solfx_referral::accounts::RegisterIb {
+                authority: kp.pubkey(),
+                config: Self::referral_config_pda(),
+                ib_account: Self::ib_pda(&kp.pubkey()),
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_referral::instruction::RegisterIb { parent }.data(),
+        };
+        self.send(ix, &[&kp]).expect("register_ib failed");
+        kp
+    }
+
+    pub fn sync_trader_ix(
+        &self,
+        ib_authority: &Pubkey,
+        parent_authority: Option<&Pubkey>,
+        user: &User,
+        payer: Pubkey,
+    ) -> Instruction {
+        let ib = Self::ib_pda(ib_authority);
+        Instruction {
+            program_id: solfx_referral::ID,
+            accounts: solfx_referral::accounts::SyncTrader {
+                payer,
+                config: Self::referral_config_pda(),
+                ib_account: ib,
+                parent_ib: parent_authority.map(Self::ib_pda),
+                user_account: user.account,
+                link: Self::link_pda(&ib, &user.account),
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_referral::instruction::SyncTrader {}.data(),
+        }
+    }
+
+    /// Anyone may sync; the harness uses the protocol admin as a convenient stranger.
+    pub fn sync_trader(
+        &mut self,
+        ib_authority: &Pubkey,
+        parent_authority: Option<&Pubkey>,
+        user: &User,
+    ) -> TestResult {
+        let payer = self.admin.insecure_clone();
+        let ix = self.sync_trader_ix(ib_authority, parent_authority, user, payer.pubkey());
+        self.send(ix, &[&payer])
+    }
+
+    pub fn claim_rebate_ix(&self, ib: &Keypair, destination: Pubkey) -> Instruction {
+        Instruction {
+            program_id: solfx_referral::ID,
+            accounts: solfx_referral::accounts::Claim {
+                authority: ib.pubkey(),
+                config: Self::referral_config_pda(),
+                ib_account: Self::ib_pda(&ib.pubkey()),
+                protocol: self.protocol,
+                fee_vault: self.fee_vault,
+                destination,
+                solfx_core: solfx_core::ID,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_referral::instruction::Claim {}.data(),
+        }
+    }
+
+    pub fn claim_rebate(&mut self, ib: &Keypair, destination: Pubkey) -> TestResult {
+        let ix = self.claim_rebate_ix(ib, destination);
+        let kp = ib.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn ib_state(&self, authority: &Pubkey) -> solfx_referral::IbAccount {
+        self.read(&Self::ib_pda(authority))
+    }
+
+    pub fn referral_config(&self) -> solfx_referral::ReferralConfig {
+        self.read(&Self::referral_config_pda())
+    }
+
+    /// A USDC account an IB can be paid into.
+    pub fn new_token_account_for(&mut self, owner: Pubkey) -> Pubkey {
+        let key = Pubkey::new_unique();
+        let mint = self.usdc_mint;
+        self.write_token_account(key, mint, owner, 0);
+        key
+    }
+
+    /// Rewrite a trader's account in place.
+    ///
+    /// Used to fast-forward `lifetime_volume` to a tier boundary: reaching $5M honestly
+    /// would take ~230 round trips, which measures LiteSVM rather than the tier logic.
+    pub fn patch_user(&mut self, user: &User, f: impl FnOnce(&mut UserAccount)) {
+        let mut acct = self.user_state(user);
+        f(&mut acct);
+        self.overwrite_account(user.account, UserAccount::DISCRIMINATOR, &acct);
+    }
+
+    /// Rewrite an IB account in place — used to prove core's pool cap holds even when the
+    /// referral programme asks for more than it should.
+    pub fn patch_ib(&mut self, authority: &Pubkey, f: impl FnOnce(&mut solfx_referral::IbAccount)) {
+        let key = Self::ib_pda(authority);
+        let mut acct: solfx_referral::IbAccount = self.read(&key);
+        f(&mut acct);
+        self.overwrite_account(key, solfx_referral::IbAccount::DISCRIMINATOR, &acct);
+    }
+
+    fn overwrite_account<T: AnchorSerialize>(&mut self, key: Pubkey, disc: &[u8], value: &T) {
+        let mut data = disc.to_vec();
+        value.serialize(&mut data).unwrap();
+        let existing = self.svm.get_account(&key).unwrap();
+        self.svm
+            .set_account(
+                key,
+                SvmAccount {
+                    lamports: existing.lamports,
+                    data,
+                    owner: existing.owner,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
     // --- invariants (§ 12.3) ------------------------------------------------------------
 
     /// **I1**: `CollateralVault.amount == Σ(UserAccount.free) + Σ(Position.collateral)`.
@@ -1783,6 +1982,8 @@ impl Env {
     ///            + Σ(LP deposits)           − Σ(LP withdrawals)
     ///            + Σ(insurance deposits)
     ///                                       − Σ(liquidator rewards)
+    ///                                       − Σ(treasury sweeps)
+    ///                                       − Σ(referral claims)
     /// ```
     ///
     /// Nothing is created and nothing is destroyed. Trades only move value *between* the
@@ -1801,19 +2002,22 @@ impl Env {
             - p.total_withdrawals
             - pool.total_withdrawn
             - p.total_liquidator_paid
-            - p.total_treasury_withdrawn;
+            - p.total_treasury_withdrawn
+            - p.total_referral_claimed;
         assert_eq!(
             total,
             expected,
             "I7 broken: vaults hold {total}, expected {expected} \
-             (trader in {} out {} | LP in {} out {} | seeded {} | liquidators {} | treasury {})",
+             (trader in {} out {} | LP in {} out {} | seeded {} | liquidators {} | \
+             treasury {} | referral {})",
             p.total_deposits,
             p.total_withdrawals,
             pool.total_deposited,
             pool.total_withdrawn,
             self.external_deposits,
             p.total_liquidator_paid,
-            p.total_treasury_withdrawn
+            p.total_treasury_withdrawn,
+            p.total_referral_claimed
         );
     }
 
@@ -1891,6 +2095,10 @@ use anchor_lang::solana_program::program_pack::Pack;
 
 fn pda(seeds: &[&[u8]]) -> Pubkey {
     Pubkey::find_program_address(seeds, &solfx_core::ID).0
+}
+
+fn referral_so_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy/solfx_referral.so")
 }
 
 fn so_path() -> std::path::PathBuf {

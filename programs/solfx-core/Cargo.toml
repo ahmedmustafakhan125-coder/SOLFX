@@ -52,3 +52,6 @@ solana-transaction = "4"
 # and so does this program via `#[program]`. Linking a test binary against both without it
 # fails with "duplicate symbol: entrypoint".
 spl-token = { version = "9", features = ["no-entrypoint"] }
+# The referral programme, for the Phase 6 two-program integration suite. `no-entrypoint`
+# keeps its entrypoint symbol out of the test binary, which already has core's.
+solfx-referral = { path = "../solfx-referral", features = ["no-entrypoint"] }

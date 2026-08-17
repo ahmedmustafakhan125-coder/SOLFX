@@ -271,6 +271,14 @@ pub fn open_position(
         .checked_add(1)
         .ok_or(SolfxError::MathOverflow)?;
     user.thirty_day_volume = user.thirty_day_volume.saturating_add(notional);
+    // Record the referral-pool contribution alongside volume. The share is zero when the
+    // trader has no referrer, matching what `settle` earmarked (§ 8.3).
+    let referral_share = if user.referrer == Pubkey::default() {
+        0
+    } else {
+        alloc.referral
+    };
+    user.record_trade(notional, referral_share)?;
 
     emit!(PositionOpened {
         position: position.key(),

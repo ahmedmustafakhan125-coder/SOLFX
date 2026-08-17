@@ -399,3 +399,16 @@ pub struct TreasuryFeesWithdrawn {
     pub amount: u64,
     pub ts: i64,
 }
+
+/// Referral money left the fee vault for the referral programme.
+///
+/// Publishes both running totals so anyone can check the pool has not been over-drawn
+/// without reading protocol state — the audit property the IB pitch depends on.
+#[event]
+pub struct ReferralPaid {
+    pub destination: Pubkey,
+    pub amount: u64,
+    pub total_claimed: u64,
+    pub total_accrued: u64,
+    pub ts: i64,
+}
