@@ -19,11 +19,13 @@ pub mod close_position;
 pub mod flows;
 pub mod increase_position;
 pub mod open_position;
+pub mod trigger;
 
 pub use adjust_collateral::*;
 pub use close_position::*;
 pub use increase_position::*;
 pub use open_position::*;
+pub use trigger::*;
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Transfer};

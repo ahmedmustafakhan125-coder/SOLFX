@@ -577,3 +577,158 @@ fn referral_instructions_stay_within_their_ceilings() {
 
     println!("===========================================\n");
 }
+
+/// Keepers (`ARCHITECTURE.md` § 15, Phase 7).
+#[test]
+fn keeper_instructions_stay_within_their_ceilings() {
+    println!("\n=== SolFX Phase 7 compute-unit baselines ===");
+
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+    env.seed_pool(1_000_000 * ONE_USDC);
+    env.seed_insurance(50_000 * ONE_USDC);
+
+    let user = env.new_user(200_000 * ONE_USDC, Pubkey::default());
+    env.deposit(&user, 100_000 * ONE_USDC).unwrap();
+
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    env.open(
+        &user,
+        0,
+        0,
+        Direction::Long,
+        ONE_LOT / 10,
+        5_000 * ONE_USDC,
+        i64::MAX,
+        p,
+    )
+    .unwrap();
+    env.track_position(Env::position_pda(&user.account, 0, 0));
+
+    let kp = user.keypair.insecure_clone();
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let ix = env.place_trigger_ix(
+        &user,
+        0,
+        0,
+        0,
+        solfx_core::state::TriggerKind::StopLoss,
+        1_080_430_000,
+        ONE_LOT / 10,
+        p,
+    );
+    record("place_trigger_order", env.send_metered(ix, &[&kp]), 60_000);
+
+    // A stranger fires it — the case the budget actually has to cover, since this is the
+    // instruction that has to land during a fast market.
+    let keeper = solana_keypair::Keypair::new();
+    env.svm
+        .airdrop(&keeper.pubkey(), 100 * 1_000_000_000)
+        .unwrap();
+    let hit = env.post_price_now(FEED_EUR_USD, PriceSpec::at(107_943_000).conf(13_893));
+    let ix = env.execute_trigger_ix(&user, 0, 0, 0, keeper.pubkey(), hit);
+    record(
+        "execute_trigger_order",
+        env.send_metered(ix, &[&keeper]),
+        200_000,
+    );
+
+    println!("===========================================\n");
+}
+
+/// **Every keeper instruction must fit in one 1232-byte packet.**
+///
+/// # Why this is a hard requirement and not a nice-to-have
+///
+/// A transaction that does not fit has to be split, and splitting a liquidation means holding
+/// intermediate state in an account between two transactions that may land in different
+/// blocks. During the congestion spike that made the liquidation necessary — which is the only
+/// time it matters — the second half is exactly the one that fails to land. So the size limit
+/// is really a statement about whether liquidation works under load at all.
+///
+/// It is also the measurement behind the design note in `crates/solfx-keeper/src/pyth.rs`:
+/// the keeper references Pyth's sponsored price-feed accounts rather than posting its own
+/// updates, because a signed Wormhole update does not fit alongside seventeen accounts. The
+/// numbers this test prints are what that claim rests on, so they are asserted rather than
+/// asserted-in-prose.
+#[test]
+fn every_keeper_transaction_fits_in_one_packet() {
+    /// Solana's per-packet limit. A transaction over this is not slow — it is undeliverable.
+    const PACKET_LIMIT: usize = 1232;
+
+    let mut env = Env::new();
+    env.init_protocol();
+    // The widest shape the protocol can produce: a synthetic pair (two oracle legs) whose
+    // quote currency is not USD (a third, for conversion). If it fits, everything fits.
+    env.list_and_activate(0, &MarketSpec::widest());
+    env.seed_pool(1_000_000 * ONE_USDC);
+    env.seed_insurance(50_000 * ONE_USDC);
+
+    let user = env.new_user(200_000 * ONE_USDC, Pubkey::default());
+    env.deposit(&user, 100_000 * ONE_USDC).unwrap();
+    let feeds = env.post_widest_now(PriceSpec::default());
+    let open = env.open_ix(
+        &user,
+        0,
+        0,
+        Direction::Long,
+        ONE_LOT / 10,
+        5_000 * ONE_USDC,
+        i64::MAX,
+        feeds.0,
+        Some(feeds.1),
+        Some(feeds.2),
+    );
+    let owner = user.keypair.insecure_clone();
+    env.send(open, &[&owner]).unwrap();
+
+    let keeper = solana_keypair::Keypair::new();
+    env.svm
+        .airdrop(&keeper.pubkey(), 100 * 1_000_000_000)
+        .unwrap();
+    let reward = env.new_token_account_for(keeper.pubkey());
+
+    println!("\n=== SolFX Phase 7 transaction sizes (widest market) ===");
+    let cases: Vec<(&str, Instruction)> = vec![
+        (
+            "liquidate_position",
+            env.liquidate_ix(
+                &user,
+                0,
+                0,
+                keeper.pubkey(),
+                reward,
+                feeds.0,
+                Some(feeds.1),
+                Some(feeds.2),
+            ),
+        ),
+        (
+            "execute_trigger_order",
+            env.execute_trigger_ix(&user, 0, 0, 0, keeper.pubkey(), feeds.0),
+        ),
+        (
+            "crank_market_price",
+            env.crank_ix(0, feeds.0, Some(feeds.1), Some(feeds.2), keeper.pubkey()),
+        ),
+        ("crank_funding", env.crank_funding_ix(0, keeper.pubkey())),
+        (
+            "crank_market_session",
+            env.crank_session_ix(0, keeper.pubkey(), Some(feeds.0)),
+        ),
+    ];
+
+    for (name, ix) in cases {
+        // Measured the way a keeper actually builds it: with the compute-budget instructions
+        // in front, because those are not optional in production and they cost bytes too.
+        let size = env.measure_keeper_tx(ix, &keeper);
+        println!("{name:<26} {size:>5} bytes   (limit {PACKET_LIMIT})");
+        assert!(
+            size <= PACKET_LIMIT,
+            "{name} serialises to {size} bytes, over the {PACKET_LIMIT}-byte packet limit. \
+             It cannot be sent as a single transaction."
+        );
+    }
+    println!("=======================================================\n");
+}

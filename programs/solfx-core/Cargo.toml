@@ -48,6 +48,10 @@ solana-account = "4"
 solana-keypair = "3"
 solana-signer = "3"
 solana-transaction = "4"
+# For the Phase 7 packet-size bound: a keeper transaction is measured the way a keeper
+# actually builds it, compute-budget instructions included.
+solana-compute-budget-interface = "3"
+solana-message = { version = "3", features = ["bincode"] }
 # `no-entrypoint` is required, not optional: spl-token exports a symbol named `entrypoint`
 # and so does this program via `#[program]`. Linking a test binary against both without it
 # fails with "duplicate symbol: entrypoint".

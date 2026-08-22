@@ -45,7 +45,7 @@ use solfx_core::instructions::admin::{
 };
 use solfx_core::state::{
     Direction, FeedKind, InsuranceFund, LpPool, Market, MarketStatus, Position, PriceSource,
-    Protocol, QuoteConversionKind, UserAccount,
+    Protocol, QuoteConversionKind, TriggerKind, UserAccount,
 };
 
 /// The Pyth pull-oracle receiver. Taken from the SDK rather than written out, so the tests
@@ -241,6 +241,27 @@ impl MarketSpec {
         s.params.mmr_bps = 200;
         s.params.liquidation_fee_bps = 100;
         s.params.max_conf_bps = 30;
+        s
+    }
+
+    /// The **widest account shape** the protocol can produce: a synthetic pair (two oracle
+    /// legs) that is also non-USD-quoted (a third leg, for conversion — correction C-3).
+    ///
+    /// Not a product anyone would list. It exists so the packet-size bound in
+    /// `compute_budget.rs` is measured against the worst case rather than a typical one, with
+    /// three *distinct* feed ids so the transaction cannot quietly shrink by deduplicating a
+    /// repeated account key.
+    pub fn widest() -> Self {
+        let mut s = Self::base("WIDEST", FEED_EUR_USD);
+        s.params.price_source = PriceSource::Synthetic { invert_quote: true };
+        s.params.secondary_feed_id = FEED_GBP_USD;
+        s.params.quote_conversion_feed = FEED_USD_INR;
+        s.params.quote_conversion_kind = QuoteConversionKind::QuotePerUsd;
+        s.params.max_leverage = 20;
+        s.params.imr_bps = 500;
+        s.params.mmr_bps = 250;
+        s.params.liquidation_fee_bps = 100;
+        s.params.max_conf_bps = 50;
         s
     }
 
@@ -819,6 +840,36 @@ impl Env {
     }
 
     /// Crank a direct, USD-quoted market.
+    /// All three price accounts for [`MarketSpec::widest`], posted at the current clock.
+    pub fn post_widest_now(&mut self, spec: PriceSpec) -> (Pubkey, Pubkey, Pubkey) {
+        let primary = self.post_price_now(FEED_EUR_USD, spec);
+        let secondary = self.post_price_now(FEED_GBP_USD, spec);
+        let conversion = self.post_price_now(FEED_USD_INR, spec);
+        (primary, secondary, conversion)
+    }
+
+    /// Serialized size of a keeper transaction, built the way a keeper actually builds it.
+    ///
+    /// The compute-budget instructions are included because they are not optional in
+    /// production — a liquidation sent without a priority-fee bid does not land during the
+    /// congestion that made it necessary — and they cost bytes like anything else.
+    pub fn measure_keeper_tx(&self, ix: Instruction, keeper: &Keypair) -> usize {
+        let ixs = vec![
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(
+                400_000,
+            ),
+            solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
+                50_000,
+            ),
+            ix,
+        ];
+        let message = solana_message::Message::new(&ixs, Some(&keeper.pubkey()));
+        let signatures = message.header.num_required_signatures as usize;
+        // Legacy wire format: a short-vec length byte, then 64 bytes per signature, then the
+        // message. Every keeper transaction has one signer, so the length fits in one byte.
+        1 + signatures * 64 + message.serialize().len()
+    }
+
     pub fn crank(&mut self, index: u16, price: Pubkey) -> TestResult {
         let keeper = self.admin.insecure_clone();
         let ix = self.crank_ix(index, price, None, None, keeper.pubkey());
@@ -860,6 +911,12 @@ impl Env {
     }
     pub fn insurance_state(&self) -> InsuranceFund {
         self.read(&self.insurance_fund)
+    }
+
+    /// Lamports held by an account. Used for the trigger-keeper tip, which is paid as rent
+    /// rather than USDC.
+    pub fn sol_balance(&self, key: &Pubkey) -> u64 {
+        self.svm.get_account(key).map_or(0, |a| a.lamports)
     }
 
     pub fn token_balance(&self, key: &Pubkey) -> u64 {
@@ -1826,6 +1883,163 @@ impl Env {
                 },
             )
             .unwrap();
+    }
+
+    // --- trigger orders (Phase 7) --------------------------------------------------------
+
+    pub fn trigger_pda(position: &Pubkey, order_id: u8) -> Pubkey {
+        pda(&[TRIGGER_SEED, position.as_ref(), &[order_id]])
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn place_trigger_ix(
+        &self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        order_id: u8,
+        kind: TriggerKind,
+        trigger_price: i64,
+        size_base: u64,
+        price: Pubkey,
+    ) -> Instruction {
+        let position = Self::position_pda(&user.account, market_index, nonce);
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::PlaceTriggerOrder {
+                authority: user.pubkey(),
+                protocol: self.protocol,
+                user_account: user.account,
+                market: Self::market_pda(market_index),
+                position,
+                trigger_order: Self::trigger_pda(&position, order_id),
+                price_update: price,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::PlaceTriggerOrder {
+                order_id,
+                kind,
+                trigger_price,
+                size_base,
+            }
+            .data(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn place_trigger(
+        &mut self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        order_id: u8,
+        kind: TriggerKind,
+        trigger_price: i64,
+        size_base: u64,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix = self.place_trigger_ix(
+            user,
+            market_index,
+            nonce,
+            order_id,
+            kind,
+            trigger_price,
+            size_base,
+            price,
+        );
+        let kp = user.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn cancel_trigger_ix(&self, user: &User, position: Pubkey, order_id: u8) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::CancelTriggerOrder {
+                authority: user.pubkey(),
+                trigger_order: Self::trigger_pda(&position, order_id),
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::CancelTriggerOrder {}.data(),
+        }
+    }
+
+    pub fn cancel_trigger(&mut self, user: &User, position: Pubkey, order_id: u8) -> TestResult {
+        let ix = self.cancel_trigger_ix(user, position, order_id);
+        let kp = user.keypair.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn execute_trigger_ix(
+        &self,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        order_id: u8,
+        keeper: Pubkey,
+        price: Pubkey,
+    ) -> Instruction {
+        let position = Self::position_pda(&user.account, market_index, nonce);
+        let (collateral_vault, lp_pool, lp_vault, insurance_fund, insurance_vault, fee_vault) =
+            self.settlement_keys();
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::ExecuteTriggerOrder {
+                keeper,
+                protocol: self.protocol,
+                user_account: user.account,
+                market: Self::market_pda(market_index),
+                position,
+                trigger_order: Self::trigger_pda(&position, order_id),
+                collateral_vault,
+                lp_pool,
+                lp_vault,
+                insurance_fund,
+                insurance_vault,
+                fee_vault,
+                price_update: price,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::ExecuteTriggerOrder {}.data(),
+        }
+    }
+
+    /// Fire a trigger as a third party — the case that matters, since a trader's stop must
+    /// not depend on the operator's bot being up.
+    pub fn execute_trigger_as(
+        &mut self,
+        keeper: &Keypair,
+        user: &User,
+        market_index: u16,
+        nonce: u8,
+        order_id: u8,
+        price: Pubkey,
+    ) -> TestResult {
+        let ix =
+            self.execute_trigger_ix(user, market_index, nonce, order_id, keeper.pubkey(), price);
+        let kp = keeper.insecure_clone();
+        self.send(ix, &[&kp])
+    }
+
+    pub fn trigger_state(
+        &self,
+        position: &Pubkey,
+        order_id: u8,
+    ) -> solfx_core::state::TriggerOrder {
+        self.read(&Self::trigger_pda(position, order_id))
+    }
+
+    pub fn trigger_exists(&self, position: &Pubkey, order_id: u8) -> bool {
+        self.svm
+            .get_account(&Self::trigger_pda(position, order_id))
+            .is_some_and(|a| !a.data.is_empty())
     }
 
     // --- invariants (§ 12.3) ------------------------------------------------------------

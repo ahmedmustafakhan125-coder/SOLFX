@@ -412,3 +412,53 @@ pub struct ReferralPaid {
     pub total_accrued: u64,
     pub ts: i64,
 }
+
+// --- trigger orders (Phase 7) -------------------------------------------------------------
+
+#[event]
+pub struct TriggerOrderPlaced {
+    pub order: Pubkey,
+    pub position: Pubkey,
+    pub authority: Pubkey,
+    pub market_index: u16,
+    pub order_id: u8,
+    /// 0 = take-profit, 1 = stop-loss.
+    pub kind: u8,
+    pub trigger_price: i64,
+    pub size_base: u64,
+    /// The oracle price when the order was accepted — the evidence the trigger was on the
+    /// unreached side of the market at placement.
+    pub spot_at_placement: i64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct TriggerOrderCancelled {
+    pub order: Pubkey,
+    pub position: Pubkey,
+    pub authority: Pubkey,
+    pub order_id: u8,
+    pub ts: i64,
+}
+
+/// A trigger fired.
+///
+/// Publishes **both** the trigger price and the oracle price that met it, because the gap
+/// between them is the trader's slippage — and a stop-loss that fills far past its trigger in
+/// a gap is the moment a trader most wants to see the arithmetic rather than be told a
+/// number.
+#[event]
+pub struct TriggerOrderExecuted {
+    pub order: Pubkey,
+    pub position: Pubkey,
+    pub keeper: Pubkey,
+    pub market_index: u16,
+    pub order_id: u8,
+    pub kind: u8,
+    pub trigger_price: i64,
+    pub oracle_price: i64,
+    pub size_base: u64,
+    /// The order account's rent, released to whoever fired it.
+    pub keeper_tip_lamports: u64,
+    pub ts: i64,
+}

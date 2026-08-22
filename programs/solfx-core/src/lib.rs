@@ -66,7 +66,7 @@ pub mod risk;
 pub mod state;
 
 use instructions::*;
-use state::MarketStatus;
+use state::{MarketStatus, TriggerKind};
 
 declare_id!("2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi");
 
@@ -282,6 +282,28 @@ pub mod solfx_core {
         instructions::keeper::liquidate::deposit_insurance_fund(ctx, amount)
     }
 
+    /// Attach a take-profit or stop-loss to a position (§ 5.4).
+    pub fn place_trigger_order(
+        ctx: Context<PlaceTriggerOrder>,
+        order_id: u8,
+        kind: TriggerKind,
+        trigger_price: i64,
+        size_base: u64,
+    ) -> Result<()> {
+        instructions::trader::trigger::place_trigger_order(
+            ctx,
+            order_id,
+            kind,
+            trigger_price,
+            size_base,
+        )
+    }
+
+    /// Withdraw a resting order and reclaim its rent. Owner only.
+    pub fn cancel_trigger_order(ctx: Context<CancelTriggerOrder>) -> Result<()> {
+        instructions::trader::trigger::cancel_trigger_order(ctx)
+    }
+
     // --- keeper: permissionless -------------------------------------------------------
 
     /// Read the oracle, record the price, trip the deviation breaker if it fires.
@@ -307,5 +329,10 @@ pub mod solfx_core {
     /// Force-close a profitable position to socialise an uncovered shortfall (§ 6.9).
     pub fn auto_deleverage(ctx: Context<AutoDeleverage>) -> Result<()> {
         instructions::keeper::adl::auto_deleverage(ctx)
+    }
+
+    /// Fire a take-profit or stop-loss the oracle has met. Permissionless, and tipped.
+    pub fn execute_trigger_order(ctx: Context<ExecuteTriggerOrder>) -> Result<()> {
+        instructions::trader::trigger::execute_trigger_order(ctx)
     }
 }

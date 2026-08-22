@@ -177,6 +177,14 @@ pub enum SolfxError {
     NotReferralAuthority,
     #[msg("Claim would exceed the referral pool: the fee vault also holds treasury money")]
     ReferralClaimExceedsAccrual,
+
+    // --- trigger orders (Phase 7) ---
+    #[msg("Trigger price must be positive")]
+    InvalidTriggerPrice,
+    #[msg("Trigger is already met at the current price; that is a market close, not an order")]
+    TriggerAlreadyMet,
+    #[msg("Trigger condition has not been met")]
+    TriggerNotMet,
 }
 
 /// Map the maths crate's errors onto program errors.

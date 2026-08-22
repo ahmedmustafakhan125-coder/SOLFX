@@ -1,0 +1,42 @@
+[package]
+name = "solfx-keeper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Off-chain keepers: liquidator, trigger executor, funding and session cranks."
+
+[dependencies]
+solfx-math = { path = "../solfx-math" }
+solfx-core = { path = "../../programs/solfx-core", features = ["no-entrypoint"] }
+
+anchor-lang = "1.1.2"
+pyth-solana-receiver-sdk = "2.0.0"
+
+solana-client = "3"
+solana-account-decoder-client-types = "3"
+solana-commitment-config = "3"
+solana-compute-budget-interface = "3"
+solana-instruction = "3"
+solana-keypair = "3"
+solana-message = "3"
+solana-pubkey = "3"
+solana-signer = "3"
+solana-transaction = "3"
+solana-rpc-client-api = "3"
+
+anyhow = "1"
+base64 = "0.22"
+bs58 = "0.5"
+clap = { version = "4", features = ["derive", "env"] }
+futures-util = "0.3"
+hex = "0.4"
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[lints]
+workspace = true

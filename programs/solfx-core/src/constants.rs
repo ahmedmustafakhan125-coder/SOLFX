@@ -31,6 +31,8 @@ pub const LP_VAULT_SEED: &[u8] = b"lp_vault";
 pub const LP_MINT_SEED: &[u8] = b"lp_mint";
 /// `["lp_withdraw", authority]`
 pub const LP_WITHDRAW_SEED: &[u8] = b"lp_withdraw";
+/// `["order", position, order_id]` — a resting take-profit or stop-loss.
+pub const TRIGGER_SEED: &[u8] = b"order";
 
 /// USDC has six decimals, matching `solfx_math::constants::QUOTE_PRECISION`.
 ///
@@ -135,3 +137,22 @@ pub const MIN_LIQUIDATOR_REWARD: u64 = 1_000_000;
 /// So both must be exceeded: the ratio from § 7.4, and an imbalance worth at least 10% of
 /// AUM. That keeps the specified control and makes it well-defined at zero.
 pub const SKEW_CAP_MIN_IMBALANCE_BPS_OF_AUM: u128 = 1_000;
+
+// # A trigger order's account rent **is** the keeper's fee
+//
+// ## Why rent rather than a USDC tip
+//
+// A liquidation is urgent — it competes for blockspace during the congestion spike that
+// caused it — so § 6.8 pays a share of the penalty and floors it at a dollar. A trigger is
+// not urgent in the same way: nothing is insolvent, and a few seconds of delay costs the
+// trader slippage rather than costing the pool a bad debt.
+//
+// But the fee cannot be **zero**, because a permissionless instruction nobody is paid to
+// call is a promise with no mechanism behind it — the trader's stop would depend on our bot
+// being up, which is the arrangement putting the order on chain was meant to escape.
+//
+// Closing the account to whoever fires it solves this with no new machinery: the trader
+// pre-funded the rent when they placed the order, so the party who wanted the order pays for
+// it, the protocol pays nothing, no token account is needed, and no USDC moves — so
+// invariant I7 is untouched. At current rent that is roughly 0.0016 SOL, comfortably above
+// the transaction cost.

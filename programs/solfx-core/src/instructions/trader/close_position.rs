@@ -138,16 +138,16 @@ pub struct ClosePosition<'info> {
 /// The duplication above is in the *account structs* only — Anchor cannot express "the same
 /// accounts, plus `close`" — while the logic below runs once. A second copy of the settlement
 /// arithmetic is exactly where a partial close and a full close would drift apart.
-struct ReduceRefs<'a, 'info> {
-    protocol: &'a mut Protocol,
-    user_account: &'a mut UserAccount,
-    market: &'a mut Market,
-    position: &'a mut Position,
-    lp_pool: &'a mut LpPool,
-    insurance: &'a mut InsuranceFund,
-    transfer: VaultTransfer<'info>,
-    lp_vault_balance: u64,
-    position_key: Pubkey,
+pub(crate) struct ReduceRefs<'a, 'info> {
+    pub(crate) protocol: &'a mut Protocol,
+    pub(crate) user_account: &'a mut UserAccount,
+    pub(crate) market: &'a mut Market,
+    pub(crate) position: &'a mut Position,
+    pub(crate) lp_pool: &'a mut LpPool,
+    pub(crate) insurance: &'a mut InsuranceFund,
+    pub(crate) transfer: VaultTransfer<'info>,
+    pub(crate) lp_vault_balance: u64,
+    pub(crate) position_key: Pubkey,
 }
 
 pub fn decrease_position(
@@ -246,7 +246,7 @@ pub fn close_position(ctx: Context<ClosePosition>, price_limit: i64) -> Result<(
 /// because the two above it are not built. That is the honest Phase 3 behaviour: the money
 /// is conserved, the shortfall is visible, and Phase 4 inserts the insurance fund and ADL
 /// ahead of it.
-fn reduce(
+pub(crate) fn reduce(
     refs: ReduceRefs<'_, '_>,
     size_delta: u64,
     price_limit: i64,

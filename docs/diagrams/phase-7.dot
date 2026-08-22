@@ -1,0 +1,47 @@
+digraph phase7 {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, bgcolor=white, pad=0.4, nodesep=0.3, ranksep=0.45, dpi=135,
+         label="Phase 7 — keepers: turning permissionless instructions into things that actually happen\n(the keeper calls the SAME risk engine the chain runs — it shares the code, but never the authority)", labelloc=t];
+  node [fontname="Helvetica", fontsize=11, style="rounded,filled", shape=box, fillcolor="#f3f4f6", color="#4b5563", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=9.5, color="#6b7280"];
+
+  subgraph cluster_chain {
+    label="on chain — Phases 0–6 made all of this permissionless; nothing here trusts the keeper"; style="rounded,filled"; fillcolor="#eff6ff"; color="#1d4ed8"; fontcolor="#1d4ed8";
+    n1 [label="place_trigger_order(kind, price, size)\nrejects a trigger already met (§5.4)\ntrader pre-funds the account's RENT", fillcolor="#dbeafe"];
+    n2 [label="execute_trigger_order — PERMISSIONLESS\nre-checks: market open, price fresh,\ncondition met against the ORACLE\n★ close = keeper → the rent IS the tip ★\nno USDC moves, so invariant I7 is untouched", fillcolor="#bfdbfe", penwidth=2];
+    n3 [label="liquidate_position — PERMISSIONLESS\npenalty share + MIN_LIQUIDATOR_REWARD $1.00\nbackstopped by insurance (Phase 4 fix)", fillcolor="#bfdbfe", penwidth=2];
+    n4 [label="crank_market_session / _price / _funding\npermissionless but UNPAID — the operator\nruns these. A weaker promise, recorded as one.", fillcolor="#dbeafe"];
+    n1 -> n2;
+  }
+
+  subgraph cluster_keeper {
+    label="crates/solfx-keeper — one process, four loops, no authority of its own"; style="rounded,filled"; fillcolor="#f0fdf4"; color="#15803d"; fontcolor="#15803d";
+    k0 [label="refresher\nSLOW 30s: full getProgramAccounts re-read\n(markets, positions, orders, users)\nFAST 400ms: oracle accounts + clock only\nFull re-read, never an incremental patch —\nstate that can silently miss an update is how\na keeper stops liquidating what it thinks it closed.", fillcolor="#dcfce7", penwidth=2];
+    k1 [label="★ risk::assess + oracle::load_price_for_liquidation ★\nThe SAME functions the program runs, from the same source.\nNot a reimplementation: a second, unaudited risk engine only\nhas to disagree by a rounding step to sit quietly on a position\nthe chain would have liquidated.", fillcolor="#bbf7d0", penwidth=2.5];
+    k2 [label="danger list — sorted, not scanned\nliquidatable first, then by NOTIONAL\nIn a cascade, hundreds cross the line in one\nsecond and blockspace is scarce: firing in\naccount-map order makes which ones land random.\nBelow the line: the near-miss band (HF < 1.5),\nso an operator sees pressure BUILDING.", fillcolor="#dcfce7", penwidth=2];
+    k3 [label="liquidator\ncap 8 actions/pass — a cap, not a target;\nan unbounded burst gets rate-limited and lands FEWER", fillcolor="#dcfce7"];
+    k4 [label="trigger executor\njudged through the TRADING gate:\nfiring a stop is a trade", fillcolor="#dcfce7"];
+    k5 [label="crank runner\nsession → price → funding, in that order\n(price before session marks the market with\nthe PREVIOUS session's parameters)", fillcolor="#dcfce7"];
+    k6 [label="feed watchdog — READ ONLY, sends nothing\ncompares on-chain accounts against Hermes\n• lag  → the publisher has stopped\n• divergence → the feed is WRONG\n• conf_bps → the market is uncertain (§7.2)\nOnly the last is a reason to stop trading, and from\ninside the protocol all three look identical.", fillcolor="#dcfce7", penwidth=2];
+    k0 -> k1 -> k2 -> k3;
+    k2 -> k4; k0 -> k5; k0 -> k6;
+  }
+
+  k3 -> n3 [label="  signed tx", color="#15803d", penwidth=1.6];
+  k4 -> n2 [label="  signed tx", color="#15803d", penwidth=1.6];
+  k5 -> n4 [label="  signed tx", color="#15803d"];
+
+  gate [label="every condition is RE-CHECKED on chain\nA drifted mirror costs one rejected transaction — never a wrong outcome.\nThat is what makes 'processed' commitment safe: reacting to a book two blocks\nstale is the difference between a penalty and a bad debt, and the cost of\nbeing optimistic is a failed tx, not a loss.", shape=note, fillcolor="#fef9c3", color="#a16207", penwidth=2];
+  n2 -> gate [style=dashed, arrowhead=none, color="#a16207"];
+  n3 -> gate [style=dashed, arrowhead=none, color="#a16207"];
+
+  subgraph cluster_pyth {
+    label="Pyth — why the keeper posts nothing"; style="rounded,filled"; fillcolor="#fdf4ff"; color="#a21caf"; fontcolor="#a21caf";
+    p1 [label="price feed account = PDA(shard 0, feed_id)\nof pythWSnsw… — kept current by Pyth's own\npublishers, readable by anyone.\nDERIVED from market.pyth_feed_id, never configured:\nlisting a market must not mean editing an address book.", fillcolor="#fae8ff", penwidth=2];
+    p2 [label="so the keeper REFERENCES the account\nrather than carrying a signed Wormhole VAA into it.\nMeasured: liquidate_position = 758 bytes on the\nWIDEST market (3 oracle legs), limit 1232.\nA split liquidation would need its second half to\nland during exactly the congestion that caused it.", fillcolor="#f5d0fe", penwidth=2];
+    p1 -> p2;
+  }
+  p1 -> k0 [style=dashed, color="#a21caf"];
+
+  kill [label="survives being killed: there is no in-flight state to drain.\nA restarted keeper rebuilds its whole view from the chain in one pass\nand owes nothing to its past self.\n\nGoes QUIET when its book is >20s stale — someone else's keeper is still\nrunning, and deciding from a ten-minute-old snapshot costs real money.", shape=note, fillcolor="#fee2e2", color="#b91c1c", penwidth=2];
+  k0 -> kill [style=dashed, arrowhead=none, color="#b91c1c"];
+}

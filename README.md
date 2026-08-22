@@ -5,7 +5,8 @@ pip-denominated P&L, transparent swap rates, and a verifiable partner-rebate led
 the emerging-market pairs no venue on any chain lists, with collateral that never leaves your
 own account.
 
-**Status:** Phase 1 of 9. Devnet capstone track. Not deployed anywhere; no real funds involved.
+**Status:** Phase 7 of 9 — two on-chain programs, an off-chain keeper, **490 tests**.
+Deployed and verified on a local validator; devnet next. No real funds involved.
 
 ---
 
@@ -21,7 +22,7 @@ Read in this order:
 | [`docs/oracle-feasibility.md`](docs/oracle-feasibility.md) | Phase 0b measurements — gates every risk parameter |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | How to find things and run them |
 | [`docs/guides/`](docs/guides/README.md) | Per-phase guides: every function, formula and financial rule, with a PNG flowchart each |
-| [`docs/test-cases/`](docs/test-cases/README.md) | The full test catalogue — 422 tests documented per phase |
+| [`docs/test-cases/`](docs/test-cases/README.md) | The full test catalogue — 490 tests documented per phase |
 | [`docs/diagrams/`](docs/diagrams/) | Flowcharts (PNG + editable Graphviz sources) |
 
 ## Progress
@@ -30,13 +31,13 @@ Read in this order:
 |---|---|---|
 | 0a | Plain-English explainer | ✅ |
 | 0b | Pyth feed feasibility measurement | ✅ — 29 listable markets; weekend-metals thesis refuted |
-| **1** | **Toolchain, workspace, `solfx-math` with property tests** | **✅** |
-| 2 | Vault, markets, Pyth pull oracle | — |
-| 3 | Position engine | — |
-| 4 | Risk engine and market regimes | — |
-| 5 | LP vault | — |
-| 6 | IB referral programme | — |
-| 7 | Keepers | — |
+| 1 | Toolchain, workspace, `solfx-math` with property tests | ✅ |
+| 2 | Vault, markets, Pyth pull oracle | ✅ — six oracle gates; markets listable without redeploy |
+| 3 | Position engine | ✅ — full lifecycle on every market shape |
+| 4 | Risk engine and market regimes | ✅ — liquidation waterfall; **the CHF-depeg replay found four defects** |
+| 5 | LP vault | ✅ — the JIT liquidity attack fails |
+| 6 | IB referral programme | ✅ — a second program; the ledger IBs can audit |
+| **7** | **Keepers** | **✅ code complete** — 2 of 3 exit criteria; the rest needs devnet |
 | 8 | Frontend and SDK | — |
 | 9 | Market expansion and hardening | — |
 
@@ -46,27 +47,32 @@ started speculatively.
 ## Layout
 
 ```
-crates/solfx-math/     Fixed-point financial primitives. Zero dependencies, no floats, no panics.
-docs/                  Specification and findings
-scratch/feed-probe/    Phase 0b Pyth measurement tooling
+programs/solfx-core/      The protocol. Vault, markets, positions, risk engine, LP pool, triggers.
+programs/solfx-referral/  The IB ledger. A separate program so growth can iterate while core freezes.
+crates/solfx-math/        Fixed-point financial primitives. Zero dependencies, no floats, no panics.
+crates/solfx-keeper/      Off-chain liquidator, trigger executor, cranks and feed watchdog.
+docs/                     Specification, per-phase guides, test catalogue, flowcharts
+scripts/                  Localnet deploy and keeper launch
+scratch/feed-probe/       Phase 0b Pyth measurement tooling
 ```
-
-`programs/` (Anchor) arrives in Phase 2.
 
 ## Building
 
 ```bash
-cargo test                              # unit + property suite
+anchor build                            # both programs
+cargo test --workspace                  # 490 tests
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all
-cargo llvm-cov --workspace --summary-only   # coverage
+
+scripts/deploy-localnet.sh              # deploy to a local validator
+scripts/run-keeper.sh --dry-run         # start the keepers, sending nothing
 ```
 
 Build output is redirected to native Linux disk by [`.cargo/config.toml`](.cargo/config.toml).
 Source lives on `/mnt/e`, which is a Windows drive mounted through WSL and roughly 200x slower
 for the small-file I/O cargo does constantly. See [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
 
-## The two claims worth checking
+## The three claims worth checking
 
 Two properties are asserted across the full parameter space by
 [`crates/solfx-math/tests/properties.rs`](crates/solfx-math/tests/properties.rs), and everything
@@ -79,6 +85,12 @@ else in the protocol depends on them holding:
 2. **Rounding always favours the protocol.** Fees and margin requirements round up, payouts round
    down, signed PnL rounds toward −∞. The single most common way a financial program bleeds is a
    division that rounds the wrong way at one size.
+
+3. **The engine agrees with a real broker to the cent.**
+   [`crates/solfx-math/tests/broker_parity.rs`](crates/solfx-math/tests/broker_parity.rs)
+   reproduces a live MT5 position — GBP/CHF, 60 lots, 1.09659 → 1.09850 — and asserts the
+   engine returns **$14,141.69**, the figure the terminal showed. Integer arithmetic
+   throughout; no floats anywhere in the check.
 
 ## Honest framing
 

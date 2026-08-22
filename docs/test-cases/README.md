@@ -13,6 +13,7 @@ executable tests** plus Phase 0's measurement criteria.
 | 4 — Risk engine | 52 | [phase-4-tests.md](phase-4-tests.md) | liquidation waterfall; both regimes; **the CHF-depeg replay** |
 | 5 — LP vault | 42 | [phase-5-tests.md](phase-5-tests.md) | share maths never dilutes; **the JIT attack fails**; I2 + I8 |
 | 6 — IB programme | 30 | [phase-6-tests.md](phase-6-tests.md) | clients cannot be reassigned; syncing cannot double-credit; claims bounded by the pool |
+| 7 — Keepers | 27 | [phase-7-tests.md](phase-7-tests.md) | all four stop directions; **anyone** can fire a stop and is paid; every keeper tx fits one packet |
 
 ## Invariants asserted after every instruction (§ 12.3)
 
