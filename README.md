@@ -16,14 +16,17 @@ Read in this order:
 
 | Document | What it is |
 |---|---|
+| [`docs/CONTEXT.md`](docs/CONTEXT.md) | **Complete status of SolFX** — what's built, what's tested, what's open, deployment checklist |
 | [`docs/ESSENTIALS.md`](docs/ESSENTIALS.md) | **What you need to be able to explain** — every key concept with a worked example |
 | [`docs/FOREX-EXPLAINED.md`](docs/FOREX-EXPLAINED.md) | Plain English, assumes no FX or DeFi background. **Start here.** |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The full technical specification |
 | [`docs/oracle-feasibility.md`](docs/oracle-feasibility.md) | Phase 0b measurements — gates every risk parameter |
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | How to find things and run them |
 | [`docs/guides/`](docs/guides/README.md) | Per-phase guides: every function, formula and financial rule, with a PNG flowchart each |
-| [`docs/test-cases/`](docs/test-cases/README.md) | The full test catalogue — 490 tests documented per phase |
+| [`docs/test-cases/`](docs/test-cases/README.md) | The full test catalogue — automated tests documented per phase |
+| [`docs/test-cases/localnet-manual.md`](docs/test-cases/localnet-manual.md) | **100 manual cases** against a live validator — what LiteSVM cannot cover |
 | [`docs/diagrams/`](docs/diagrams/) | Flowcharts (PNG + editable Graphviz sources) |
+| [`docs/NOXFUNDING-PLAN.md`](docs/NOXFUNDING-PLAN.md) | **NOXFUNDING** — the prop-firm product built on top of SolFX. Design plan, not yet built |
 
 ## Progress
 
