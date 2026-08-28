@@ -6,12 +6,43 @@ license.workspace = true
 publish = false
 description = "Off-chain keepers: liquidator, trigger executor, funding and session cranks."
 
+[[bin]]
+name = "solfx-keeper"
+path = "src/main.rs"
+
+# Read-only pre-deployment check: does each market's Pyth price account exist on the target
+# cluster? Shares `src/pyth.rs` with the keeper via `#[path]` so it derives addresses exactly
+# the way the protocol reads them.
+[[bin]]
+name = "devnet-feed-probe"
+path = "src/bin/devnet_feed_probe.rs"
+
+# Posts Pyth prices on a cluster where no sponsor publishes them. Required on devnet, where
+# 25 of 33 markets have no live sponsored feed — see docs/CONTEXT.md.
+# Creates a test mint, initialises the protocol and lists markets. The step
+# scripts/deploy-localnet.sh explicitly stops short of.
+[[bin]]
+name = "init-protocol"
+path = "src/bin/init_protocol.rs"
+
+# Exercises the protocol end to end before the Phase 8 frontend exists.
+[[bin]]
+name = "trade"
+path = "src/bin/trade.rs"
+
+[[bin]]
+name = "price-poster"
+path = "src/bin/price_poster.rs"
+
 [dependencies]
 solfx-math = { path = "../solfx-math" }
 solfx-core = { path = "../../programs/solfx-core", features = ["no-entrypoint"] }
 
 anchor-lang = "1.1.2"
 pyth-solana-receiver-sdk = "2.0.0"
+# Decodes the accumulator blob Hermes serves into (VAA, per-feed merkle proof). Already in
+# the lock file as a transitive dependency of the receiver SDK, so this pins nothing new.
+pythnet-sdk = "3.0.0"
 
 solana-client = "3"
 solana-account-decoder-client-types = "3"
@@ -26,6 +57,10 @@ solana-transaction = "3"
 solana-rpc-client-api = "3"
 
 anyhow = "1"
+# `PostUpdateAtomicParams` derives `borsh::BorshSerialize` directly rather than Anchor's
+# re-export, so the instruction payload has to be encoded with the same crate. Pinned to the
+# version the receiver SDK already resolves to.
+borsh = "1.8.0"
 base64 = "0.22"
 bs58 = "0.5"
 clap = { version = "4", features = ["derive", "env"] }
@@ -40,3 +75,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Only to re-derive the post_update_atomic discriminator in a test.
+sha2 = "0.10"

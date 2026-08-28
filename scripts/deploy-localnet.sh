@@ -12,12 +12,24 @@
 # protocol is unreachable — you can deploy it and then do nothing with it, which is a
 # confusing way to discover the problem.
 #
-# `--clone` copies the live accounts in at genesis. The prices are frozen at whatever they
-# were when the ledger was created, which is exactly right for testing the *plumbing* and
-# exactly wrong for testing anything time-dependent: a frozen feed goes stale within
-# `max_staleness_seconds` and the protocol correctly stops trading on it. That is the
-# behaviour, not a bug — but it means session, funding and liquidation behaviour under real
-# price movement belongs on devnet, not here.
+# `--clone` copies the live accounts in at genesis.
+#
+# ## Frozen prices, and how to unfreeze them
+#
+# Cloned price accounts are frozen at whatever they were when the ledger was created, so they
+# go stale within `max_staleness_seconds` and the protocol correctly stops trading. That was
+# once a hard limit on what localnet could test.
+#
+# It no longer is: `price-poster` posts live Pyth updates to any cluster, localnet included,
+# so funding, sessions and liquidation under real price movement can all be exercised here.
+#
+#     cargo run -p solfx-keeper --bin price-poster -- --rpc-url http://127.0.0.1:8899
+#
+# That needs more than the Pyth *programs*, which is what this script used to clone. Posting
+# an update reads the receiver's `config` and `treasury` PDAs and the Wormhole guardian set,
+# and a bare validator has none of them — the failure is an opaque `AccountNotFound` on a PDA
+# whose name appears nowhere. Those three addresses are derived below rather than pasted, so
+# a guardian-set rotation needs no edit here.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,6 +52,19 @@ CLONE_FROM="${CLONE_FROM:-https://api.devnet.solana.com}"
 # Feed accounts to clone, derived from the feed ids the markets will be listed with. Set
 # SOLFX_CLONE_FEEDS to a space-separated list of addresses to add more.
 CLONE_ARGS=(--clone-upgradeable-program "$PYTH_RECEIVER" --clone-upgradeable-program "$PYTH_PUSH_ORACLE")
+
+# The receiver's config and treasury PDAs, and the Wormhole guardian set the VAAs are
+# currently signed against. Derived by the poster, which owns that logic already.
+say "Deriving the Pyth accounts the poster needs"
+if PYTH_ACCOUNTS=$(cargo run -q -p solfx-keeper --bin price-poster -- --print-clone-args 2>/dev/null); then
+  # shellcheck disable=SC2206
+  CLONE_ARGS+=($PYTH_ACCOUNTS)
+  echo "  $PYTH_ACCOUNTS"
+else
+  echo "  WARNING: could not derive them; price-poster will fail against this validator."
+  echo "  Re-run with network access, or add them by hand via SOLFX_CLONE_FEEDS."
+fi
+
 for acct in ${SOLFX_CLONE_FEEDS:-}; do
   CLONE_ARGS+=(--clone "$acct")
 done
@@ -88,7 +113,14 @@ The programs are deployed but the protocol is NOT initialised: `initialize_proto
 USDC mint and an admin, and `initialize_market` needs feed ids and a full risk envelope.
 Those are deployment decisions, not something a script should invent — see docs/DEPLOY.md.
 
-Once the protocol is initialised, start the keepers with:
+Initialise it, then start the price poster, then the keepers:
+
+    cargo run -p solfx-keeper --bin init-protocol
+    cargo run -p solfx-keeper --bin price-poster -- --rpc-url http://127.0.0.1:8899
+
+Without the poster every trade fails on oracle staleness: cloned feeds are frozen at genesis.
+
+Then:
 
     scripts/run-keeper.sh --reward-token-account <the keeper's USDC account>
 
