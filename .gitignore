@@ -30,5 +30,24 @@ scratch/feed-probe/*.log
 # Editor / OS
 .vscode/
 .idea/
+
+# Claude Code: the shared config (.claude/settings.json, .claude/rules/, CLAUDE.md) is
+# committed on purpose. Only personal overrides and session scratch are ignored.
+.claude/settings.local.json
+.claude/worktrees/
 .DS_Store
 Thumbs.db
+
+# Program upgrade authority keypairs. Losing these means the program can never be
+# upgraded again; committing them means anyone can upgrade it. Back up OUT of band.
+keys/
+
+# Per-feed price-update account keypairs written by the price poster.
+price-accounts/
+
+# Generated map of feed id -> price account; regenerate with the poster.
+price-accounts.json
+
+# Written by init-protocol; regenerate rather than commit — it names cluster-specific
+# accounts and is meaningless against a different ledger.
+deployment.json

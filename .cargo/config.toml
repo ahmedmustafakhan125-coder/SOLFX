@@ -19,3 +19,14 @@
 # the program's on-chain identity. Back it up to `keys/` (gitignored) before `cargo clean`.
 #
 # `target-dir` is deliberately NOT set here. Setting it would undo the above.
+
+# Cap parallel compile jobs.
+#
+# Added 2026-08-24 after WSL2 was OOM-killed. `cargo` defaults to one job per core (12
+# here), and twelve concurrent rustc processes peak at several GB — fine on their own,
+# fatal alongside a running `solana-test-validator`.
+#
+# Six is a deliberate trade: builds are somewhat slower, and the machine survives building
+# while a validator runs. Raise or delete this if you are not running a validator.
+[build]
+jobs = 6
