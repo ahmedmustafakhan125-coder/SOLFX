@@ -280,6 +280,16 @@ pub(crate) fn reduce(
         require!(held >= market.min_hold_slots, SolfxError::MinHoldTimeNotMet);
     }
 
+    // Carry accrued since entry (§ 6.7). Settled here, not only at liquidation: § 6.5 puts it
+    // in the equity formula and § 8.1 makes it revenue stream 2, so a close path that skipped
+    // it would let any position avoid carry entirely by never being liquidated.
+    //
+    // `settle_carry` removes it from `position.collateral` and re-snapshots the index, but
+    // moves no tokens. Those tokens are still in the collateral vault, so `carry` is added
+    // back into the distribution basis below and charged as part of the fee. The two cancel
+    // in what the trader receives, while moving the value from trader ownership to revenue.
+    let carry = crate::risk::settle_carry(position, market)?;
+
     let side = Side::resolve(position.direction.into(), TradeAction::Close);
     let exec_price = execution_price_for(market, price, size_delta, side)?;
     pricing::validate_slippage(exec_price, price_limit, side)
@@ -304,13 +314,19 @@ pub(crate) fn reduce(
         pnl::convert_cost_to_collateral(notional_quote, market.quote_conversion(), conversion_rate)
             .or_program_err()?;
     let tier_rate = fees::fee_rate_for_volume(user_account.thirty_day_volume);
-    let fee = fees::fee_amount(notional, market.close_fee_rate.min(tier_rate)).or_program_err()?;
+    let close_fee =
+        fees::fee_amount(notional, market.close_fee_rate.min(tier_rate)).or_program_err()?;
+    // The routed total. Carry cancels against the matching term in `released` below, so the
+    // trader's payout is unchanged by the pairing — only the ownership of the carry moves.
+    let fee = close_fee
+        .checked_add(carry)
+        .ok_or(SolfxError::MathOverflow)?;
 
     // --- collateral released, proportional to the fraction closed ---
     //
     // Floored, so a partial close never releases more than its share. The remainder stays
     // with the surviving position rather than accruing to the trader.
-    let released = if size_delta == position.size_base {
+    let released_from_position = if size_delta == position.size_base {
         position.collateral
     } else {
         u64::try_from(
@@ -322,6 +338,13 @@ pub(crate) fn reduce(
         )
         .map_err(|_| SolfxError::MathOverflow)?
     };
+
+    // Pre-carry basis: everything that leaves the position's claim on the collateral vault.
+    // `position.collateral` is already net of carry, so the carry is added back here and
+    // charged through `fee` — otherwise those tokens are stranded exactly as in C-2.
+    let released = released_from_position
+        .checked_add(carry)
+        .ok_or(SolfxError::MathOverflow)?;
 
     // --- cap the loss at what the trader actually posted ---
     let available = i128::from(released) - i128::from(fee);
@@ -408,7 +431,7 @@ pub(crate) fn reduce(
         .ok_or(SolfxError::MathOverflow)?;
     position.collateral = position
         .collateral
-        .checked_sub(released)
+        .checked_sub(released_from_position)
         .ok_or(SolfxError::MathOverflow)?;
     position.last_updated_at = clock.unix_timestamp;
 

@@ -31,7 +31,7 @@ use crate::constants::{
 };
 use crate::errors::{IntoProgramResult, SolfxError};
 use crate::events::{BadDebtIncurred, PositionLiquidated};
-use crate::instructions::trader::flows::compute_flows;
+use crate::instructions::trader::flows::flows_for_allocation;
 use crate::instructions::trader::{settle, SettlementInput, VaultTransfer};
 use crate::oracle::load_price_for_liquidation;
 use crate::risk;
@@ -179,7 +179,19 @@ pub fn liquidate_position(ctx: Context<LiquidatePosition>) -> Result<()> {
     // collateral and no more — taking the difference would be taking it out of *other
     // traders'* collateral, which sits in the same vault. The shortfall is bad debt, and the
     // waterfall below is what covers it.
-    let collateral = position.collateral;
+    // `settle_carry` above removed the accrued carry from `position.collateral`, but it moved
+    // no tokens — they are still sitting in the collateral vault, and they are still counted
+    // in `Protocol::total_user_collateral`. The distribution below must therefore be based on
+    // the **pre-carry** balance, or exactly `carry` units are stranded in the vault owned by
+    // nobody, and invariant I1 drifts by that amount on every liquidation.
+    //
+    // `equity` deliberately stays on the post-carry figure: carry is a real cost the position
+    // has borne, so it must reduce what the trader gets back. The two are not in tension —
+    // the carry leaves trader ownership here, and `routed_fee` below is where it lands.
+    let collateral = position
+        .collateral
+        .checked_add(carry)
+        .ok_or(SolfxError::MathOverflow)?;
     let equity = health.liquidation_equity;
 
     let full_penalty = fees::fee_amount(
@@ -215,12 +227,25 @@ pub fn liquidate_position(ctx: Context<LiquidatePosition>) -> Result<()> {
     let liquidator_out = split.liquidator.min(given_up);
     let after_liquidator = given_up.saturating_sub(liquidator_out);
 
-    let routed_fee = carry
-        .checked_add(split.insurance)
+    // Carry is ordinary revenue and takes the standard four-way split. The penalty's
+    // non-liquidator shares are not: § 6.8 fixes them at insurance 40% / treasury 20% of the
+    // penalty, and passing them through `split_fee` would re-divide them by the trading
+    // schedule — which is how the insurance fund ends up with 6% of a penalty instead of 40%.
+    //
+    // Carry is paid first when the position cannot cover everything: it is a debt already
+    // incurred, where the penalty is a charge levied now.
+    let carry_routed = carry.min(after_liquidator);
+    let penalty_budget = after_liquidator.saturating_sub(carry_routed);
+    let insurance_share = split.insurance.min(penalty_budget);
+    let treasury_share = split
+        .treasury
+        .min(penalty_budget.saturating_sub(insurance_share));
+
+    let routed_fee = carry_routed
+        .checked_add(insurance_share)
         .ok_or(SolfxError::MathOverflow)?
-        .checked_add(split.treasury)
-        .ok_or(SolfxError::MathOverflow)?
-        .min(after_liquidator);
+        .checked_add(treasury_share)
+        .ok_or(SolfxError::MathOverflow)?;
 
     let pool_in = after_liquidator.saturating_sub(routed_fee);
 
@@ -258,11 +283,22 @@ pub fn liquidate_position(ctx: Context<LiquidatePosition>) -> Result<()> {
 
     // `settle` takes the trader's PnL, so the pool's receipt is its negation.
     let settlement_pnl = -i64::try_from(pool_in).map_err(|_| SolfxError::MathOverflow)?;
-    let (alloc, flows) = compute_flows(
-        routed_fee,
-        settlement_pnl,
-        ctx.accounts.protocol.fee_split(),
-    )?;
+    // The carry portion splits the normal way; the penalty portion goes where § 6.8 sends it.
+    let carry_alloc =
+        fees::split_fee(carry_routed, ctx.accounts.protocol.fee_split()).or_program_err()?;
+    let alloc = fees::FeeAllocation {
+        lp: carry_alloc.lp,
+        treasury: carry_alloc
+            .treasury
+            .checked_add(treasury_share)
+            .ok_or(SolfxError::MathOverflow)?,
+        insurance: carry_alloc
+            .insurance
+            .checked_add(insurance_share)
+            .ok_or(SolfxError::MathOverflow)?,
+        referral: carry_alloc.referral,
+    };
+    let flows = flows_for_allocation(alloc, settlement_pnl)?;
 
     let lp_balance = ctx.accounts.lp_vault.amount;
     let market_index = ctx.accounts.market.market_index;

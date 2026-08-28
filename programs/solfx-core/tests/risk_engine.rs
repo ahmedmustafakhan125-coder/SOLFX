@@ -135,15 +135,42 @@ fn the_liquidation_penalty_is_split_three_ways() {
     env.liquidate(&user, 0, 0, &liq, liq_token, price).unwrap();
     env.assert_invariants();
 
-    let reward = env.token_balance(&liq_token);
-    assert!(reward > 0, "liquidator share");
-    assert!(
-        env.insurance_state().balance > insurance_before,
-        "the insurance fund must take its share of every penalty — that is how it grows"
+    // Proportions, not merely "went up". The previous version of this test asserted only
+    // `> before` on each destination, which passed while the insurance fund was receiving 6%
+    // of a penalty instead of 40% — the non-liquidator shares were being re-divided by the
+    // trading-fee schedule. See AUDIT.md B-2.
+    let liquidator_share = env.token_balance(&liq_token);
+    let insurance_share = env.insurance_state().balance - insurance_before;
+    let treasury_share = env.token_balance(&env.fee_vault) - treasury_before;
+    let penalty = liquidator_share + insurance_share + treasury_share;
+
+    assert!(penalty > 0, "a liquidation must levy a penalty");
+    assert_eq!(
+        liquidator_share, insurance_share,
+        "§ 6.8 gives the liquidator and the insurance fund an equal 40% of the penalty: \
+         liquidator {liquidator_share}, insurance {insurance_share}, of {penalty}"
+    );
+    // The treasury takes the remainder rather than its own floored share, which is what makes
+    // `split_liquidation_penalty` conserve every unit. Assert that exactly instead of a
+    // tolerance: two floorings leave a remainder that doubling amplifies, so a "roughly 20%"
+    // check has to be loose enough to be worth little.
+    let forty_percent = penalty * 4_000 / 10_000;
+    assert_eq!(
+        liquidator_share, forty_percent,
+        "§ 6.8 gives the liquidator 40% of the penalty {penalty}"
+    );
+    assert_eq!(
+        insurance_share, forty_percent,
+        "§ 6.8 gives the insurance fund 40% of the penalty {penalty}"
+    );
+    assert_eq!(
+        treasury_share,
+        penalty - liquidator_share - insurance_share,
+        "the treasury takes the remainder, so the split conserves every unit of {penalty}"
     );
     assert!(
-        env.token_balance(&env.fee_vault) > treasury_before,
-        "treasury share"
+        insurance_share > treasury_share,
+        "insurance takes 40% against the treasury's 20%: {insurance_share} vs {treasury_share}"
     );
 }
 
@@ -542,36 +569,127 @@ fn a_repeated_funding_crank_in_the_same_second_is_a_no_op() {
     );
 }
 
-/// Carry is settled out of the position at close, and it is revenue: it reaches the LP vault
-/// and the treasury rather than staying with the trader.
+/// Carry is settled out of the position at close, and it is revenue: it reaches the treasury
+/// rather than staying with the trader.
+///
+/// Run twice, identical but for the carry rate. The close fee and the spread are common to
+/// both runs, so the difference isolates the carry. The previous version of this test compared
+/// against the opening collateral instead, which the close fee alone already satisfied — it
+/// passed for the whole period during which `close_position` charged no carry at all
+/// (AUDIT.md B-1).
 #[test]
 fn carry_is_charged_when_the_position_closes() {
-    let (mut env, user) = env_with_position(Direction::Long, 5_000 * ONE_USDC);
+    fn run(quote_annual_rate: i64) -> (u64, u64) {
+        let (mut env, user) = env_with_position(Direction::Long, 5_000 * ONE_USDC);
+        env.patch_market(0, |m| {
+            m.rate_base_annual = 0;
+            m.rate_quote_annual = quote_annual_rate;
+            m.carry_rate_per_hour = 0;
+            m.last_funding_update_ts = env_now();
+        });
+
+        env.advance_clock(24 * 3_600);
+        env.crank_funding(0).unwrap();
+
+        let free_before = env.user_state(&user).free_collateral;
+        let treasury_before = env.token_balance(&env.fee_vault);
+
+        let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+        env.close(&user, 0, 0, NO_BOUND_SELL, p).unwrap();
+        env.assert_invariants();
+
+        (
+            env.user_state(&user).free_collateral - free_before,
+            env.token_balance(&env.fee_vault) - treasury_before,
+        )
+    }
+
+    let (returned_flat, treasury_flat) = run(0);
+    let (returned_carrying, treasury_carrying) = run(200_000_000); // 20%/yr
+
+    assert!(
+        returned_carrying < returned_flat,
+        "a day of carry at 20% must reduce what comes back: {returned_carrying} against \
+         {returned_flat} with the same trade and no carry"
+    );
+    assert!(
+        treasury_carrying > treasury_flat,
+        "carry is revenue and must reach the treasury on top of the close fee: \
+         {treasury_carrying} against {treasury_flat}"
+    );
+}
+
+/// **C-2.** Carry accrued before a liquidation must not be stranded in the collateral vault.
+///
+/// `settle_carry` removes carry from `position.collateral` without moving any tokens, so the
+/// liquidation's distribution has to be based on the pre-carry balance. Until that was fixed
+/// this test failed inside `assert_invariants` by exactly the accrued carry — and no other
+/// test in the suite put carry and liquidation in the same scenario, which is why the defect
+/// survived a green run.
+#[test]
+fn carry_is_settled_when_a_position_is_liquidated() {
+    let (mut env, user) = env_with_position(Direction::Long, 250 * ONE_USDC);
+    let (liq, liq_token) = env.new_liquidator();
+
     env.patch_market(0, |m| {
         m.rate_base_annual = 0;
-        m.rate_quote_annual = 200_000_000; // 20% — large enough to be unmistakable
+        m.rate_quote_annual = 200_000_000; // 20%/yr
         m.carry_rate_per_hour = 0;
         m.last_funding_update_ts = env_now();
     });
 
     env.advance_clock(24 * 3_600);
     env.crank_funding(0).unwrap();
+    assert!(
+        env.market_state(0).cum_borrow_index > 0,
+        "the scenario is pointless unless carry actually accrued"
+    );
 
+    let price = env.post_price_now(FEED_EUR_USD, PriceSpec::at(107_043_000).conf(13_893));
+    env.liquidate(&user, 0, 0, &liq, liq_token, price).unwrap();
+
+    // The assertion under test: every USDC in the collateral vault is still attributable to
+    // somebody, and `Protocol::total_user_collateral` still agrees with the sum of accounts.
+    env.assert_invariants();
+}
+
+/// **C-1 — currently failing, deliberately recorded.** Threat T8 at a size the existing
+/// `self_liquidation_is_not_profitable` never reaches.
+///
+/// `MIN_LIQUIDATOR_REWARD` is $1.00, and the liquidator takes 40% of a 0.5% penalty, so the
+/// position's own penalty only covers the reward above **$500 of notional**. Below that the
+/// insurance fund makes up the difference — and the position owner can be the liquidator.
+/// `MIN_NOTIONAL_QUOTE` is $1.00, so the exposed band is ordinary retail size.
+///
+/// Ignored rather than deleted: it is the regression test for AUDIT.md C-1, which is not
+/// fixed. Remove the `#[ignore]` with the fix.
+#[test]
+#[ignore = "AUDIT.md C-1: the insurance fund subsidises the liquidator on small positions"]
+fn self_liquidation_is_not_profitable_on_a_small_position() {
+    let (mut env, user) = env_with_position(Direction::Long, 2 * ONE_USDC);
+
+    let own_token = user.token_account;
+    let wallet_before = env.token_balance(&own_token);
     let free_before = env.user_state(&user).free_collateral;
-    let treasury_before = env.token_balance(&env.fee_vault);
+    let insurance_before = env.insurance_state().balance;
+    let margin = env.position_state(&user, 0, 0).collateral;
 
-    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
-    env.close(&user, 0, 0, NO_BOUND_SELL, p).unwrap();
+    let price = env.post_price(FEED_EUR_USD, PriceSpec::at(107_043_000).conf(13_893));
+    let ix = env.liquidate_ix(&user, 0, 0, user.pubkey(), own_token, price, None, None);
+    let kp = user.keypair.insecure_clone();
+    env.send(ix, &[&kp]).unwrap();
     env.assert_invariants();
 
-    let returned = env.user_state(&user).free_collateral - free_before;
+    let recovered = (env.token_balance(&own_token) - wallet_before)
+        + (env.user_state(&user).free_collateral - free_before);
     assert!(
-        returned < 5_000 * ONE_USDC,
-        "a day of carry at 20% must reduce what comes back: got {returned}"
+        recovered < margin,
+        "self-liquidation recovered {recovered} of {margin} — it must be a net loss to the \
+         owner at every position size (threat T8)"
     );
     assert!(
-        env.token_balance(&env.fee_vault) > treasury_before,
-        "carry is revenue and must reach the treasury"
+        env.insurance_state().balance >= insurance_before,
+        "a solvent liquidation must not draw down the insurance fund"
     );
 }
 

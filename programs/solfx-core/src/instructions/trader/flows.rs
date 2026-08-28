@@ -61,6 +61,19 @@ impl Flows {
 /// and cannot transiently under-fund the pool.
 pub fn compute_flows(fee: u64, pnl: i64, split: FeeSplitBps) -> Result<(FeeAllocation, Flows)> {
     let alloc = split_fee(fee, split).or_program_err()?;
+    let flows = flows_for_allocation(alloc, pnl)?;
+    Ok((alloc, flows))
+}
+
+/// Build flows from an allocation that has **already been decided**.
+///
+/// [`compute_flows`] derives the allocation from the protocol's trading-fee split, which is
+/// correct for a trading fee. A liquidation penalty has its own split (§ 6.8: liquidator 40 /
+/// insurance 40 / treasury 20) and must not be re-divided by the trading schedule — doing so
+/// sends 55% of the insurance fund's share to the LP pool instead. That path decides its own
+/// allocation and calls this.
+pub fn flows_for_allocation(alloc: FeeAllocation, pnl: i64) -> Result<Flows> {
+    let fee = alloc.total().or_program_err()?;
 
     // The pool takes its fee share and settles the trader's PnL in the opposite direction.
     let lp_delta = i64::try_from(
@@ -95,7 +108,7 @@ pub fn compute_flows(fee: u64, pnl: i64, split: FeeSplitBps) -> Result<(FeeAlloc
     // I7 discover it later.
     require!(flows.is_conservative(), SolfxError::MathOverflow);
 
-    Ok((alloc, flows))
+    Ok(flows)
 }
 
 #[cfg(test)]
