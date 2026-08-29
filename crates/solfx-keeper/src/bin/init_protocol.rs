@@ -113,25 +113,49 @@ const TIERS: &[(Tier, u16, u16, u16, u16, u16, u16)] = &[
 
 /// The starter set for local testing.
 ///
-/// Five markets chosen to cover *distinct code paths* rather than to be representative:
-/// a USD-quoted major, a JPY cross, an EM pair with a wide confidence band, a session-bound
-/// metal, and the one continuous feed class. Listing all 33 proves nothing extra about the
-/// program and costs 33 transactions per iteration. `--all` lists the full set.
+/// Chosen to cover *distinct code paths* rather than to be representative, and constrained
+/// by what a **free Pyth plan can actually read**. Pyth put Hermes behind authentication on
+/// 26 Aug 2026; the free tier is "view-only access to all symbols" in the Terminal UI, which
+/// is not the same as API access — measured, 9 of 86 FX/metal/commodity feeds return 200 and
+/// the other 77 return 403 `Not entitled`. Pro, at $2,500/mo minimum, is what covers the
+/// rest.
+///
+/// So the set below is every free-tier feed that exercises something different:
+///
+/// | market   | what it is the only test of                                        |
+/// |----------|--------------------------------------------------------------------|
+/// | EUR/USD  | USD-quoted major — the reference path                              |
+/// | USD/JPY  | JPY-quoted, so the **quote conversion** of correction C-3, and the  |
+/// |          | 2-decimal JPY pip convention                                       |
+/// | USD/CNH  | a managed currency, on the reduced-leverage tier                   |
+/// | XAU/USD  | metals: 100oz contract, session calendar, CME hours                |
+/// | XAG/USD  | a second metal, to prove the class is not one hard-coded symbol    |
+/// | BTC/USD  | the only continuous feed — the one thing testable at a weekend     |
+///
+/// The three markets this replaces (EUR/JPY, USD/INR and a BTC/USD that resolved to a
+/// funding rate) are still listed on devnet at indices 1, 2 and 4. They cannot be removed —
+/// `num_markets` only grows and `pyth_feed_id` has no setter — so they stay, unpriceable,
+/// and a client should not offer them. `--all` lists the full 33-market set, most of which
+/// needs a paid plan.
 const STARTER: &[MarketSpec] = &[
     MarketSpec {
         symbol: "EUR/USD",
         tier: Tier::Major,
     },
     MarketSpec {
-        symbol: "EUR/JPY",
+        symbol: "USD/JPY",
         tier: Tier::Major,
     },
     MarketSpec {
-        symbol: "USD/INR",
-        tier: Tier::Emerging,
+        symbol: "USD/CNH",
+        tier: Tier::Reduced,
     },
     MarketSpec {
         symbol: "XAU/USD",
+        tier: Tier::Metal,
+    },
+    MarketSpec {
+        symbol: "XAG/USD",
         tier: Tier::Metal,
     },
     MarketSpec {
@@ -283,8 +307,12 @@ const ALL: &[MarketSpec] = &[
 struct Args {
     #[arg(long, default_value = "http://127.0.0.1:8899")]
     rpc_url: String,
-    #[arg(long, default_value = "https://hermes.pyth.network")]
+    #[arg(long, default_value = pyth::DEFAULT_HERMES_URL)]
     hermes_url: String,
+
+    /// Hermes API key. Required since 26 Aug 2026 — see `price-poster --help`.
+    #[arg(long, env = "PYTH_API_KEY")]
+    hermes_token: Option<String>,
     /// Admin, payer, and initial LP.
     #[arg(long, default_value = "~/.config/solana/id.json")]
     keypair: String,
@@ -306,6 +334,18 @@ struct Args {
     /// Print the plan and send nothing.
     #[arg(long)]
     dry_run: bool,
+
+    /// Send the listing and activation transactions. Without it this command **verifies and
+    /// stops**: it prints what each symbol resolves to and how that compares with what is
+    /// already on chain, and sends nothing.
+    ///
+    /// The default is deliberate. `initialize_market` leaves a market `Initialized` rather
+    /// than `Active` precisely so a mis-typed feed id cannot trade the instant it is listed —
+    /// and this tool used to activate automatically, which threw that protection away. A
+    /// market listed against the wrong feed cannot be repaired without `set_market_oracle`
+    /// and a halt, so the cheapest place to catch it is a human reading this table.
+    #[arg(long)]
+    activate: bool,
 }
 
 fn main() -> Result<()> {
@@ -348,16 +388,52 @@ async fn run(args: Args) -> Result<()> {
         bail!("admin has no SOL on this cluster");
     }
 
-    let feeds = resolve_feed_ids(&args.hermes_url, markets).await?;
+    // Shared resolver — see `pyth::resolve_feed_ids`.
+    let symbols: Vec<&str> = markets.iter().map(|m| m.symbol).collect();
+    let feeds: HashMap<String, [u8; 32]> =
+        pyth::resolve_feed_ids(&args.hermes_url, args.hermes_token.as_deref(), &symbols)
+            .await?
+            .into_iter()
+            .filter_map(|(sym, f)| {
+                let mut bytes = [0u8; 32];
+                hex::decode_to_slice(f.feed_id.trim_start_matches("0x"), &mut bytes)
+                    .ok()
+                    .map(|()| (sym, bytes))
+            })
+            .collect();
     println!("  resolved {} of {} feed ids\n", feeds.len(), markets.len());
 
     let p = Pdas::derive();
 
     // --- the collateral mint -------------------------------------------------------------
+    //
+    // Order matters. The protocol stores the mint it was initialised with and rejects any
+    // other with `WrongCollateralMint`, so a re-run that mints a *fresh* one before checking
+    // whether the protocol already exists produces a mint nothing on chain will accept — the
+    // tool reports success on every step up to `add_liquidity`, which then fails on an error
+    // that names the mint rather than the re-run that caused it.
+    //
+    // So: if the protocol is already there, adopt its mint. That is what makes this command
+    // idempotent in the sense that matters — not "does not crash on a second run", but
+    // "a second run converges on the same state as the first".
+    let existing_protocol = match rpc.get_account_data(&p.protocol).await {
+        Ok(data) => solfx_core::state::Protocol::try_deserialize(&mut data.as_slice()).ok(),
+        Err(_) => None,
+    };
+
     let usdc_mint = match args.usdc_mint {
         Some(m) => {
             println!("using existing mint {m}");
             m
+        }
+        None if existing_protocol.is_some() => {
+            // `is_some` is checked above, so the expect-free unwrap here is a match arm.
+            let mint = existing_protocol
+                .as_ref()
+                .map(|pr| pr.usdc_mint)
+                .unwrap_or_default();
+            println!("adopting the protocol's configured mint {mint}");
+            mint
         }
         None if args.dry_run => {
             println!("[dry-run] would create a 6-decimal test mint");
@@ -379,7 +455,7 @@ async fn run(args: Args) -> Result<()> {
     };
 
     // --- the protocol --------------------------------------------------------------------
-    if rpc.get_account(&p.protocol).await.is_ok() {
+    if existing_protocol.is_some() {
         println!(
             "\nprotocol already initialised at {} — skipping",
             p.protocol
@@ -415,40 +491,115 @@ async fn run(args: Args) -> Result<()> {
     }
 
     // --- the markets ---------------------------------------------------------------------
-    println!("\nlisting markets:");
-    let mut listed: Vec<serde_json::Value> = Vec::new();
-    for (index, spec) in markets.iter().enumerate() {
-        let market_index = u16::try_from(index).map_err(|_| anyhow!("too many markets"))?;
-        let market_pda = Pubkey::find_program_address(
-            &[MARKET_SEED, &market_index.to_le_bytes()],
-            &solfx_core::ID,
-        )
-        .0;
+    //
+    // Markets are reconciled **by symbol, read back from the account**, never by position in
+    // `markets`. That distinction is the whole point of this block.
+    //
+    // The previous version derived `market_index` from the array index. Editing the market
+    // list therefore did not add markets — it re-pointed names at the accounts that already
+    // occupied those indices, and because `pyth_feed_id` and `symbol` are write-once (set only
+    // by `initialize_market`; `UpdateRiskParams` carries neither) the follow-up "risk params
+    // refreshed" pass could not correct them. The result on devnet was three markets whose
+    // stored feed did not match their name, including one silver market pointed at a Bitcoin
+    // funding rate. Nothing warned, because nothing compared.
+    //
+    // So: read every existing market, key by `Market::symbol_str()`, and refuse to touch any
+    // market whose stored feed differs from the resolved one.
+    println!("\nreconciling markets against chain state:");
 
+    let num_markets = existing_protocol.as_ref().map_or(0, |pr| pr.num_markets);
+    let existing_pdas: Vec<Pubkey> = (0..num_markets)
+        .map(|i| Pubkey::find_program_address(&[MARKET_SEED, &i.to_le_bytes()], &solfx_core::ID).0)
+        .collect();
+
+    // `getMultipleAccounts` accepts at most 100 keys per request.
+    let mut on_chain: HashMap<String, (u16, Pubkey, [u8; 32], MarketStatus)> = HashMap::new();
+    let mut duplicates: Vec<(String, u16, u16)> = Vec::new();
+    let mut all_on_chain: Vec<(String, u16, MarketStatus)> = Vec::new();
+    for chunk in existing_pdas.chunks(100) {
+        let fetched = rpc
+            .get_multiple_accounts(chunk)
+            .await
+            .context("reading existing markets")?;
+        for (pda, maybe) in chunk.iter().zip(fetched) {
+            let Some(account) = maybe else { continue };
+            let Ok(m) = solfx_core::state::Market::try_deserialize(&mut account.data.as_slice())
+            else {
+                continue;
+            };
+            let symbol = m.symbol_str().to_string();
+            // Two markets can carry the same symbol — index 4 and index 5 both say "BTC/USD"
+            // on devnet, because the first was listed against the wrong feed and replaced
+            // rather than repaired. Overwriting silently would hide that, so record it.
+            if let Some((prior, ..)) = on_chain.get(&symbol) {
+                duplicates.push((symbol.clone(), *prior, m.market_index));
+            }
+            all_on_chain.push((symbol.clone(), m.market_index, m.status));
+            on_chain.insert(symbol, (m.market_index, *pda, m.pyth_feed_id, m.status));
+        }
+    }
+
+    let mut next_index = num_markets;
+    let mut listed: Vec<serde_json::Value> = Vec::new();
+    let mut mismatches = 0usize;
+
+    for spec in markets {
         let Some(feed_id) = feeds.get(spec.symbol) else {
-            println!("  {:<16} SKIPPED — no Hermes feed", spec.symbol);
+            println!("  {:<10} SKIPPED — no Hermes feed", spec.symbol);
             continue;
         };
+        let want = hex::encode(feed_id);
 
-        listed.push(serde_json::json!({
-            "market_index": market_index,
-            "symbol": spec.symbol,
-            "market_pda": market_pda.to_string(),
-            "feed_id": hex::encode(feed_id),
-        }));
+        // ---- already listed --------------------------------------------------------------
+        if let Some((index, market_pda, have_feed, status)) = on_chain.get(spec.symbol).copied() {
+            let have = hex::encode(have_feed);
+            if have != want {
+                // Do not send anything. The feed cannot be changed by the retune below, so a
+                // transaction here would only make the account look freshly maintained while
+                // still pricing the wrong instrument.
+                mismatches = mismatches.saturating_add(1);
+                println!(
+                    "  {:<10} [{index}] *** FEED MISMATCH — untouched ***",
+                    spec.symbol
+                );
+                println!("             on chain {have}");
+                println!("             resolved {want}");
+                println!(
+                    "             repair:  halt the market, then set_market_oracle \
+                     --market-index {index} --expected {have} --new {want}"
+                );
+                listed.push(serde_json::json!({
+                    "market_index": index,
+                    "symbol": spec.symbol,
+                    "market_pda": market_pda.to_string(),
+                    "feed_id": have,
+                    "resolved_feed_id": want,
+                    "healthy": false,
+                    "listed": true,
+                    "reason": "stored feed does not match the resolved feed",
+                }));
+                continue;
+            }
 
-        if let Ok(data) = rpc.get_account_data(&market_pda).await {
-            // Already listed. It may still be sitting in `Initialized` from an earlier run
-            // that stopped short of activating it, so check rather than assume.
-            let live = solfx_core::state::Market::try_deserialize(&mut data.as_slice())
-                .map(|m| m.status == MarketStatus::Active)
-                .unwrap_or(false);
-            // Retune regardless of status. An already-active market listed by an older build
-            // still carries whatever bounds that build computed, and "active" is no evidence
-            // they are right — skipping here is how a broken envelope survives a re-run.
-            // Retune first. A market listed by an older build may carry position bounds
-            // derived from the FX lot for every asset, which makes the *minimum* BTC
-            // position ~0.1 BTC and rejects any sane order as too small.
+            listed.push(serde_json::json!({
+                "market_index": index,
+                "symbol": spec.symbol,
+                "market_pda": market_pda.to_string(),
+                "feed_id": have,
+                "healthy": true,
+                "listed": true,
+            }));
+
+            if !args.activate || args.dry_run {
+                println!(
+                    "  {:<10} [{index}] listed, feed OK, status {status:?}",
+                    spec.symbol
+                );
+                continue;
+            }
+
+            // Retune regardless of status: a market listed by an older build still carries
+            // whatever bounds that build computed, and "active" is no evidence they are right.
             let retune = Instruction {
                 program_id: solfx_core::ID,
                 accounts: solfx_core::accounts::AdminMarket {
@@ -464,19 +615,16 @@ async fn run(args: Args) -> Result<()> {
             };
             match send(&rpc, &admin, vec![retune], 60_000).await {
                 Ok(_) => println!(
-                    "  {:<16} [{market_index}] risk params refreshed (min size {})",
+                    "  {:<10} [{index}] risk params refreshed (min size {})",
                     spec.symbol,
                     contracts::min_position_base(spec.symbol)
                 ),
-                Err(e) => println!(
-                    "  {:<16} [{market_index}] retune failed: {e:#}",
-                    spec.symbol
-                ),
+                Err(e) => println!("  {:<10} [{index}] retune failed: {e:#}", spec.symbol),
             }
-            if live {
+
+            if status == MarketStatus::Active {
                 continue;
             }
-            println!("  {:<16} [{market_index}] activating", spec.symbol);
             let activate = Instruction {
                 program_id: solfx_core::ID,
                 accounts: solfx_core::accounts::AdminMarket {
@@ -491,16 +639,42 @@ async fn run(args: Args) -> Result<()> {
                 .data(),
             };
             match send(&rpc, &admin, vec![activate], 60_000).await {
-                Ok(sig) => println!("  {:<16}      active {sig}", ""),
-                Err(e) => println!("  {:<16}      ACTIVATION FAILED: {e:#}", ""),
+                Ok(sig) => println!("  {:<10}      active {sig}", ""),
+                Err(e) => println!("  {:<10}      ACTIVATION FAILED: {e:#}", ""),
             }
             continue;
         }
-        if args.dry_run {
+
+        // ---- not listed yet --------------------------------------------------------------
+        //
+        // A new market always takes the next free index. `initialize_market` enforces
+        // `market_index == protocol.num_markets`, so an existing index can never be reused
+        // even if this tool were wrong about which are taken.
+        let market_index = next_index;
+        let market_pda = Pubkey::find_program_address(
+            &[MARKET_SEED, &market_index.to_le_bytes()],
+            &solfx_core::ID,
+        )
+        .0;
+
+        // `listed` records whether the account actually exists. A verification pass must not
+        // leave a deployment file claiming markets it only *planned* to create — a client
+        // reading it would derive PDAs for accounts that were never funded.
+        listed.push(serde_json::json!({
+            "market_index": market_index,
+            "symbol": spec.symbol,
+            "market_pda": market_pda.to_string(),
+            "feed_id": want,
+            "healthy": true,
+            "listed": args.activate && !args.dry_run,
+        }));
+
+        if !args.activate || args.dry_run {
             println!(
-                "  {:<16} [{market_index}] would list at {market_pda}",
+                "  {:<10} [{market_index}] NEW — would list at {market_pda}",
                 spec.symbol
             );
+            next_index = next_index.saturating_add(1);
             continue;
         }
 
@@ -520,16 +694,14 @@ async fn run(args: Args) -> Result<()> {
             .data(),
         };
         match send(&rpc, &admin, vec![ix], 120_000).await {
-            Ok(sig) => println!("  {:<16} [{market_index}] listed {sig}", spec.symbol),
+            Ok(sig) => println!("  {:<10} [{market_index}] listed {sig}", spec.symbol),
             Err(e) => {
-                println!("  {:<16} [{market_index}] FAILED: {e:#}", spec.symbol);
+                println!("  {:<10} [{market_index}] FAILED: {e:#}", spec.symbol);
                 continue;
             }
         }
+        next_index = next_index.saturating_add(1);
 
-        // `initialize_market` deliberately leaves the market `Initialized`, not `Active`:
-        // a mis-typed feed id or risk parameter must not be tradeable the instant it is
-        // listed. Going live is a separate, explicit decision, so make it explicitly.
         let activate = Instruction {
             program_id: solfx_core::ID,
             accounts: solfx_core::accounts::AdminMarket {
@@ -544,14 +716,55 @@ async fn run(args: Args) -> Result<()> {
             .data(),
         };
         match send(&rpc, &admin, vec![activate], 60_000).await {
-            Ok(sig) => println!("  {:<16}      active {sig}", ""),
-            Err(e) => println!("  {:<16}      ACTIVATION FAILED: {e:#}", ""),
+            Ok(sig) => println!("  {:<10}      active {sig}", ""),
+            Err(e) => println!("  {:<10}      ACTIVATION FAILED: {e:#}", ""),
         }
     }
 
-    // --- seed the pool -------------------------------------------------------------------
-    // Without liquidity the LP pool cannot be the counterparty, so every open_position fails
-    // on `InsufficientPoolLiquidity` — a confusing first experience of a working protocol.
+    // Markets that exist on chain but are not in the requested set. They are not errors —
+    // an operator may be listing a subset — but they are indistinguishable from abandoned
+    // mis-listings unless they are named, and an unpriceable Active market is a trap for any
+    // client that enumerates `0..num_markets` rather than reading this file.
+    let orphans: Vec<&(String, u16, MarketStatus)> = all_on_chain
+        .iter()
+        .filter(|(sym, ..)| !markets.iter().any(|m| m.symbol == sym))
+        .collect();
+    if !orphans.is_empty() {
+        println!("\n  on chain but not in this market set:");
+        for (sym, index, status) in orphans {
+            println!("    {sym:<10} [{index}] status {status:?}");
+        }
+        println!(
+            "    These are not offered by this deployment file. Halt any that are still \
+             Active — an enumerating client would otherwise find them."
+        );
+    }
+
+    if !duplicates.is_empty() {
+        println!("\n  *** duplicate symbols on chain ***");
+        for (sym, first, second) in &duplicates {
+            println!("    {sym:<10} at [{first}] and [{second}]");
+        }
+        println!(
+            "    A symbol resolves to exactly one market here — the higher index wins. The \
+             lower one is a replaced mis-listing and should be halted."
+        );
+    }
+
+    if mismatches > 0 {
+        println!(
+            "\n  {mismatches} market(s) hold a feed that is not the one resolved for their \
+             symbol. They were left untouched and are marked \"healthy\": false in the \
+             deployment file — a client must not offer them."
+        );
+    }
+    if !args.activate {
+        println!(
+            "\nVerification pass only — nothing was sent. Re-run with --activate once the \
+             table above is right."
+        );
+    }
+
     if args.lp_seed > 0 && !args.dry_run && args.usdc_mint.is_none() {
         println!("\nseeding LP pool with {} test USDC", args.lp_seed);
         match seed_lp(
@@ -915,79 +1128,6 @@ async fn send(rpc: &RpcClient, payer: &Keypair, ixs: Vec<Instruction>, cu: u32) 
     let mut tx = Transaction::new_unsigned(msg);
     tx.try_sign(&[payer], blockhash).context("signing")?;
     Ok(rpc.send_and_confirm_transaction(&tx).await?.to_string())
-}
-
-async fn resolve_feed_ids(
-    hermes: &str,
-    markets: &[MarketSpec],
-) -> Result<HashMap<String, [u8; 32]>> {
-    #[derive(serde::Deserialize)]
-    struct Entry {
-        id: String,
-        attributes: Attrs,
-    }
-    #[derive(serde::Deserialize)]
-    struct Attrs {
-        #[serde(default)]
-        display_symbol: Option<String>,
-        #[serde(default)]
-        symbol: Option<String>,
-        #[serde(default)]
-        asset_type: Option<String>,
-    }
-
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-    let catalogue: Vec<Entry> = http
-        .get(format!("{}/v2/price_feeds", hermes.trim_end_matches('/')))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await
-        .context("parsing the Hermes catalogue")?;
-
-    let want: HashMap<String, &str> = markets
-        .iter()
-        .map(|m| (m.symbol.to_uppercase(), m.symbol))
-        .collect();
-    let mut best: HashMap<String, (String, String)> = HashMap::new();
-
-    for entry in catalogue {
-        let asset_type = entry.attributes.asset_type.clone().unwrap_or_default();
-        let mut names = Vec::new();
-        if let Some(d) = &entry.attributes.display_symbol {
-            names.push(d.to_uppercase());
-        }
-        if let Some(s) = &entry.attributes.symbol {
-            names.push(s.rsplit('.').next().unwrap_or(s).to_uppercase());
-        }
-        for name in names {
-            let Some(original) = want.get(&name) else {
-                continue;
-            };
-            let better = match best.get(*original) {
-                None => true,
-                Some((_, ty)) => ty == "Crypto" && asset_type != "Crypto",
-            };
-            if better {
-                best.insert(
-                    (*original).to_string(),
-                    (entry.id.clone(), asset_type.clone()),
-                );
-            }
-        }
-    }
-
-    let mut out = HashMap::new();
-    for (symbol, (id, _)) in best {
-        let mut bytes = [0u8; 32];
-        if hex::decode_to_slice(id.trim_start_matches("0x"), &mut bytes).is_ok() {
-            out.insert(symbol, bytes);
-        }
-    }
-    Ok(out)
 }
 
 fn load_keypair(path: &str) -> Result<Keypair> {
