@@ -139,8 +139,14 @@ const GUARDIAN_SET_SEED: &[u8] = b"GuardianSet";
 struct Args {
     #[arg(long, default_value = "https://api.devnet.solana.com")]
     rpc_url: String,
-    #[arg(long, default_value = "https://hermes.pyth.network")]
+    #[arg(long, default_value = pyth::DEFAULT_HERMES_URL)]
     hermes_url: String,
+
+    /// Hermes API key. Pyth put the public endpoint behind authentication on 26 Aug 2026;
+    /// without this every request returns 401 and no price can be posted on any cluster.
+    /// Get one free at https://pythdata.app.
+    #[arg(long, env = "PYTH_API_KEY")]
+    hermes_token: Option<String>,
     /// Payer and write authority. Must hold SOL for rent and the receiver's update fee.
     #[arg(long, default_value = "~/.config/solana/id.json")]
     keypair: String,
@@ -252,12 +258,24 @@ async fn run(args: Args) -> Result<()> {
     };
     let wanted_refs: Vec<&str> = wanted.iter().map(String::as_str).collect();
 
-    let feeds = resolve_feed_ids(&args.hermes_url, &wanted_refs).await?;
+    // One shared resolver for every binary — see `pyth::resolve_feed_ids`. The poster used to
+    // carry its own copy and, after `init-protocol` was corrected, still resolved BTC/USD to
+    // a Deribit funding rate while the protocol had the spot feed.
+    let resolved =
+        pyth::resolve_feed_ids(&args.hermes_url, args.hermes_token.as_deref(), &wanted_refs)
+            .await?;
+    // Preserve the requested order so the map and the posting sequence are stable.
+    let feeds: Vec<(String, String)> = wanted
+        .iter()
+        .filter_map(|sym| resolved.get(sym).map(|f| (sym.clone(), f.feed_id.clone())))
+        .collect();
     println!(
         "resolved {} of {} symbols from Hermes\n",
         feeds.len(),
         wanted.len()
     );
+
+    let feeds = screen_entitlements(&args.hermes_url, args.hermes_token.as_deref(), feeds).await?;
 
     std::fs::create_dir_all(&args.keys_dir)
         .with_context(|| format!("creating {}", args.keys_dir.display()))?;
@@ -309,7 +327,8 @@ async fn post_pass(
 
     for chunk in feeds.chunks(10) {
         let ids: Vec<String> = chunk.iter().map(|(_, id)| id.clone()).collect();
-        let blobs = match fetch_updates(&args.hermes_url, &ids).await {
+        let blobs = match fetch_updates(&args.hermes_url, args.hermes_token.as_deref(), &ids).await
+        {
             Ok(b) => b,
             Err(e) => {
                 eprintln!("  hermes fetch failed for {} feeds: {e:#}", ids.len());
@@ -611,7 +630,7 @@ async fn print_clone_args(args: &Args) -> Result<()> {
     // The guardian set index is a property of the VAAs currently being signed, so ask for a
     // real one rather than assuming. BTC/USD is the safest probe: it publishes everywhere.
     let btc = "e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43".to_string();
-    let blobs = fetch_updates(&args.hermes_url, &[btc]).await?;
+    let blobs = fetch_updates(&args.hermes_url, args.hermes_token.as_deref(), &[btc]).await?;
     let blob = blobs
         .first()
         .ok_or_else(|| anyhow!("Hermes returned no update"))?;
@@ -657,75 +676,7 @@ fn listed_symbols(path: &PathBuf) -> Result<Vec<String>> {
 
 // --- Hermes ------------------------------------------------------------------------------
 
-#[derive(serde::Deserialize)]
-struct CatalogueEntry {
-    id: String,
-    attributes: CatalogueAttributes,
-}
-
-#[derive(serde::Deserialize)]
-struct CatalogueAttributes {
-    #[serde(default)]
-    display_symbol: Option<String>,
-    #[serde(default)]
-    symbol: Option<String>,
-    #[serde(default)]
-    asset_type: Option<String>,
-}
-
 /// Symbol → feed id, for the symbols asked for, in the order given.
-async fn resolve_feed_ids(hermes: &str, wanted: &[&str]) -> Result<Vec<(String, String)>> {
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-    let catalogue: Vec<CatalogueEntry> = http
-        .get(format!("{}/v2/price_feeds", hermes.trim_end_matches('/')))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await
-        .context("parsing the Hermes catalogue")?;
-
-    let mut best: HashMap<String, (String, String)> = HashMap::new();
-    let want: std::collections::HashSet<String> = wanted.iter().map(|s| s.to_uppercase()).collect();
-
-    for entry in catalogue {
-        let asset_type = entry.attributes.asset_type.clone().unwrap_or_default();
-        let mut names = Vec::new();
-        if let Some(d) = &entry.attributes.display_symbol {
-            names.push(d.to_uppercase());
-        }
-        if let Some(s) = &entry.attributes.symbol {
-            names.push(s.rsplit('.').next().unwrap_or(s).to_uppercase());
-        }
-        for name in names {
-            if !want.contains(&name) {
-                continue;
-            }
-            // Prefer a non-Crypto asset type where both exist: PAXG and XAUT publish as
-            // "Crypto" and are tokenised claims, not spot metal.
-            let better = match best.get(&name) {
-                None => true,
-                Some((_, ty)) => ty == "Crypto" && asset_type != "Crypto",
-            };
-            if better {
-                best.insert(name.clone(), (entry.id.clone(), asset_type.clone()));
-            }
-        }
-    }
-
-    let mut out = Vec::new();
-    for symbol in wanted {
-        if let Some((id, _)) = best.get(&symbol.to_uppercase()) {
-            out.push(((*symbol).to_string(), id.clone()));
-        } else {
-            eprintln!("  no Hermes feed for {symbol}");
-        }
-    }
-    Ok(out)
-}
-
 #[derive(serde::Deserialize)]
 struct LatestResponse {
     binary: BinaryData,
@@ -737,7 +688,72 @@ struct BinaryData {
 }
 
 /// The signed accumulator blobs for these feeds, hex-decoded.
-async fn fetch_updates(hermes: &str, ids: &[String]) -> Result<Vec<Vec<u8>>> {
+/// Drop feeds this API key is not entitled to, once, at startup.
+///
+/// # Why this is necessary rather than defensive
+///
+/// Hermes has no partial-entitlement mode. A single request carrying one feed the key cannot
+/// read returns **403 for the whole batch** — verified: five feeds together 403, the three
+/// entitled ones alone 200, and the documented `ignore_invalid_price_ids=true` does not help
+/// because it covers malformed ids, not ungranted ones.
+///
+/// So one unentitled market silently takes down every other market in its chunk. Before this
+/// screen the poster reported `0 posted, 5 failed` forever while three of those five were
+/// perfectly readable.
+///
+/// The probe runs once. In the normal case (everything entitled) it costs a single request
+/// and the loop proceeds untouched; only on a 403 does it fall back to one request per feed
+/// to find out which ones are the problem. Steady state is unchanged either way.
+async fn screen_entitlements(
+    hermes: &str,
+    token: Option<&str>,
+    feeds: Vec<(String, String)>,
+) -> Result<Vec<(String, String)>> {
+    if feeds.is_empty() {
+        return Ok(feeds);
+    }
+
+    let all: Vec<String> = feeds.iter().map(|(_, id)| id.clone()).collect();
+    if fetch_updates(hermes, token, &all).await.is_ok() {
+        return Ok(feeds);
+    }
+
+    println!("hermes refused the full feed set — checking each feed individually");
+    let mut usable = Vec::new();
+    let mut denied = Vec::new();
+    for (symbol, id) in feeds {
+        match fetch_updates(hermes, token, std::slice::from_ref(&id)).await {
+            Ok(_) => usable.push((symbol, id)),
+            Err(e) => denied.push((symbol, format!("{e:#}"))),
+        }
+    }
+
+    if !denied.is_empty() {
+        println!("\n  {} feed(s) this API key cannot read:", denied.len());
+        for (symbol, why) in &denied {
+            let reason = if why.contains("403") {
+                "not entitled on this Pyth plan"
+            } else {
+                "unavailable"
+            };
+            println!("    {symbol:<12} {reason}");
+        }
+        println!(
+            "  Those markets will have no price and every trade on them will be refused on\n               staleness. Raise the plan at https://pythdata.app to include them.\n"
+        );
+    }
+
+    if usable.is_empty() {
+        anyhow::bail!(
+            "no feed is readable with this API key — nothing to post. Check PYTH_API_KEY, \
+             then confirm the plan covers the listed markets."
+        );
+    }
+    println!("  posting {} usable feed(s)\n", usable.len());
+    Ok(usable)
+}
+
+async fn fetch_updates(hermes: &str, token: Option<&str>, ids: &[String]) -> Result<Vec<Vec<u8>>> {
     let query = ids
         .iter()
         .map(|id| format!("ids[]={id}"))
@@ -747,9 +763,7 @@ async fn fetch_updates(hermes: &str, ids: &[String]) -> Result<Vec<Vec<u8>>> {
         "{}/v2/updates/price/latest?{query}&encoding=hex",
         hermes.trim_end_matches('/')
     );
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
+    let http = pyth::hermes_client(std::time::Duration::from_secs(30), token)?;
     let body: LatestResponse = http
         .get(&url)
         .send()

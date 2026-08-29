@@ -62,6 +62,188 @@ pub fn feed_hex(feed_id: &[u8; 32]) -> String {
     hex::encode(feed_id)
 }
 
+/// Pyth's upgraded Hermes backend. The old `hermes.pyth.network` still resolves and still
+/// works *with a key*, but Pyth recommend this one and will cut over to it.
+pub const DEFAULT_HERMES_URL: &str = "https://pyth.dourolabs.app/hermes";
+
+/// Build an HTTP client that authenticates to Hermes.
+///
+/// # Why this exists rather than a bare `reqwest::Client` at each call site
+///
+/// Pyth put Hermes behind authentication on **26 August 2026 at 16:00 UTC**. Before that the
+/// public endpoint was open and four call sites each built their own client; after it, every
+/// one of them returned `401 unauthorized` and the protocol could not price a single trade.
+/// Centralising the client is what stops the next such change from having to be found in four
+/// places — and it is why the token is a default header rather than a query parameter, so a
+/// new request cannot forget it.
+///
+/// A missing token is **not** an error here: `hermes-beta`, a self-hosted instance and a node
+/// provider may each want different (or no) credentials. The 401 that follows is clearer than
+/// a launch-time refusal would be, because it names the endpoint that rejected us.
+pub fn hermes_client(timeout: Duration, token: Option<&str>) -> Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder().timeout(timeout);
+
+    if let Some(token) = token.map(str::trim).filter(|t| !t.is_empty()) {
+        let mut headers = reqwest::header::HeaderMap::new();
+        let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
+            .context("PYTH_API_KEY is not a valid HTTP header value")?;
+        // The key is a credential; keep it out of any `Debug` rendering of the headers.
+        value.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+        builder = builder.default_headers(headers);
+    }
+
+    builder.build().context("building the Hermes HTTP client")
+}
+
+/// The Pyth `asset_type` a SolFX symbol must resolve to.
+///
+/// Derived from the symbol rather than configured, so the three operator binaries cannot
+/// disagree about what BTC/USD is. Mirrors the asset-class split in `contracts.rs`.
+#[must_use]
+pub fn asset_class_for(symbol: &str) -> &'static str {
+    let sym = symbol.to_uppercase();
+    if sym.starts_with("XAU")
+        || sym.starts_with("XAG")
+        || sym.starts_with("XPT")
+        || sym.starts_with("XPD")
+        || sym.starts_with("XCU")
+    {
+        "metal"
+    } else if sym.contains("OIL") {
+        "commodities"
+    } else if sym.starts_with("BTC") || sym.starts_with("ETH") || sym.starts_with("SOL") {
+        "crypto"
+    } else {
+        "fx"
+    }
+}
+
+/// One catalogue entry, resolved.
+#[derive(Debug, Clone)]
+pub struct ResolvedFeed {
+    /// Lowercase hex, 64 chars.
+    pub feed_id: String,
+    /// The fully-qualified Pyth symbol this came from, e.g. `Crypto.BTC/USD`.
+    pub pyth_symbol: String,
+}
+
+/// Resolve SolFX symbols to Pyth feed ids. **The only implementation — do not write another.**
+///
+/// # The bug this exists to prevent
+///
+/// Three binaries each had their own copy of this. One was fixed; the others were not, and
+/// the poster went on resolving BTC/USD to `FundingRate.Deribit.8h.BTC/USD` — an 8-hour
+/// funding rate near 0.0001 where BTC is near 100,000 — while `init-protocol` had already
+/// been corrected to `Crypto.BTC/USD`. Two tools, two answers, same market.
+///
+/// # How a match is decided
+///
+/// Two rules, both from Pyth's own documentation:
+///
+/// 1. **Filter server-side by `asset_type`.** `/v2/price_feeds?asset_type=crypto` keeps the
+///    decoy families (funding rates, indices, NAVs, redemption rates, equities) out of the
+///    candidate set entirely.
+/// 2. **Match the fully-qualified symbol, in its two-segment `AssetClass.PAIR` form.** Pyth
+///    state that symbols must carry the asset-type prefix (`Crypto.BTC/USD`, not `BTC/USD`)
+///    and warn that the short display name "is not guaranteed to be unique". Requiring
+///    exactly two segments admits spot and rejects `FX.Index.EUR/USD`, `Equity.US.FBTC/USD`
+///    and every `FundingRate.*` form, all of which share the trailing pair.
+///
+/// Two surviving candidates is an ambiguity to report, never to resolve by iteration order.
+pub async fn resolve_feed_ids(
+    hermes: &str,
+    token: Option<&str>,
+    wanted: &[&str],
+) -> Result<std::collections::HashMap<String, ResolvedFeed>> {
+    #[derive(serde::Deserialize)]
+    struct Entry {
+        id: String,
+        attributes: Attrs,
+    }
+    #[derive(serde::Deserialize)]
+    struct Attrs {
+        #[serde(default)]
+        symbol: Option<String>,
+        #[serde(default)]
+        asset_type: Option<String>,
+    }
+
+    let http = hermes_client(Duration::from_secs(30), token)?;
+    let base = hermes.trim_end_matches('/');
+
+    let mut classes: Vec<&'static str> = wanted.iter().map(|s| asset_class_for(s)).collect();
+    classes.sort_unstable();
+    classes.dedup();
+
+    let mut catalogue: Vec<Entry> = Vec::new();
+    for class in classes {
+        let page: Vec<Entry> = http
+            .get(format!("{base}/v2/price_feeds?asset_type={class}"))
+            .send()
+            .await?
+            .error_for_status()
+            .with_context(|| format!("Hermes rejected the {class} catalogue"))?
+            .json()
+            .await
+            .with_context(|| format!("parsing the {class} catalogue"))?;
+        catalogue.extend(page);
+    }
+
+    let want: std::collections::HashMap<String, (&str, &'static str)> = wanted
+        .iter()
+        .map(|s| (s.to_uppercase(), (*s, asset_class_for(s))))
+        .collect();
+
+    let mut hits: std::collections::HashMap<String, Vec<ResolvedFeed>> =
+        std::collections::HashMap::new();
+
+    for entry in catalogue {
+        let asset_type = entry.attributes.asset_type.clone().unwrap_or_default();
+        let Some(pyth_symbol) = entry.attributes.symbol.clone() else {
+            continue;
+        };
+        let mut parts = pyth_symbol.split('.');
+        let (Some(_class), Some(pair), None) = (parts.next(), parts.next(), parts.next()) else {
+            continue;
+        };
+        let Some((original, expected)) = want.get(&pair.to_uppercase()) else {
+            continue;
+        };
+        if !asset_type.eq_ignore_ascii_case(expected) {
+            continue;
+        }
+        let bucket = hits.entry((*original).to_string()).or_default();
+        if !bucket.iter().any(|f| f.feed_id == entry.id) {
+            bucket.push(ResolvedFeed {
+                feed_id: entry.id.clone(),
+                pyth_symbol: pyth_symbol.clone(),
+            });
+        }
+    }
+
+    let mut out = std::collections::HashMap::new();
+    for (symbol, mut candidates) in hits {
+        if candidates.len() > 1 {
+            let listed = candidates
+                .iter()
+                .map(|f| format!("{} ({})", f.pyth_symbol, f.feed_id))
+                .collect::<Vec<_>>()
+                .join(", ");
+            anyhow::bail!(
+                "{symbol} matches {} feeds of asset type {}: {listed}. Refusing to guess — \
+                 the wrong feed would price the market against the wrong instrument.",
+                candidates.len(),
+                asset_class_for(&symbol)
+            );
+        }
+        if let Some(found) = candidates.pop() {
+            out.insert(symbol, found);
+        }
+    }
+    Ok(out)
+}
+
 /// A read-only Hermes client used to detect that an on-chain feed has stopped advancing.
 pub struct Hermes {
     base: String,
@@ -116,13 +298,10 @@ impl OffChainPrice {
 }
 
 impl Hermes {
-    pub fn new(base: &str) -> Result<Self> {
+    pub fn new(base: &str, token: Option<&str>) -> Result<Self> {
         Ok(Self {
             base: base.trim_end_matches('/').to_string(),
-            http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(5))
-                .build()
-                .context("building HTTP client")?,
+            http: hermes_client(Duration::from_secs(5), token)?,
         })
     }
 

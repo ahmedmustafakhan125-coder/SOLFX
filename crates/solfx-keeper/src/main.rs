@@ -30,6 +30,11 @@ mod book;
 mod chain;
 mod config;
 mod danger;
+// Compiled into the keeper *and* `#[path]`-included by each operator binary. No single
+// consumer uses every item — the poster resolves feeds but never reads a price account, the
+// keeper does the reverse — so "never used" is a property of which binary is compiling, not
+// dead code. The `#[path]` includes carry the same allow.
+#[allow(dead_code)]
 mod pyth;
 mod services;
 

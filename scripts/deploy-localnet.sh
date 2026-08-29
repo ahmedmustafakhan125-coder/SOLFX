@@ -56,14 +56,33 @@ CLONE_ARGS=(--clone-upgradeable-program "$PYTH_RECEIVER" --clone-upgradeable-pro
 # The receiver's config and treasury PDAs, and the Wormhole guardian set the VAAs are
 # currently signed against. Derived by the poster, which owns that logic already.
 say "Deriving the Pyth accounts the poster needs"
-if PYTH_ACCOUNTS=$(cargo run -q -p solfx-keeper --bin price-poster -- --print-clone-args 2>/dev/null); then
-  # shellcheck disable=SC2206
-  CLONE_ARGS+=($PYTH_ACCOUNTS)
+# This FAILS the script rather than warning. It used to warn and carry on, which produced a
+# validator missing the Pyth receiver config — and the failure then surfaced two commands
+# later as `AccountNotFound: DaWUKXCy...` from the poster, which points nowhere near the
+# cause. A half-built validator is worse than no validator: it looks like it worked.
+if ! PYTH_ACCOUNTS=$(cargo run -q -p solfx-keeper --bin price-poster -- --print-clone-args 2>&1); then
+  echo
+  echo "  ERROR: could not derive the Pyth accounts to clone."
+  echo
   echo "  $PYTH_ACCOUNTS"
-else
-  echo "  WARNING: could not derive them; price-poster will fail against this validator."
-  echo "  Re-run with network access, or add them by hand via SOLFX_CLONE_FEEDS."
+  echo
+  echo "  Most likely cause: Hermes needs an API key. Pyth put the public endpoint behind"
+  echo "  authentication on 26 Aug 2026 at 16:00 UTC, and every request without one now"
+  echo "  returns 401. Get a free key at https://pythdata.app, then:"
+  echo
+  echo "      echo 'PYTH_API_KEY=your_key' >> .env && set -a && . ./.env && set +a"
+  echo
+  echo "  Verify it before re-running this script:"
+  echo
+  echo "      curl -s -o /dev/null -w '%{http_code}\\n' -H \"Authorization: Bearer \$PYTH_API_KEY\" \\"
+  echo "        'https://pyth.dourolabs.app/hermes/v2/price_feeds'"
+  echo
+  echo "  Stopping here rather than starting a validator the poster cannot use."
+  exit 1
 fi
+# shellcheck disable=SC2206
+CLONE_ARGS+=($PYTH_ACCOUNTS)
+echo "  $PYTH_ACCOUNTS"
 
 for acct in ${SOLFX_CLONE_FEEDS:-}; do
   CLONE_ARGS+=(--clone "$acct")

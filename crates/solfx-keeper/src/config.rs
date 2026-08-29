@@ -14,7 +14,7 @@ use solana_pubkey::Pubkey;
 
 /// Pyth's public Hermes endpoint. Used only to *check* whether an on-chain price account has
 /// fallen behind the real market; see [`crate::pyth`].
-pub const DEFAULT_HERMES: &str = "https://hermes.pyth.network";
+pub const DEFAULT_HERMES: &str = crate::pyth::DEFAULT_HERMES_URL;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "solfx-keeper", about = "SolFX off-chain keepers")]
@@ -37,6 +37,11 @@ pub struct Config {
 
     #[arg(long, default_value = DEFAULT_HERMES, env = "SOLFX_HERMES_URL")]
     pub hermes_url: String,
+
+    /// Hermes API key. Pyth put the public endpoint behind authentication on 26 Aug 2026.
+    /// Free key at https://pythdata.app.
+    #[arg(long, env = "PYTH_API_KEY")]
+    pub hermes_token: Option<String>,
 
     /// How often to re-read the whole book from the chain.
     ///

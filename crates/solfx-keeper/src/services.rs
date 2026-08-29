@@ -429,7 +429,10 @@ fn anchor_spl_token_id() -> Pubkey {
 /// it is the same data the on-chain account is supposed to be carrying — a difference between
 /// them is a delivery problem, not a market move.
 pub async fn run_watchdog(shared: Arc<Shared>) {
-    let hermes = match crate::pyth::Hermes::new(&shared.cfg.hermes_url) {
+    let hermes = match crate::pyth::Hermes::new(
+        &shared.cfg.hermes_url,
+        shared.cfg.hermes_token.as_deref(),
+    ) {
         Ok(h) => h,
         Err(e) => {
             tracing::error!(error = %format!("{e:#}"), "watchdog not starting");

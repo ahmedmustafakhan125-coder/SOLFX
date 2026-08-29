@@ -85,8 +85,12 @@ struct Args {
     #[arg(long)]
     rpc_url: Option<String>,
     /// Hermes base URL, for the symbol -> feed id catalogue.
-    #[arg(long, default_value = "https://hermes.pyth.network")]
+    #[arg(long, default_value = pyth::DEFAULT_HERMES_URL)]
     hermes_url: String,
+
+    /// Hermes API key. Required since 26 Aug 2026 — see `price-poster --help`.
+    #[arg(long, env = "PYTH_API_KEY")]
+    hermes_token: Option<String>,
     /// Older than this is not LIVE.
     #[arg(long, default_value_t = 120)]
     max_age_secs: i64,
@@ -125,76 +129,6 @@ impl Cluster {
 }
 
 // --- the Hermes catalogue ---------------------------------------------------------------
-
-#[derive(serde::Deserialize)]
-struct CatalogueEntry {
-    id: String,
-    attributes: CatalogueAttributes,
-}
-
-#[derive(serde::Deserialize)]
-struct CatalogueAttributes {
-    #[serde(default)]
-    display_symbol: Option<String>,
-    #[serde(default)]
-    symbol: Option<String>,
-    #[serde(default)]
-    asset_type: Option<String>,
-}
-
-/// Map every requested symbol to its feed id.
-///
-/// Matches on `display_symbol` (e.g. "EUR/USD") and falls back to the segment after the dot
-/// in `symbol` (e.g. "FX.EUR/USD"), because Pyth is not perfectly consistent about which of
-/// the two it populates across asset types.
-async fn resolve_feed_ids(
-    hermes: &str,
-    wanted: &[&str],
-) -> Result<HashMap<String, (String, String)>> {
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-    let url = format!("{}/v2/price_feeds", hermes.trim_end_matches('/'));
-    let catalogue: Vec<CatalogueEntry> = http
-        .get(&url)
-        .send()
-        .await
-        .context("fetching the Hermes catalogue")?
-        .error_for_status()
-        .context("Hermes returned an error status")?
-        .json()
-        .await
-        .context("parsing the Hermes catalogue")?;
-
-    let want: std::collections::HashSet<String> = wanted.iter().map(|s| s.to_uppercase()).collect();
-
-    let mut found: HashMap<String, (String, String)> = HashMap::new();
-    for entry in catalogue {
-        let asset_type = entry.attributes.asset_type.clone().unwrap_or_default();
-        let mut candidates: Vec<String> = Vec::new();
-        if let Some(d) = &entry.attributes.display_symbol {
-            candidates.push(d.to_uppercase());
-        }
-        if let Some(s) = &entry.attributes.symbol {
-            candidates.push(s.rsplit('.').next().unwrap_or(s).to_uppercase());
-        }
-        for c in candidates {
-            if want.contains(&c) {
-                // Prefer the first match, but let a non-crypto asset type win over a
-                // tokenised look-alike: PAXG publishes as "Crypto" and must never be
-                // mistaken for spot XAU.
-                let better = match found.get(&c) {
-                    None => true,
-                    Some((_, existing)) => existing == "Crypto" && asset_type != "Crypto",
-                };
-                if better {
-                    found.insert(c.clone(), (entry.id.clone(), asset_type.clone()));
-                }
-            }
-        }
-    }
-    Ok(found)
-}
 
 // --- the report -------------------------------------------------------------------------
 
@@ -243,7 +177,14 @@ async fn main() -> Result<()> {
         println!("{} markets requested\n", all.len());
     }
 
-    let catalogue = resolve_feed_ids(&args.hermes_url, &all).await?;
+    // Shared resolver — see `pyth::resolve_feed_ids`. Keyed uppercase, carrying the
+    // fully-qualified Pyth symbol so the report can show what each id actually is.
+    let resolved =
+        pyth::resolve_feed_ids(&args.hermes_url, args.hermes_token.as_deref(), &all).await?;
+    let catalogue: HashMap<String, (String, String)> = resolved
+        .into_iter()
+        .map(|(sym, f)| (sym.to_uppercase(), (f.feed_id, f.pyth_symbol)))
+        .collect();
 
     // Derive every address first, then fetch in bulk: one getMultipleAccounts per 100 keys
     // rather than 33 round trips.
