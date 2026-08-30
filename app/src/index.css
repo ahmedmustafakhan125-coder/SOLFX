@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+/*
+ * Palette lifted from the Stitch reference in design/stitch — #9945FF and #00FFA3 are
+ * Solana's own brand colours, which is why the sketches read as native to the ecosystem.
+ * Dark only: this is a trading terminal, and every venue it will be compared against is dark.
+ */
+:root {
+  --sf-bg: #0b0b0d;
+  --sf-surface: #131313;
+  --sf-surface-high: #1b1b1e;
+  --sf-surface-highest: #232327;
+  --sf-border: #2a2a30;
+  --sf-border-soft: #1e1e22;
+  --sf-text: #e5e2e1;
+  --sf-text-muted: #8b8b93;
+  --sf-text-dim: #5f5f68;
+  --sf-purple: #9945ff;
+  --sf-purple-dim: #8535e5;
+  --sf-purple-soft: #d8b9ff;
+  --sf-green: #00ffa3;
+  --sf-red: #ff6b6b;
+  --sf-amber: #ffd166;
+}
+
+@theme inline {
+  --color-bg: var(--sf-bg);
+  --color-surface: var(--sf-surface);
+  --color-surface-high: var(--sf-surface-high);
+  --color-surface-highest: var(--sf-surface-highest);
+  --color-line: var(--sf-border);
+  --color-line-soft: var(--sf-border-soft);
+  --color-ink: var(--sf-text);
+  --color-ink-muted: var(--sf-text-muted);
+  --color-ink-dim: var(--sf-text-dim);
+  --color-brand: var(--sf-purple);
+  --color-brand-dim: var(--sf-purple-dim);
+  --color-brand-soft: var(--sf-purple-soft);
+  --color-long: var(--sf-green);
+  --color-short: var(--sf-red);
+  --color-warn: var(--sf-amber);
+
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--sf-bg);
+  color: var(--sf-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers in a trading UI must be tabular, or every price twitches as digits change. */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
