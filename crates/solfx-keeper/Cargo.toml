@@ -34,6 +34,13 @@ path = "src/bin/trade.rs"
 name = "price-poster"
 path = "src/bin/price_poster.rs"
 
+# Market administration: status transitions and oracle repointing. The only client for
+# `set_market_status` and `set_market_oracle` — without it the halt → repoint → re-activate
+# repair sequence cannot be sent at all.
+[[bin]]
+name = "admin"
+path = "src/bin/admin.rs"
+
 [dependencies]
 solfx-math = { path = "../solfx-math" }
 solfx-core = { path = "../../programs/solfx-core", features = ["no-entrypoint"] }
