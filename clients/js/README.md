@@ -1,0 +1,47 @@
+# @solfx/client
+
+TypeScript client for `solfx-core`.
+
+## Layout
+
+| | |
+|---|---|
+| `src/generated/` | **Do not edit.** Codama output — instructions, accounts, PDAs, errors, types. |
+| `src/` | The hand-written layer, for what Codama cannot derive from an IDL. |
+| `scripts/read-devnet.ts` | Decodes every market on a live cluster using only generated code. |
+
+## Regenerating
+
+```bash
+anchor build          # writes target/idl/solfx_core.json
+npm run generate      # from the repo root
+```
+
+The IDL lives under `target/`, which is gitignored, so `src/generated/` is **committed**:
+a consumer of this package must not need a Rust toolchain to use it.
+
+## What the generated code does not give you
+
+Codama generates everything the IDL describes, and the IDL does not describe four
+things this program needs. Each is a hand-written module, and each exists because
+getting it wrong is silent rather than loud:
+
+1. **Price accounts.** On a cluster with no sponsored feed, the price-update accounts
+   are per-feed **keypairs** created by `price-poster`, not the canonical
+   `[shard, feed_id]` PDAs. Deriving the sponsored way compiles, looks right, and
+   fails on chain against an address nobody publishes to. The map is
+   `price-accounts.json`.
+2. **Contract size.** `Market` stores none. FX is 100,000 base units per lot, gold is
+   100 oz, crypto is 1 coin. Applying the FX number to Bitcoin makes `0.01 lots` mean
+   1,000 BTC — five orders of magnitude, and it reads as a plausible order the whole
+   way. `crates/solfx-keeper/src/contracts.rs` is the existing table.
+3. **`position` and `triggerOrder` PDAs.** Their seeds mix an account key with
+   instruction arguments, so Codama emits no helper for them.
+4. **Events.** The IDL declares 35; Codama generates no decoders. Events are the
+   indexer's only input.
+
+## Tests
+
+`npm test` — discriminators are re-derived from `sha256("global:<name>")` rather than
+trusted, and PDA derivation is pinned against addresses that exist on devnet. Drift in
+either fails here instead of as an opaque rejection on chain.
