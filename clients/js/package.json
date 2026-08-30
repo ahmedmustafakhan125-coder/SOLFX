@@ -11,7 +11,7 @@
     "generate:events": "tsx scripts/generate-events.ts"
   },
   "dependencies": {
-    "@solana/kit": "^4.0.0"
+    "@solana/kit": "^8.2.0"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
