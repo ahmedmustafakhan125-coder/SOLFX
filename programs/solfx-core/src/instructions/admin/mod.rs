@@ -1,6 +1,7 @@
 pub mod initialize_market;
 pub mod initialize_protocol;
 pub mod protocol_admin;
+pub mod set_market_oracle;
 pub mod update_market;
 
 // Glob re-exports are required, not stylistic: `#[derive(Accounts)]` generates a hidden
@@ -13,4 +14,5 @@ pub mod update_market;
 pub use initialize_market::*;
 pub use initialize_protocol::*;
 pub use protocol_admin::*;
+pub use set_market_oracle::*;
 pub use update_market::*;

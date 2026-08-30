@@ -515,6 +515,172 @@ fn delisting_is_terminal() {
     assert_err_contains(env.send(ix, &[&admin]), "Invalid market status transition");
 }
 
+// --- repointing the oracle ---------------------------------------------------------------
+//
+// `pyth_feed_id` was write-once until `set_market_oracle`: `initialize_market` set it and
+// nothing could correct it. Pyth retires feeds — `InterestRate.10YZ6` and
+// `Commodities.CAN6/USD` are both gone from the catalogue — and a market whose feed is
+// retired is dead in the way that matters: it cannot be priced, so open positions on it
+// cannot be closed or liquidated either. These six cases fix the shape of the repair path.
+
+/// The happy path, and the only shape the instruction accepts: halt, repoint, re-activate.
+#[test]
+fn a_halted_market_can_be_repointed_at_a_different_feed() {
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+
+    let admin = env.admin.insecure_clone();
+    let ix = env.set_status_ix(0, MarketStatus::Halted);
+    env.send(ix, &[&admin]).unwrap();
+
+    let ix = env.set_oracle_ix(0, FEED_EUR_USD, FEED_GBP_USD);
+    env.send(ix, &[&admin]).unwrap();
+
+    assert_eq!(
+        env.market_state(0).pyth_feed_id,
+        FEED_GBP_USD,
+        "the stored feed must be the new one — this is the whole point of the instruction"
+    );
+    assert_eq!(
+        env.market_state(0).status,
+        MarketStatus::Halted,
+        "repointing must not activate the market as a side effect; re-activation stays a \
+         separate reviewed step, exactly as at listing"
+    );
+
+    // And the market is usable again afterwards.
+    let ix = env.set_status_ix(0, MarketStatus::Active);
+    env.send(ix, &[&admin]).unwrap();
+    assert_eq!(env.market_state(0).status, MarketStatus::Active);
+    env.assert_invariants();
+}
+
+/// Drift's `handle_update_spot_market_oracle` guard: the caller passes the feed it believes
+/// is stored, and a mismatch aborts. A deployment script working from a stale picture of the
+/// chain therefore cannot repoint a market — which is precisely how the wrong feeds got onto
+/// devnet in the first place.
+#[test]
+fn repointing_requires_knowing_the_current_feed() {
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+
+    let admin = env.admin.insecure_clone();
+    let ix = env.set_status_ix(0, MarketStatus::Halted);
+    env.send(ix, &[&admin]).unwrap();
+
+    let ix = env.set_oracle_ix(0, FEED_USD_JPY, FEED_GBP_USD);
+    assert_err_contains(
+        env.send(ix, &[&admin]),
+        "Price update does not match this market's configured feed",
+    );
+
+    assert_eq!(
+        env.market_state(0).pyth_feed_id,
+        FEED_EUR_USD,
+        "a rejected repoint must leave the feed untouched"
+    );
+    env.assert_invariants();
+}
+
+/// The same check `initialize_market` applies, reused rather than reimplemented: a market
+/// pointed at an all-zero id could be created but never priced, opened or liquidated.
+#[test]
+fn repointing_rejects_an_all_zero_feed() {
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+
+    let admin = env.admin.insecure_clone();
+    let ix = env.set_status_ix(0, MarketStatus::Halted);
+    env.send(ix, &[&admin]).unwrap();
+
+    let ix = env.set_oracle_ix(0, FEED_EUR_USD, [0u8; 32]);
+    assert_err_contains(env.send(ix, &[&admin]), "Feed id must not be all zeroes");
+
+    assert_eq!(env.market_state(0).pyth_feed_id, FEED_EUR_USD);
+    env.assert_invariants();
+}
+
+/// A no-op write fails loudly. Emitting `MarketOracleChanged` with two identical ids would
+/// tell the Phase 8 indexer a repoint happened when nothing did.
+#[test]
+fn repointing_a_market_at_its_own_feed_is_rejected() {
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+
+    let admin = env.admin.insecure_clone();
+    let ix = env.set_status_ix(0, MarketStatus::Halted);
+    env.send(ix, &[&admin]).unwrap();
+
+    let ix = env.set_oracle_ix(0, FEED_EUR_USD, FEED_EUR_USD);
+    assert_err_contains(env.send(ix, &[&admin]), "Parameter out of range");
+
+    assert_eq!(env.market_state(0).pyth_feed_id, FEED_EUR_USD);
+    env.assert_invariants();
+}
+
+/// The load-bearing case.
+///
+/// Every live position's entry price, unrealised PnL and liquidation threshold was computed
+/// against the old feed. Repointing under an open book would re-price all of them against an
+/// instrument they were never opened on — the next oracle read would compare a EUR/USD entry
+/// to a GBP/USD quote and liquidate on the difference. Forcing a halt first is what makes
+/// this instruction defensible at all.
+///
+/// Note the guard is `status != Active`, so `ReduceOnly` and `GapWindow` still permit a
+/// repoint even though positions can be closed in both. That is the plan's specified shape;
+/// it is a deliberate narrowing to the state where new positions can be opened, not an
+/// oversight, but it is the line worth revisiting if this instruction ever grows a caller
+/// beyond the operator repair path.
+#[test]
+fn an_active_market_cannot_be_repointed() {
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+
+    let admin = env.admin.insecure_clone();
+    let ix = env.set_oracle_ix(0, FEED_EUR_USD, FEED_GBP_USD);
+    assert_err_contains(env.send(ix, &[&admin]), "Market is not active");
+
+    assert_eq!(
+        env.market_state(0).pyth_feed_id,
+        FEED_EUR_USD,
+        "an active market's feed must survive a repoint attempt intact — a position opened \
+         against this feed is still open"
+    );
+    assert_eq!(env.market_state(0).status, MarketStatus::Active);
+    env.assert_invariants();
+}
+
+#[test]
+fn a_stranger_cannot_repoint_a_market() {
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::eur_usd());
+
+    let admin = env.admin.insecure_clone();
+    let ix = env.set_status_ix(0, MarketStatus::Halted);
+    env.send(ix, &[&admin]).unwrap();
+
+    let attacker = Keypair::new();
+    env.svm.airdrop(&attacker.pubkey(), 1_000_000_000).unwrap();
+
+    // The attacker knows the current feed — the compare-and-swap is not an access control,
+    // and must not be mistaken for one. `has_one = admin` is what stops this.
+    let mut ix = env.set_oracle_ix(0, FEED_EUR_USD, FEED_GBP_USD);
+    ix.accounts[0].pubkey = attacker.pubkey();
+    assert_err_contains(
+        env.send(ix, &[&attacker]),
+        "Signer is not the protocol admin",
+    );
+
+    assert_eq!(env.market_state(0).pyth_feed_id, FEED_EUR_USD);
+    env.assert_invariants();
+}
+
 /// The allow-list in `MarketStatus::allows_open` is deliberately narrow: a status added
 /// later is closed to new positions until someone writes it in on purpose.
 #[test]

@@ -530,6 +530,30 @@ impl Env {
         }
     }
 
+    /// `expected_current` is a compare-and-swap on the stored feed id, so callers must state
+    /// what they believe the market currently points at.
+    pub fn set_oracle_ix(
+        &self,
+        index: u16,
+        expected_current: [u8; 32],
+        new_feed_id: [u8; 32],
+    ) -> Instruction {
+        Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::AdminMarket {
+                admin: self.admin.pubkey(),
+                protocol: self.protocol,
+                market: Self::market_pda(index),
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::SetMarketOracle {
+                expected_current,
+                new_feed_id,
+            }
+            .data(),
+        }
+    }
+
     pub fn activate_market(&mut self, index: u16) {
         let ix = self.set_status_ix(index, MarketStatus::Active);
         let admin = self.admin.insecure_clone();

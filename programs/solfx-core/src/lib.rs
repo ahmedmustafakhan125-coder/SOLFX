@@ -111,6 +111,21 @@ pub mod solfx_core {
         instructions::admin::update_market::set_market_status(ctx, new_status)
     }
 
+    /// Repoint a halted market at a different Pyth feed. `expected_current` is a
+    /// compare-and-swap on the stored id, so a caller that has not read the market cannot
+    /// change it.
+    pub fn set_market_oracle(
+        ctx: Context<AdminMarket>,
+        expected_current: [u8; 32],
+        new_feed_id: [u8; 32],
+    ) -> Result<()> {
+        instructions::admin::set_market_oracle::set_market_oracle(
+            ctx,
+            expected_current,
+            new_feed_id,
+        )
+    }
+
     pub fn update_fee_splits(ctx: Context<AdminOnly>, params: FeeSplitParams) -> Result<()> {
         instructions::admin::protocol_admin::update_fee_splits(ctx, params)
     }

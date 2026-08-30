@@ -60,6 +60,19 @@ pub struct MarketStatusChanged {
     pub ts: i64,
 }
 
+/// Emitted when a market is repointed at a different Pyth feed.
+///
+/// Both ids are carried because an indexer cannot otherwise tell a correction from a
+/// re-listing: every price it has already recorded for this market was quoted against
+/// `old_feed_id`, and everything after this slot is quoted against `new_feed_id`.
+#[event]
+pub struct MarketOracleChanged {
+    pub market_index: u16,
+    pub old_feed_id: [u8; 32],
+    pub new_feed_id: [u8; 32],
+    pub ts: i64,
+}
+
 #[event]
 pub struct FeeSplitUpdated {
     pub lp_bps: u16,
