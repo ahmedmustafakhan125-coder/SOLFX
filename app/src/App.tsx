@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Header } from "@/components/Header";
 import { MarketList } from "@/components/MarketList";
 import { MarketPanel } from "@/components/MarketPanel";
+import { AccountPanel } from "@/components/AccountPanel";
 import { OrderTicket } from "@/components/OrderTicket";
 import { useSolfx } from "@/hooks/useSolfx";
 import { RPC_URL, rpcLabel } from "@/config";
@@ -70,7 +71,10 @@ export default function App() {
             )}
           </main>
 
-          {market ? <OrderTicket market={market} price={prices[market.feedIdHex]} /> : null}
+          <div className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-line-soft">
+            <AccountPanel />
+            {market ? <OrderTicket market={market} price={prices[market.feedIdHex]} /> : null}
+          </div>
         </div>
       )}
     </div>

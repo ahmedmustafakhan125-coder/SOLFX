@@ -4,6 +4,7 @@ import { SizingError, resolveSize, unitsPerLot, type Sizing } from "@solfx/clien
 import type { LoadedMarket } from "@/lib/markets";
 import type { LivePrice } from "@/lib/prices";
 import { fmtBase, fmtPrice, fmtUsd, priceplaces } from "@/lib/format";
+import { useAccount } from "@/hooks/useAccount";
 
 const NOTIONAL_DIVISOR = 1_000_000_000_000n; // 1e12
 const RATE_PRECISION = 1_000_000_000n; // 1e9
@@ -21,6 +22,7 @@ export function OrderTicket({ market, price }: { market: LoadedMarket; price?: L
   const [mode, setMode] = useState<Mode>("notional");
   const [value, setValue] = useState("1000");
   const [leverage, setLeverage] = useState(Math.min(10, market.maxLeverage));
+  const { status: account } = useAccount();
 
   const places = priceplaces(market.symbol);
   const d = market.data;
@@ -51,16 +53,21 @@ export function OrderTicket({ market, price }: { market: LoadedMarket; price?: L
     }
   }, [mode, value, leverage, price, market.symbol, d]);
 
+  const free = account?.freeCollateral;
+  const underfunded =
+    !("error" in quote) && free !== undefined && quote.margin > free;
+
   const blocked =
     "error" in quote ||
     quote.belowMin ||
     quote.aboveMax ||
     quote.belowNotional ||
+    underfunded ||
     !market.tradeable ||
     price?.stale === true;
 
   return (
-    <div className="flex w-80 shrink-0 flex-col gap-4 border-l border-line-soft p-4">
+    <div className="flex flex-col gap-4 p-4">
       <div className="grid grid-cols-3 gap-1 rounded-md bg-surface-high p-1">
         {MODES.map((m) => (
           <button
@@ -141,6 +148,8 @@ export function OrderTicket({ market, price }: { market: LoadedMarket; price?: L
           belowMin={quote.belowMin}
           aboveMax={quote.aboveMax}
           belowNotional={quote.belowNotional}
+          underfunded={underfunded}
+          free={free}
           tradeable={market.tradeable}
           stale={price?.stale === true}
           status={market.status}
@@ -183,12 +192,19 @@ function Warnings(p: {
   belowMin: boolean;
   aboveMax: boolean;
   belowNotional: boolean;
+  underfunded: boolean;
+  free: bigint | undefined;
   tradeable: boolean;
   stale: boolean;
   status: string;
 }) {
   const items: string[] = [];
   if (!p.tradeable) items.push(`Market is ${p.status}; it does not permit opening.`);
+  if (p.underfunded) {
+    items.push(
+      `Margin exceeds your free collateral${p.free === undefined ? "" : ` of $${fmtUsd(p.free)}`}. Deposit more above.`,
+    );
+  }
   if (p.stale) items.push("Oracle is older than 60s — the program would reject this.");
   if (p.belowNotional) items.push("Below the $1.00 minimum notional.");
   if (p.belowMin) items.push("Below this market's minimum position size.");

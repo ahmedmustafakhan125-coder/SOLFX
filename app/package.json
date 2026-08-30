@@ -22,6 +22,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@solana-program/token": "^0.16.0",
     "@solana/client": "^1.7.0",
     "@solana/kit": "^8.2.0",
     "@solana/react-hooks": "^1.4.1",
