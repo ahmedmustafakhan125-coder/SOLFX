@@ -10,13 +10,13 @@
 
 | Finding | Status |
 |---|---|
-| **C-1** insurance-fund subsidy | **open** — does not block devnet; blocks mainnet. Regression test written and `#[ignore]`d (`self_liquidation_is_not_profitable_on_a_small_position`). |
+| **C-1** insurance-fund subsidy | **fixed & verified** — the top-up is capped at the liquidator share of a *fully payable* penalty on the same position, so the fund never pays more than the position could have paid itself. Proven by reverting the fix: `self_liquidation_is_not_profitable_on_a_small_position` then fails on "a solvent liquidation must not draw down the insurance fund". |
 | **C-2** carry stranded on liquidation | **fixed & verified** — `liquidate.rs` distributes on the pre-carry balance. Proven by reverting the fix: I1 breaks by exactly the accrued carry ($5.95). |
 | **B-1** carry never charged on close | **fixed & verified** — `close_position.rs` settles carry and routes it as revenue. |
 | **B-2** penalty not split 40/40/20 | **fixed & verified** — liquidator and insurance now receive an identical 40% (measured: 21,402,177 each of a 53,505,444 penalty). |
 | **B-3 … B-7** | **open** — revenue and configuration questions, deferred to devnet observation. |
 
-Suite after the fixes: **532 passed, 0 failed, 1 ignored**, clippy clean.
+Suite after the fixes: **549 passed, 0 failed, 0 ignored**, clippy clean.
 Details and the exact diffs in [`docs/audit-fixes.md`](docs/audit-fixes.md).
 
 ---
@@ -54,7 +54,7 @@ A verdict of *correct* appears only where I recomputed the arithmetic independen
 
 ## 1. Critical security
 
-### C-1 — The minimum-liquidator-reward subsidy is an economic drain on the insurance fund
+### C-1 — [FIXED] The minimum-liquidator-reward subsidy is an economic drain on the insurance fund
 **Severity: High** · [`instructions/keeper/liquidate.rs:233-241`](programs/solfx-core/src/instructions/keeper/liquidate.rs#L233-L241), [`constants.rs:121`](programs/solfx-core/src/constants.rs#L121)
 
 When a liquidated position cannot pay the liquidator, the insurance fund tops the reward up to `MIN_LIQUIDATOR_REWARD` = $1.00:
@@ -86,7 +86,32 @@ The worst case is better for the attacker than the average. `penalty` is capped 
 
 **Why the test suite does not catch it:** `self_liquidation_is_not_profitable` ([`tests/risk_engine.rs:171`](programs/solfx-core/tests/risk_engine.rs#L171)) uses a position with $250 of *collateral* — notional well above $500 — so `liquidator_out` exceeds $1 and the top-up branch never executes. The threat it names (T8) is tested only in the region where the subsidy is inactive.
 
-**Suggested direction (not applied):** make the top-up conditional on the position's notional exceeding the subsidy — or fund it from the penalty of *other* liquidations rather than the reserve — and add a test at $50 notional.
+**Applied fix.** The top-up ceiling is now the liquidator share of a *fully payable* penalty on the same position, rather than a flat `MIN_LIQUIDATOR_REWARD`:
+
+```rust
+let self_funded_reward = fees::split_liquidation_penalty(full_penalty)?.liquidator;
+let reward_ceiling = MIN_LIQUIDATOR_REWARD.min(self_funded_reward);
+let reward_top_up = reward_ceiling.saturating_sub(liquidator_out);
+```
+
+The insurance fund never pays more than the position could have paid itself. Above the ~$500
+break-even the ceiling is at least a dollar, so `MIN_LIQUIDATOR_REWARD` still binds and
+behaviour is **unchanged** — `self_liquidation_is_not_profitable` passes with and without the
+fix. Below it the subsidy scales with the position: at $54 of notional the ceiling is $0.109
+rather than $1.00, which is less than the spread and fees of opening the position, so the
+self-liquidation cycle cannot profit.
+
+This is the shape every comparable protocol uses — a liquidator premium proportional to the
+position and capped, never a flat draw on the reserve. Kamino states the principle directly:
+the bonus *"cannot exceed the gap between actual debt and collateral value"*. marginfi pays
+2.5% of liquidated collateral; Zeta 30% of the maintenance-margin penalty.
+
+**Test.** `self_liquidation_is_not_profitable_on_a_small_position` is no longer `#[ignore]`d.
+It had never actually run — as written it opened a `MINI` (~$10,800) position on $2 of
+collateral and failed at `LeverageTooHigh` before reaching the assertion. It now opens
+`ONE_LOT / 2_000` (~$54 of notional) on $1.25, carrying the same 43x leverage as the
+full-size sibling so it is liquidatable at the same adverse price. Reverting the fix fails it
+on *"a solvent liquidation must not draw down the insurance fund"*.
 
 ---
 

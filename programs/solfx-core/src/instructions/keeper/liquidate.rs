@@ -250,16 +250,35 @@ pub fn liquidate_position(ctx: Context<LiquidatePosition>) -> Result<()> {
     let pool_in = after_liquidator.saturating_sub(routed_fee);
 
     // The insurance fund covers the shortfall — and, if the position could not pay the
-    // liquidator, the reward as well.
+    // liquidator, tops the reward up.
     //
     // A liquidator paid nothing does not run, and a position nobody liquidates keeps
-    // falling. Paying a dollar out of the fund to close a position now, rather than letting
-    // its shortfall grow, is not a close call.
-    let reward_top_up = if liquidator_out < MIN_LIQUIDATOR_REWARD {
-        MIN_LIQUIDATOR_REWARD.saturating_sub(liquidator_out)
-    } else {
-        0
-    };
+    // falling. Paying out of the fund to close a position now, rather than letting its
+    // shortfall grow, is not a close call.
+    //
+    // **The subsidy is bounded by the position's own economics** (AUDIT.md C-1). A flat
+    // `MIN_LIQUIDATOR_REWARD` top-up is only self-funding above the notional where the
+    // penalty's liquidator share reaches it — with a 0.5% fee and a 40% share, $500. Below
+    // that the fund paid the difference on every liquidation, and at zero equity `penalty`
+    // is 0, so it paid the whole dollar. `MIN_NOTIONAL_QUOTE` is $1, so the exposed band was
+    // ordinary retail size and the position owner could be the liquidator: open small,
+    // liquidate yourself, collect the subsidy.
+    //
+    // The ceiling is therefore what a *fully payable* penalty on this same position would
+    // have given the liquidator. Above $500 of notional that is at least a dollar, so
+    // `MIN_LIQUIDATOR_REWARD` still binds and behaviour is unchanged. Below it, the fund
+    // never pays more than the position could have paid itself, which is strictly less than
+    // the spread and fees of opening it — so the cycle cannot profit.
+    //
+    // This is the shape every comparable protocol uses: a liquidator premium proportional to
+    // the position, capped, rather than a flat draw on the reserve. Kamino states the
+    // principle directly — the bonus "cannot exceed the gap between actual debt and
+    // collateral value", so a liquidation can never make the position worse.
+    let self_funded_reward = fees::split_liquidation_penalty(full_penalty)
+        .or_program_err()?
+        .liquidator;
+    let reward_ceiling = MIN_LIQUIDATOR_REWARD.min(self_funded_reward);
+    let reward_top_up = reward_ceiling.saturating_sub(liquidator_out);
     let insurance_available = ctx.accounts.insurance_fund.balance;
     let insurance_draw = bad_debt.min(insurance_available);
     let reward_from_insurance =

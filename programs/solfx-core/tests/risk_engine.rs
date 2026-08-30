@@ -28,6 +28,14 @@ const NO_BOUND_SELL: i64 = 1;
 
 /// EUR/USD, a funded pool, a seeded insurance fund and a trader with $50k.
 fn env_with_position(direction: Direction, collateral: u64) -> (Env, User) {
+    env_with_sized_position(direction, MINI, collateral)
+}
+
+/// The same, with the position size chosen by the caller.
+///
+/// Size matters for AUDIT.md C-1: the insurance subsidy only bites below roughly $500 of
+/// notional, and `MINI` is ~$10,800 — two orders of magnitude above the band.
+fn env_with_sized_position(direction: Direction, size: u64, collateral: u64) -> (Env, User) {
     let mut env = Env::new();
     env.init_protocol();
     env.list_and_activate(0, &MarketSpec::eur_usd());
@@ -43,7 +51,7 @@ fn env_with_position(direction: Direction, collateral: u64) -> (Env, User) {
     } else {
         NO_BOUND_SELL
     };
-    env.open(&user, 0, 0, direction, MINI, collateral, bound, price)
+    env.open(&user, 0, 0, direction, size, collateral, bound, price)
         .unwrap();
     env.assert_invariants();
     (env, user)
@@ -661,12 +669,17 @@ fn carry_is_settled_when_a_position_is_liquidated() {
 /// insurance fund makes up the difference — and the position owner can be the liquidator.
 /// `MIN_NOTIONAL_QUOTE` is $1.00, so the exposed band is ordinary retail size.
 ///
-/// Ignored rather than deleted: it is the regression test for AUDIT.md C-1, which is not
-/// fixed. Remove the `#[ignore]` with the fix.
+/// **Fixed.** The top-up is now capped at what a fully payable penalty on this same position
+/// would have given the liquidator, so the fund never pays more than the position could have
+/// paid itself. Above ~$500 of notional that cap is at least `MIN_LIQUIDATOR_REWARD` and
+/// nothing changes; below it, the subsidy scales down with the position.
 #[test]
-#[ignore = "AUDIT.md C-1: the insurance fund subsidises the liquidator on small positions"]
 fn self_liquidation_is_not_profitable_on_a_small_position() {
-    let (mut env, user) = env_with_position(Direction::Long, 2 * ONE_USDC);
+    // ~$54 of notional at the default 1.08543, carrying the same 43x leverage as the
+    // full-size sibling test so it is liquidatable at the same adverse price — but two
+    // orders of magnitude smaller, inside the band where the subsidy used to be free money.
+    const SMALL: u64 = ONE_LOT / 2_000; // 50 EUR
+    let (mut env, user) = env_with_sized_position(Direction::Long, SMALL, 1_250_000);
 
     let own_token = user.token_account;
     let wallet_before = env.token_balance(&own_token);
