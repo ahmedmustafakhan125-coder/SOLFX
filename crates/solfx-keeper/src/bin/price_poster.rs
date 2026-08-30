@@ -76,6 +76,7 @@ use std::path::PathBuf;
 use anchor_lang::AccountDeserialize;
 use anyhow::{anyhow, bail, Context as _, Result};
 use clap::Parser as _;
+use futures_util::stream::{self, StreamExt as _};
 use pyth_solana_receiver_sdk::config::Config as ReceiverConfig;
 use pyth_solana_receiver_sdk::pda::{get_config_address, get_treasury_address};
 use pyth_solana_receiver_sdk::PostUpdateParams;
@@ -162,6 +163,17 @@ struct Args {
     /// Seconds between passes.
     #[arg(long, default_value_t = 10)]
     interval_secs: u64,
+    /// How many feeds to publish at once.
+    ///
+    /// A feed takes five confirmations to reach `Full`, ~25 s on devnet, and its price is
+    /// dated when Hermes serves it rather than when it lands. Posting serially therefore
+    /// costs every feed the time of every feed before it — six markets measured 142 s on the
+    /// last one, against a 60 s gate. Publishing them concurrently collapses a pass to about
+    /// one feed's duration, which is what keeps every market inside the gate at once.
+    ///
+    /// Raise it if you list more markets; lower it if the RPC starts rate-limiting.
+    #[arg(long, default_value_t = 8)]
+    concurrency: usize,
     /// Build and log transactions without sending them.
     #[arg(long)]
     dry_run: bool,
@@ -310,11 +322,29 @@ async fn run(args: Args) -> Result<()> {
     }
 }
 
-/// One full sweep: fetch every feed's latest update from Hermes and post each on chain.
+/// One full sweep: every listed feed fetched and published, all of them concurrently.
 ///
-/// Feeds are fetched in chunks but posted one transaction at a time. Batching instructions
-/// would not help: `PostUpdateAtomicParams` carries its own copy of the VAA, so two
-/// instructions in one transaction means two VAAs, and the packet limit arrives immediately.
+/// # Why each feed fetches its own update, and why the pass is concurrent
+///
+/// Both properties are load-bearing for the 60-second staleness gate, and the original shape
+/// violated it in two independent ways.
+///
+/// This used to fetch every feed in one Hermes call and then post them one after another. A
+/// price is dated when Hermes serves it, not when it lands, so the last feed in a serial pass
+/// carried a price as old as every preceding feed's transactions put together. Measured on
+/// devnet with six markets listed: BTC/USD, posted last, landed **142 seconds** old against a
+/// 60-second gate — and no amount of waiting made it fresher, because every pass reproduced
+/// the same ordering.
+///
+/// Fetching per feed fixes the age *on arrival*. On its own it does not fix the age *between*
+/// passes: serial posting refreshes a feed once per full sweep, so six feeds at ~25 s each
+/// would leave each one stale for most of a ~150 s cycle. Publishing concurrently is what
+/// collapses the cycle to roughly one feed's duration, and that is what keeps every market
+/// inside the gate simultaneously rather than only the first two.
+///
+/// Batching instructions is still not an option: `PostUpdateAtomicParams` carries its own copy
+/// of the VAA, so two instructions in one transaction means two VAAs and the 1232-byte packet
+/// limit arrives immediately. Concurrency is across transactions, not within them.
 async fn post_pass(
     rpc: &RpcClient,
     args: &Args,
@@ -323,81 +353,97 @@ async fn post_pass(
     feeds: &[(String, String)],
     accounts: &HashMap<String, Keypair>,
 ) -> Result<(usize, usize)> {
-    let (mut ok, mut failed) = (0usize, 0usize);
-
-    for chunk in feeds.chunks(10) {
-        let ids: Vec<String> = chunk.iter().map(|(_, id)| id.clone()).collect();
-        let blobs = match fetch_updates(&args.hermes_url, args.hermes_token.as_deref(), &ids).await
-        {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("  hermes fetch failed for {} feeds: {e:#}", ids.len());
-                failed = failed.saturating_add(chunk.len());
-                continue;
-            }
-        };
-
-        for blob in blobs {
-            let decoded = match AccumulatorUpdateData::try_from_slice(&blob) {
-                Ok(d) => d,
+    let outcomes: Vec<bool> = stream::iter(feeds.iter())
+        .map(|(symbol, feed_id)| async move {
+            match post_feed(rpc, args, payer, config, symbol, feed_id, accounts).await {
+                Ok(Some(sig)) => {
+                    println!("  {symbol:<14} {sig}");
+                    true
+                }
+                // Not one of ours, or no account for it — neither a success nor a failure.
+                Ok(None) => false,
                 Err(e) => {
-                    eprintln!("  undecodable accumulator blob: {e:?}");
-                    failed = failed.saturating_add(1);
-                    continue;
-                }
-            };
-            let Proof::WormholeMerkle { vaa, updates } = decoded.proof;
-            let vaa_bytes: Vec<u8> = vaa.into();
-
-            // A full 13-signature VAA does not fit alongside everything else in a 1232-byte
-            // packet. The receiver anticipates this: it accepts `minimum_signatures`, and
-            // trimming to exactly that is what makes the atomic path viable.
-            let guardian_set = guardian_set_address(&config.wormhole, &vaa_bytes)?;
-
-            for update in updates {
-                // The feed id sits at bytes 1..33 of the price message.
-                let msg: Vec<u8> = update.message.clone().into();
-                let Some(feed_id) = msg.get(1..33).map(hex::encode) else {
-                    failed = failed.saturating_add(1);
-                    continue;
-                };
-                let Some((symbol, _)) = feeds.iter().find(|(_, id)| *id == feed_id) else {
-                    continue; // not one of ours
-                };
-                let Some(account) = accounts.get(symbol) else {
-                    continue;
-                };
-
-                if args.dry_run {
-                    println!("  [dry-run] {symbol:<14} -> {}", account.pubkey());
-                    ok = ok.saturating_add(1);
-                    continue;
-                }
-
-                match post_one_full(
-                    rpc,
-                    payer,
-                    &config.wormhole,
-                    guardian_set,
-                    &vaa_bytes,
-                    &update,
-                    account,
-                )
-                .await
-                {
-                    Ok(sig) => {
-                        println!("  {symbol:<14} {} {sig}", account.pubkey());
-                        ok = ok.saturating_add(1);
-                    }
-                    Err(e) => {
-                        eprintln!("  {symbol:<14} FAILED: {e:#}");
-                        failed = failed.saturating_add(1);
-                    }
+                    eprintln!("  {symbol:<14} FAILED: {e:#}");
+                    false
                 }
             }
-        }
-    }
+        })
+        .buffer_unordered(args.concurrency.max(1))
+        .collect()
+        .await;
+
+    let ok = outcomes.iter().filter(|posted| **posted).count();
+    let failed = outcomes.len().saturating_sub(ok);
     Ok((ok, failed))
+}
+
+/// Fetch one feed's latest update and publish it at `Full`.
+///
+/// The fetch lives here rather than in the caller so that a price is served by Hermes
+/// immediately before its own transactions start, never before another feed's.
+async fn post_feed(
+    rpc: &RpcClient,
+    args: &Args,
+    payer: &Keypair,
+    config: &ReceiverConfig,
+    symbol: &str,
+    feed_id: &str,
+    accounts: &HashMap<String, Keypair>,
+) -> Result<Option<String>> {
+    let Some(account) = accounts.get(symbol) else {
+        return Ok(None);
+    };
+
+    let blobs = fetch_updates(
+        &args.hermes_url,
+        args.hermes_token.as_deref(),
+        std::slice::from_ref(&feed_id.to_string()),
+    )
+    .await
+    .with_context(|| format!("hermes fetch for {symbol}"))?;
+
+    let blob = blobs
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow!("hermes returned no update for {symbol}"))?;
+
+    let decoded =
+        AccumulatorUpdateData::try_from_slice(&blob).map_err(|e| anyhow!("{symbol}: {e:?}"))?;
+    let Proof::WormholeMerkle { vaa, updates } = decoded.proof;
+    let vaa_bytes: Vec<u8> = vaa.into();
+
+    // A full 13-signature VAA does not fit alongside everything else in a 1232-byte packet.
+    // The receiver anticipates this: it accepts `minimum_signatures`, and trimming to exactly
+    // that is what makes the atomic path viable.
+    let guardian_set = guardian_set_address(&config.wormhole, &vaa_bytes)?;
+
+    // A single-feed request returns a single update, but the wire format still carries a
+    // list. Match on the feed id rather than taking the first: an unchecked `next()` would
+    // publish whatever Hermes happened to return under this feed's account.
+    let update = updates
+        .into_iter()
+        .find(|u| {
+            let msg: Vec<u8> = u.message.clone().into();
+            msg.get(1..33).map(hex::encode).as_deref() == Some(feed_id)
+        })
+        .ok_or_else(|| anyhow!("{symbol}: hermes returned no update matching {feed_id}"))?;
+
+    if args.dry_run {
+        println!("  [dry-run] {symbol:<14} -> {}", account.pubkey());
+        return Ok(Some("dry-run".to_string()));
+    }
+
+    let sig = post_one_full(
+        rpc,
+        payer,
+        &config.wormhole,
+        guardian_set,
+        &vaa_bytes,
+        &update,
+        account,
+    )
+    .await?;
+    Ok(Some(format!("{} {sig}", account.pubkey())))
 }
 
 /// Anchor discriminators on the Wormhole core bridge and the Pyth receiver.
