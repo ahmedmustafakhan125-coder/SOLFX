@@ -4,6 +4,8 @@ import { Header } from "@/components/Header";
 import { MarketList } from "@/components/MarketList";
 import { MarketPanel } from "@/components/MarketPanel";
 import { AccountPanel } from "@/components/AccountPanel";
+import { PositionsPanel } from "@/components/PositionsPanel";
+import { usePositions } from "@/hooks/usePositions";
 import { OrderTicket } from "@/components/OrderTicket";
 import { useSolfx } from "@/hooks/useSolfx";
 import { RPC_URL, rpcLabel } from "@/config";
@@ -20,6 +22,19 @@ export default function App() {
       if (first) setSelected(first.index);
     }
   }, [markets, selected]);
+
+  // Positions are priced from the same poll the terminal already runs, keyed by market
+  // index rather than feed id because that is what the position accounts carry.
+  const priceByIndex = Object.fromEntries(
+    markets.map((m) => [m.index, prices[m.feedIdHex]?.price]),
+  );
+  const accountByIndex = Object.fromEntries(
+    markets.map((m) => [m.index, priceAccounts[m.feedIdHex]]),
+  );
+  const { positions, refresh: refreshPositions } = usePositions(
+    markets.map((m) => m.index),
+    priceByIndex,
+  );
 
   const market = markets.find((m) => m.index === selected);
 
@@ -63,6 +78,13 @@ export default function App() {
                     </p>
                   </div>
                 </div>
+                <PositionsPanel
+                  positions={positions}
+                  markets={markets}
+                  prices={priceByIndex}
+                  priceAccounts={accountByIndex}
+                  onClosed={refreshPositions}
+                />
               </>
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-ink-dim">

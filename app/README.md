@@ -55,6 +55,14 @@ is unreadable, and `OracleStale` or `SlippageExceeded` is not.
 Slippage is a bound rather than a preference. `validate_slippage` always compares, so there
 is no value that disables it; `0` is a bound of zero, which a long can never satisfy.
 
-`scripts/verify-open-ix.ts` builds the same instruction with a noop signer and simulates it,
-which exercises every account meta and the program's own validation without anyone signing.
-Closing a position is not wired yet.
+Opening and closing both go through `scripts/verify-open-ix.ts` and `verify-close-ix.ts`,
+which build the same instructions with a noop signer and simulate them — exercising every
+account meta and the program's own validation without anyone signing.
+
+The slippage bound inverts on close: closing a long is a sell, so the limit is a **minimum**;
+closing a short is a buy, so it is a **maximum**. Reversed, every close fails with
+`SlippageExceeded` against a bound the fill cannot satisfy.
+
+Unrealised PnL in the positions table is marked at the **oracle mid**. A close fills after
+the spread, so the realised number is always slightly worse — the table says so rather than
+flattering the position.
