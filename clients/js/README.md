@@ -24,7 +24,14 @@ a consumer of this package must not need a Rust toolchain to use it.
 
 Codama generates everything the IDL describes, and the IDL does not describe four
 things this program needs. Each is a hand-written module, and each exists because
-getting it wrong is silent rather than loud:
+getting it wrong is silent rather than loud.
+
+| Gap | Module | Status |
+|---|---|---|
+| Price accounts | `src/priceAccounts.ts` | done |
+| Contract size and the three sizing modes | `src/contracts.ts`, `src/sizing.ts` | done |
+| `position` / `triggerOrder` PDAs | `src/pdas.ts` | done |
+| Event decoders | — | **not yet** |
 
 1. **Price accounts.** On a cluster with no sponsored feed, the price-update accounts
    are per-feed **keypairs** created by `price-poster`, not the canonical
