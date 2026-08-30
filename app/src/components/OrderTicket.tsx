@@ -1,10 +1,15 @@
 import { useMemo, useState } from "react";
-import { SizingError, resolveSize, unitsPerLot, type Sizing } from "@solfx/client";
+import { Direction, SizingError, resolveSize, unitsPerLot, type Sizing } from "@solfx/client";
+import type { Address } from "@solana/kit";
 
 import type { LoadedMarket } from "@/lib/markets";
 import type { LivePrice } from "@/lib/prices";
 import { fmtBase, fmtPrice, fmtUsd, priceplaces } from "@/lib/format";
 import { useAccount } from "@/hooks/useAccount";
+import { useSigner } from "@/hooks/useSigner";
+import { useSend } from "@/hooks/useSend";
+import { useRpc } from "@/hooks/useSolfx";
+import { OPEN_POSITION_CU, buildOpenPosition, firstFreeNonce } from "@/lib/trade";
 
 const NOTIONAL_DIVISOR = 1_000_000_000_000n; // 1e12
 const RATE_PRECISION = 1_000_000_000n; // 1e9
@@ -18,11 +23,23 @@ const MODES: { id: Mode; label: string; hint: string }[] = [
   { id: "notional", label: "Notional", hint: "whole USD of exposure" },
 ];
 
-export function OrderTicket({ market, price }: { market: LoadedMarket; price?: LivePrice }) {
+export function OrderTicket({
+  market,
+  price,
+  priceAccount,
+}: {
+  market: LoadedMarket;
+  price?: LivePrice;
+  priceAccount?: Address;
+}) {
   const [mode, setMode] = useState<Mode>("notional");
   const [value, setValue] = useState("1000");
   const [leverage, setLeverage] = useState(Math.min(10, market.maxLeverage));
-  const { status: account } = useAccount();
+  const { status: account, refresh: refreshAccount } = useAccount();
+  const signer = useSigner();
+  const rpc = useRpc();
+  const { send, busy, signature, error: sendError, logs, reset } = useSend();
+  const [slippageBps, setSlippageBps] = useState(100);
 
   const places = priceplaces(market.symbol);
   const d = market.data;
@@ -65,6 +82,25 @@ export function OrderTicket({ market, price }: { market: LoadedMarket; price?: L
     underfunded ||
     !market.tradeable ||
     price?.stale === true;
+
+  async function submit(direction: Direction) {
+    if (!signer || !account || !priceAccount || !price || "error" in quote) return;
+    reset();
+    const nonce = await firstFreeNonce(rpc, account.userAccountPda, market.index);
+    if (nonce === undefined) return;
+    const ix = await buildOpenPosition({
+      signer,
+      marketIndex: market.index,
+      direction,
+      sizeBase: quote.sizeBase,
+      collateral: quote.margin,
+      price: price.price,
+      slippageBps,
+      priceUpdate: priceAccount,
+      nonce,
+    });
+    if (await send([ix], OPEN_POSITION_CU)) refreshAccount();
+  }
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -126,6 +162,30 @@ export function OrderTicket({ market, price }: { market: LoadedMarket; price?: L
         </div>
       </div>
 
+      <div>
+        <div className="mb-1 flex items-baseline justify-between">
+          <span className="text-[10px] uppercase tracking-[0.14em] text-ink-dim">Slippage</span>
+          <span className="tnum text-xs text-ink-muted">{(slippageBps / 100).toFixed(2)}%</span>
+        </div>
+        <div className="grid grid-cols-4 gap-1">
+          {[10, 50, 100, 300].map((b) => (
+            <button
+              key={b}
+              onClick={() => setSlippageBps(b)}
+              className={`tnum rounded px-1 py-1 text-[11px] ${
+                slippageBps === b ? "bg-brand text-white" : "bg-surface-high text-ink-muted"
+              }`}
+            >
+              {(b / 100).toFixed(b < 100 ? 1 : 0)}%
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] leading-snug text-ink-dim">
+          A bound, not a preference — the program always compares, so there is no way to
+          disable it.
+        </p>
+      </div>
+
       <div className="space-y-1.5 rounded-md border border-line-soft bg-surface-high p-3 text-xs">
         {"error" in quote ? (
           <div className="text-warn">{quote.error}</div>
@@ -158,22 +218,45 @@ export function OrderTicket({ market, price }: { market: LoadedMarket; price?: L
 
       <div className="grid grid-cols-2 gap-2">
         <button
-          disabled={blocked}
+          onClick={() => void submit(Direction.Long)}
+          disabled={blocked || busy || !signer || !priceAccount}
           className="rounded-md bg-long/90 py-2.5 text-sm font-semibold text-black hover:bg-long disabled:cursor-not-allowed disabled:opacity-30"
         >
-          Long / Buy
+          {busy ? "Confirming…" : "Long / Buy"}
         </button>
         <button
-          disabled={blocked}
+          onClick={() => void submit(Direction.Short)}
+          disabled={blocked || busy || !signer || !priceAccount}
           className="rounded-md bg-short/90 py-2.5 text-sm font-semibold text-black hover:bg-short disabled:cursor-not-allowed disabled:opacity-30"
         >
-          Short / Sell
+          {busy ? "Confirming…" : "Short / Sell"}
         </button>
       </div>
 
+      {signature ? (
+        <a
+          href={`https://explorer.solana.com/tx/${signature}?cluster=devnet`}
+          target="_blank"
+          rel="noreferrer"
+          className="block truncate rounded border border-long/30 bg-long/10 p-2 text-[11px] text-long underline"
+        >
+          filled · {signature.slice(0, 20)}…
+        </a>
+      ) : null}
+
+      {sendError ? (
+        <div className="space-y-1 rounded border border-short/40 bg-short/10 p-2">
+          <div className="text-[11px] text-short">{sendError}</div>
+          {logs?.length ? (
+            <pre className="tnum max-h-40 overflow-auto whitespace-pre-wrap text-[10px] leading-snug text-ink-muted">
+              {logs.join("\n")}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
+
       <p className="text-[10px] leading-relaxed text-ink-dim">
         Every figure above is computed with the program's own formulas from live account data.
-        Order submission is not wired yet.
       </p>
     </div>
   );

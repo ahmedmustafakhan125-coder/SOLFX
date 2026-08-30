@@ -9,7 +9,7 @@ import { useSolfx } from "@/hooks/useSolfx";
 import { RPC_URL, rpcLabel } from "@/config";
 
 export default function App() {
-  const { markets, prices, loading, error } = useSolfx();
+  const { markets, prices, priceAccounts, loading, error } = useSolfx();
   const [selected, setSelected] = useState<number | undefined>(undefined);
 
   // Default to the first market that can actually be traded, rather than index 0 — on this
@@ -73,7 +73,13 @@ export default function App() {
 
           <div className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-line-soft">
             <AccountPanel />
-            {market ? <OrderTicket market={market} price={prices[market.feedIdHex]} /> : null}
+            {market ? (
+              <OrderTicket
+                market={market}
+                price={prices[market.feedIdHex]}
+                priceAccount={priceAccounts[market.feedIdHex]}
+              />
+            ) : null}
           </div>
         </div>
       )}

@@ -46,7 +46,15 @@ The terminal shows the venue as it actually is, including when that is unflatter
 - fees are shown in basis points from the market's own `open_fee_rate`, since the real
   figures round to nothing useful as percentages.
 
-## Not wired yet
+## Signing
 
-Order submission. Every figure in the ticket is computed with the program's own formulas from
-live account data, but nothing is signed or sent.
+Account bootstrap and opening a position are wired. Preflight is left on, and a failure's
+program logs are shown verbatim — a rejection reading only "Transaction simulation failed"
+is unreadable, and `OracleStale` or `SlippageExceeded` is not.
+
+Slippage is a bound rather than a preference. `validate_slippage` always compares, so there
+is no value that disables it; `0` is a bound of zero, which a long can never satisfy.
+
+`scripts/verify-open-ix.ts` builds the same instruction with a noop signer and simulates it,
+which exercises every account meta and the program's own validation without anyone signing.
+Closing a position is not wired yet.

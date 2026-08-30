@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSolanaClient } from "@solana/react-hooks";
-import type { Rpc, SolanaRpcApi } from "@solana/kit";
+import type { Address, Rpc, SolanaRpcApi } from "@solana/kit";
 import type { PriceAccountMap } from "@solfx/client";
 
 import { loadMarkets, type LoadedMarket } from "@/lib/markets";
@@ -16,6 +16,8 @@ export function useRpc(): Rpc<SolanaRpcApi> {
 type State = {
   markets: LoadedMarket[];
   prices: Record<string, LivePrice | undefined>;
+  /** feed id (hex) -> the account actually being published to. */
+  priceAccounts: Record<string, Address | undefined>;
   loading: boolean;
   error: string | undefined;
 };
@@ -32,6 +34,7 @@ export function useSolfx(pollMs = 5_000): State & { refresh: () => void } {
   const [state, setState] = useState<State>({
     markets: [],
     prices: {},
+    priceAccounts: {},
     loading: true,
     error: undefined,
   });
@@ -73,7 +76,13 @@ export function useSolfx(pollMs = 5_000): State & { refresh: () => void } {
         }
         const markets = await loadMarkets(rpc);
         const prices = await readPrices(markets);
-        if (!cancelled) setState({ markets, prices, loading: false, error: undefined });
+        const map = mapRef.current;
+        const priceAccounts = Object.fromEntries(
+          markets.map((m) => [m.feedIdHex, map?.forFeed(m.feedIdHex)]),
+        );
+        if (!cancelled) {
+          setState({ markets, prices, priceAccounts, loading: false, error: undefined });
+        }
       } catch (e) {
         if (!cancelled) {
           setState((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : String(e) }));
