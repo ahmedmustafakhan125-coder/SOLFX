@@ -133,10 +133,10 @@ const TIERS: &[(Tier, u16, u16, u16, u16, u16, u16)] = &[
 /// | BTC/USD  | the only continuous feed — the one thing testable at a weekend     |
 ///
 /// The three markets this replaces (EUR/JPY, USD/INR and a BTC/USD that resolved to a
-/// funding rate) are still listed on devnet at indices 1, 2 and 4. They cannot be removed —
-/// `num_markets` only grows and `pyth_feed_id` has no setter — so they stay, unpriceable,
-/// and a client should not offer them. `--all` lists the full 33-market set, most of which
-/// needs a paid plan.
+/// funding rate) still occupy devnet indices 1, 2 and 4. They cannot be *removed* —
+/// `num_markets` only grows — but since `set_market_oracle` they can be repaired in place:
+/// halt, repoint at the correct feed, re-activate. That is what `admin repair` does.
+/// `--all` lists the full 33-market set, most of which needs a paid plan.
 const STARTER: &[MarketSpec] = &[
     MarketSpec {
         symbol: "EUR/USD",
@@ -760,12 +760,17 @@ async fn run(args: Args) -> Result<()> {
     }
     if !args.activate {
         println!(
-            "\nVerification pass only — nothing was sent. Re-run with --activate once the \
-             table above is right."
+            "\nVerification pass only — no transaction was sent. The deployment file below is \
+             still refreshed, because it is written from what was just read on chain. Re-run \
+             with --activate once the table above is right."
         );
     }
 
-    if args.lp_seed > 0 && !args.dry_run && args.usdc_mint.is_none() {
+    // `--activate` gates this too. It used to sit outside the gate, so a verification run
+    // printed "nothing was sent" and then sent an `add_liquidity` — and because the seed is
+    // unconditional rather than idempotent, every re-run stacked another million test USDC
+    // onto the pool. A verify pass must be readable without changing what it reports on.
+    if args.lp_seed > 0 && args.activate && !args.dry_run && args.usdc_mint.is_none() {
         println!("\nseeding LP pool with {} test USDC", args.lp_seed);
         match seed_lp(
             &rpc,
