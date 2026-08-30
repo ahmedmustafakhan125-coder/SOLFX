@@ -14,3 +14,4 @@ export * from "./contracts.js";
 export * from "./sizing.js";
 export * from "./pdas.js";
 export * from "./priceAccounts.js";
+export * from "./events/index.js";

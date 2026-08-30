@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Tooling root for the SolFX TypeScript client. The SDK itself is clients/js.",
   "scripts": {
-    "generate": "codama run js"
+    "generate": "codama run js && npm --prefix clients/js run generate:events"
   },
   "devDependencies": {
     "codama": "^1.6.0",
