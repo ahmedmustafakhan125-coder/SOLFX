@@ -43,6 +43,23 @@ if [[ ! -f "$IDL" ]]; then
 fi
 
 PROGRAM_ID="$(python3 -c "import json;print(json.load(open('$IDL'))['address'])")"
+
+# Say plainly where this is going. The failure that motivated this: SOLFX_RPC_URL unset in a
+# fresh shell, the default silently selected localnet, and five close-then-write cycles ran
+# against a validator that was not there — which reads like a broken script rather than a
+# missing variable.
+if [[ -z "${SOLFX_RPC_URL:-}" ]]; then
+  echo "note: SOLFX_RPC_URL is not set — defaulting to $RPC_URL" >&2
+  echo "      for devnet:  set -a && . ./.env && set +a" >&2
+fi
+
+# Check the cluster is reachable and actually has the program *before* closing anything.
+# The close is destructive and only safe when the write that follows can succeed.
+if ! solana program show "$PROGRAM_ID" -u "$RPC_URL" >/dev/null 2>&1; then
+  echo "error: $PROGRAM_ID is not deployed on $RPC_URL (or the RPC is unreachable)" >&2
+  echo "       nothing was changed" >&2
+  exit 1
+fi
 SLIM="$(mktemp -t solfx-idl-slim-XXXXXX.json)"
 trap 'rm -f "$SLIM"' EXIT
 
