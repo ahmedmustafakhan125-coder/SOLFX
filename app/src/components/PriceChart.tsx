@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { AreaSeries, createChart, type IChartApi, type ISeriesApi } from "lightweight-charts";
+import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi } from "lightweight-charts";
 
-import { fetchHistory, toDisplay, type Candle } from "@/lib/history";
+import { fetchBars, toDisplay, type Bar } from "@/lib/history";
 import { HERMES_TOKEN, HERMES_URL } from "@/config";
 import type { LivePrice } from "@/lib/prices";
 import { priceplaces } from "@/lib/format";
@@ -22,7 +22,8 @@ type Props = {
 export function PriceChart({ feedIdHex, symbol, live }: Props) {
   const box = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
-  const series = useRef<ISeriesApi<"Area"> | null>(null);
+  const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const last = useRef<Bar | undefined>(undefined);
   const [state, setState] = useState<"loading" | "ready" | "empty">("loading");
 
   // Create the chart once.
@@ -44,12 +45,19 @@ export function PriceChart({ feedIdHex, symbol, live }: Props) {
       crosshair: { mode: 1 },
       autoSize: true,
     });
-    const s = c.addSeries(AreaSeries, {
-      lineColor: "#9945ff",
-      topColor: "rgba(153,69,255,0.28)",
-      bottomColor: "rgba(153,69,255,0.02)",
-      lineWidth: 2,
-      priceFormat: { type: "price", precision: priceplaces(symbol), minMove: 1e-5 },
+    const s = c.addSeries(CandlestickSeries, {
+      // Purple up, white down.
+      upColor: "#9945ff",
+      wickUpColor: "#9945ff",
+      borderUpColor: "#9945ff",
+      downColor: "#e5e2e1",
+      wickDownColor: "#e5e2e1",
+      borderDownColor: "#e5e2e1",
+      priceFormat: {
+        type: "price",
+        precision: priceplaces(symbol),
+        minMove: 10 ** -priceplaces(symbol),
+      },
     });
     chart.current = c;
     series.current = s;
@@ -65,18 +73,17 @@ export function PriceChart({ feedIdHex, symbol, live }: Props) {
     let cancelled = false;
     setState("loading");
     void (async () => {
-      const bars = await fetchHistory(
+      const bars = await fetchBars(
         { hermesUrl: HERMES_URL, token: HERMES_TOKEN },
         feedIdHex,
-      ).catch((): Candle[] => []);
+      ).catch((): Bar[] => []);
       if (cancelled) return;
       if (bars.length === 0) {
         setState("empty");
         return;
       }
-      series.current?.setData(
-        bars.map((b) => ({ time: b.time as never, value: b.value })),
-      );
+      last.current = bars[bars.length - 1];
+      series.current?.setData(bars.map((b) => ({ ...b, time: b.time as never })));
       chart.current?.timeScale().fitContent();
       setState("ready");
     })();
@@ -85,13 +92,29 @@ export function PriceChart({ feedIdHex, symbol, live }: Props) {
     };
   }, [feedIdHex]);
 
-  // Append the live poll. `update` requires a time >= the last bar, which the poll satisfies.
+  // Fold each poll into the current bar, opening a new one when the minute rolls over.
+  // `update` requires a time >= the last bar's, so the bar being extended must keep its
+  // original stamp rather than take the tick's.
   useEffect(() => {
     if (!live || state !== "ready") return;
-    series.current?.update({
-      time: Number(live.publishTime) as never,
-      value: toDisplay(live.price),
-    });
+    const price = toDisplay(live.price);
+    const slot = Math.floor(Number(live.publishTime) / 60) * 60;
+    const prev = last.current;
+
+    const bar: Bar =
+      prev && prev.time === slot
+        ? {
+            time: slot,
+            open: prev.open,
+            high: Math.max(prev.high, price),
+            low: Math.min(prev.low, price),
+            close: price,
+          }
+        : { time: slot, open: prev?.close ?? price, high: price, low: price, close: price };
+
+    if (prev && slot < prev.time) return; // a stale poll must not rewind the series
+    last.current = bar;
+    series.current?.update({ ...bar, time: bar.time as never });
   }, [live, state]);
 
   return (

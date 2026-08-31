@@ -85,3 +85,56 @@ export async function fetchHistory(
     .sort((a, b) => a.time - b.time)
     .filter((c) => (seen.has(c.time) ? false : (seen.add(c.time), true)));
 }
+
+export type Bar = {
+  readonly time: number;
+  readonly open: number;
+  readonly high: number;
+  readonly low: number;
+  readonly close: number;
+};
+
+/**
+ * OHLC bars, built by sampling faster than the bar interval and bucketing.
+ *
+ * Hermes returns a single price per timestamp, not candles — the Benchmarks TradingView shim
+ * that did serve candles now 404s. So a bar is assembled from `samplesPerBar` prices inside
+ * its window: first is the open, last the close, and the extremes are the high and low. With
+ * three samples a bar the wicks are real but coarse; they are the true extremes *of what was
+ * sampled*, not of every tick Pyth published.
+ *
+ * Cost is one request per sample, so bars are not free: 20 bars at 3 samples is 60 requests.
+ */
+export async function fetchBars(
+  cfg: HistoryConfig,
+  feedIdHex: string,
+  bars = 24,
+  barSeconds = 60,
+  samplesPerBar = 3,
+  batch = 6,
+): Promise<Bar[]> {
+  const step = Math.max(1, Math.floor(barSeconds / samplesPerBar));
+  const points = bars * samplesPerBar;
+  const samples = await fetchHistory(cfg, feedIdHex, points, step, batch);
+  if (samples.length === 0) return [];
+
+  // Bucket by wall-clock window so bars line up on the interval rather than on sample index,
+  // which matters because Hermes may return the same publish for adjacent requests.
+  const buckets = new Map<number, number[]>();
+  for (const s of samples) {
+    const key = Math.floor(s.time / barSeconds) * barSeconds;
+    const arr = buckets.get(key);
+    if (arr) arr.push(s.value);
+    else buckets.set(key, [s.value]);
+  }
+
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([time, vs]) => ({
+      time,
+      open: vs[0] as number,
+      high: Math.max(...vs),
+      low: Math.min(...vs),
+      close: vs[vs.length - 1] as number,
+    }));
+}

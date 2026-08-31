@@ -17,13 +17,18 @@ export function rpcLabel(url: string): string {
   }
 }
 
-/** Hermes, for oracle price history. Same endpoint the poster uses. */
-export const HERMES_URL: string =
-  import.meta.env.VITE_HERMES_URL ?? "https://pyth.dourolabs.app/hermes";
-
 /**
- * Hermes needs a bearer token since 26 Aug 2026. Shipping it to the browser makes it public,
- * which is acceptable for a devnet demo and is not acceptable for production — there it
- * belongs behind a proxy that holds the key server-side.
+ * Hermes, for oracle price history — a same-origin path, not the upstream URL.
+ *
+ * Two reasons. Hermes answers the CORS preflight but omits `access-control-allow-origin` on
+ * the actual response, so a direct browser fetch is blocked even though curl and Node
+ * succeed. And the bearer token it has required since 26 Aug 2026 must not ship in client
+ * JavaScript, where it would be public. Both are solved by the proxy in vite.config.ts,
+ * which attaches the token server-side.
+ *
+ * A production deployment needs the equivalent proxy in front of it — this path assumes one.
  */
+export const HERMES_URL: string = import.meta.env.VITE_HERMES_URL ?? "/hermes";
+
+/** Unused when proxying; the proxy holds the token. Kept for a direct-fetch fallback. */
 export const HERMES_TOKEN: string | undefined = import.meta.env.VITE_HERMES_TOKEN;
