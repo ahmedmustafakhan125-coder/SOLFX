@@ -32,8 +32,15 @@ export default defineConfig({
       { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
     ],
   },
-  // Vite pre-bundles dependencies; the SDK is source we want it to watch, not pre-bundle.
-  optimizeDeps: { exclude: ["@solfx/client"] },
+  optimizeDeps: {
+    // The SDK is consumed as source, so Vite watches it rather than pre-bundling it. But a
+    // package left out of pre-bundling resolves its own copy of anything it imports, and two
+    // copies of @solana/kit means two module registries and mismatched instanceof checks —
+    // the hazard Kit's own example config documents. Forcing kit to be pre-bundled makes it
+    // one shared copy that both the app and the SDK reference.
+    exclude: ["@solfx/client"],
+    include: ["@solana/kit", "@solana/client", "@solana/react-hooks"],
+  },
   server: {
     fs: { allow: [fileURLToPath(new URL("..", import.meta.url))] },
     proxy: {
