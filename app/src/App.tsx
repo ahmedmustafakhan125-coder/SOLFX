@@ -1,110 +1,19 @@
-import { useEffect, useState } from "react";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 
-import { Header } from "@/components/Header";
-import { MarketList } from "@/components/MarketList";
-import { MarketPanel } from "@/components/MarketPanel";
-import { AccountPanel } from "@/components/AccountPanel";
-import { PositionsPanel } from "@/components/PositionsPanel";
-import { usePositions } from "@/hooks/usePositions";
-import { OrderTicket } from "@/components/OrderTicket";
-import { useSolfx } from "@/hooks/useSolfx";
-import { RPC_URL, rpcLabel } from "@/config";
+import { About } from "@/pages/About";
+import { Landing } from "@/pages/Landing";
+import { Terminal } from "@/pages/Terminal";
 
 export default function App() {
-  const { markets, prices, priceAccounts, loading, error } = useSolfx();
-  const [selected, setSelected] = useState<number | undefined>(undefined);
-
-  // Default to the first market that can actually be traded, rather than index 0 — on this
-  // cluster index 0 happens to be live, but that is a fact about the deployment, not a rule.
-  useEffect(() => {
-    if (selected === undefined) {
-      const first = markets.find((m) => m.tradeable);
-      if (first) setSelected(first.index);
-    }
-  }, [markets, selected]);
-
-  // Positions are priced from the same poll the terminal already runs, keyed by market
-  // index rather than feed id because that is what the position accounts carry.
-  const priceByIndex = Object.fromEntries(
-    markets.map((m) => [m.index, prices[m.feedIdHex]?.price]),
-  );
-  const accountByIndex = Object.fromEntries(
-    markets.map((m) => [m.index, priceAccounts[m.feedIdHex]]),
-  );
-  const { positions, refresh: refreshPositions } = usePositions(
-    markets.map((m) => m.index),
-    priceByIndex,
-  );
-
-  const market = markets.find((m) => m.index === selected);
-
   return (
-    <div className="flex h-screen flex-col bg-bg text-ink">
-      <Header rpcLabel={rpcLabel(RPC_URL)} />
-
-      {error ? (
-        <div className="m-5 rounded-md border border-short/40 bg-short/10 p-4 text-sm text-short">
-          <div className="font-semibold">Could not read the protocol</div>
-          <div className="mt-1 font-mono text-xs opacity-80">{error}</div>
-          <div className="mt-2 text-xs opacity-70">
-            Set <span className="font-mono">VITE_SOLFX_RPC_URL</span> to an endpoint that has
-            SolFX deployed.
-          </div>
-        </div>
-      ) : loading ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-ink-dim">
-          Reading markets from chain…
-        </div>
-      ) : (
-        <div className="flex min-h-0 flex-1">
-          <MarketList
-            markets={markets}
-            prices={prices}
-            selected={selected}
-            onSelect={setSelected}
-          />
-
-          <main className="flex min-w-0 flex-1 flex-col">
-            {market ? (
-              <>
-                <MarketPanel market={market} price={prices[market.feedIdHex]} />
-                <div className="flex flex-1 items-center justify-center p-8">
-                  <div className="text-center">
-                    <div className="text-sm text-ink-dim">Chart</div>
-                    <p className="mt-1 max-w-md text-xs leading-relaxed text-ink-dim/70">
-                      Price history needs an indexer over the program's events. The oracle
-                      figures above are read live from the price-update account this market
-                      is actually pointed at.
-                    </p>
-                  </div>
-                </div>
-                <PositionsPanel
-                  positions={positions}
-                  markets={markets}
-                  prices={priceByIndex}
-                  priceAccounts={accountByIndex}
-                  onClosed={refreshPositions}
-                />
-              </>
-            ) : (
-              <div className="flex flex-1 items-center justify-center text-sm text-ink-dim">
-                No tradeable market on this cluster.
-              </div>
-            )}
-          </main>
-
-          <div className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-line-soft">
-            <AccountPanel />
-            {market ? (
-              <OrderTicket
-                market={market}
-                price={prices[market.feedIdHex]}
-                priceAccount={priceAccounts[market.feedIdHex]}
-              />
-            ) : null}
-          </div>
-        </div>
-      )}
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/trade" element={<Terminal />} />
+        <Route path="/about" element={<About />} />
+        {/* Anything else is the landing page rather than a 404 — this is a three-page site. */}
+        <Route path="*" element={<Landing />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

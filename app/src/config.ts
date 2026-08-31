@@ -16,3 +16,14 @@ export function rpcLabel(url: string): string {
     return "rpc";
   }
 }
+
+/** Hermes, for oracle price history. Same endpoint the poster uses. */
+export const HERMES_URL: string =
+  import.meta.env.VITE_HERMES_URL ?? "https://pyth.dourolabs.app/hermes";
+
+/**
+ * Hermes needs a bearer token since 26 Aug 2026. Shipping it to the browser makes it public,
+ * which is acceptable for a devnet demo and is not acceptable for production — there it
+ * belongs behind a proxy that holds the key server-side.
+ */
+export const HERMES_TOKEN: string | undefined = import.meta.env.VITE_HERMES_TOKEN;

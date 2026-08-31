@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useWalletConnection } from "@solana/react-hooks";
 
 function short(a: string) {
@@ -12,15 +13,15 @@ export function Header({ rpcLabel }: { rpcLabel: string }) {
 
   return (
     <header className="flex items-center gap-6 border-b border-line-soft px-5 py-3">
-      <div className="flex items-baseline gap-2">
+      <Link to="/" className="flex items-baseline gap-2">
         <span className="text-lg font-extrabold tracking-tight">SolFX</span>
         <span className="text-[10px] uppercase tracking-[0.2em] text-ink-dim">Pro Terminal</span>
-      </div>
+      </Link>
 
       <nav className="hidden gap-5 text-sm text-ink-muted md:flex">
         <span className="border-b-2 border-brand pb-0.5 font-medium text-ink">Trade</span>
-        <span className="cursor-not-allowed opacity-40">Positions</span>
-        <span className="cursor-not-allowed opacity-40">Liquidity</span>
+        <Link to="/about" className="hover:text-ink">About</Link>
+        <Link to="/" className="hover:text-ink">Home</Link>
       </nav>
 
       <div className="ml-auto flex items-center gap-3">
