@@ -84,6 +84,7 @@ use pythnet_sdk::wire::v1::{AccumulatorUpdateData, Proof};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_hash::Hash;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_message::Message;
@@ -174,6 +175,15 @@ struct Args {
     /// Raise it if you list more markets; lower it if the RPC starts rate-limiting.
     #[arg(long, default_value_t = 8)]
     concurrency: usize,
+    /// Ceiling on RPC calls per second, across every feed in a pass.
+    ///
+    /// Concurrency decides how many feeds are in flight; this decides how hard they are
+    /// allowed to hit the endpoint between them. Helius's free tier is 10/s and a six-feed
+    /// pass overshot it on the first instant, losing whichever feeds happened to be mid-flight
+    /// — `verify_encoded_vaa_v1` most often, because it is the longest step. Set this a little
+    /// under whatever the endpoint allows; raise it on a paid plan or a local validator.
+    #[arg(long, default_value_t = 8)]
+    max_rps: u32,
     /// Build and log transactions without sending them.
     #[arg(long)]
     dry_run: bool,
@@ -353,9 +363,25 @@ async fn post_pass(
     feeds: &[(String, String)],
     accounts: &HashMap<String, Keypair>,
 ) -> Result<(usize, usize)> {
+    // One blockhash for the whole pass. A pass is ~25 s and a blockhash lives ~60 s, so every
+    // transaction in it signs against a valid one — and this removes the 30 `getLatestBlockhash`
+    // calls a six-feed pass used to make, one per transaction. See `send_signed`.
+    let throttle = Throttle::new(args.max_rps);
+    throttle.acquire().await;
+    let blockhash = rpc
+        .get_latest_blockhash()
+        .await
+        .context("blockhash for the pass")?;
+    let pass = Pass {
+        rpc,
+        payer,
+        throttle: &throttle,
+        blockhash,
+    };
+
     let outcomes: Vec<bool> = stream::iter(feeds.iter())
         .map(|(symbol, feed_id)| async move {
-            match post_feed(rpc, args, payer, config, symbol, feed_id, accounts).await {
+            match post_feed(pass, args, config, symbol, feed_id, accounts).await {
                 Ok(Some(sig)) => {
                     println!("  {symbol:<14} {sig}");
                     true
@@ -382,9 +408,8 @@ async fn post_pass(
 /// The fetch lives here rather than in the caller so that a price is served by Hermes
 /// immediately before its own transactions start, never before another feed's.
 async fn post_feed(
-    rpc: &RpcClient,
+    pass: Pass<'_>,
     args: &Args,
-    payer: &Keypair,
     config: &ReceiverConfig,
     symbol: &str,
     feed_id: &str,
@@ -434,8 +459,7 @@ async fn post_feed(
     }
 
     let sig = post_one_full(
-        rpc,
-        payer,
+        pass,
         &config.wormhole,
         guardian_set,
         &vaa_bytes,
@@ -477,8 +501,7 @@ fn meta(pubkey: Pubkey, is_signer: bool, is_writable: bool) -> solana_instructio
 /// transactions in the sequence are plumbing; if any fails the whole feed fails, and the
 /// buffer account is closed on the way out so a failure does not leak rent.
 async fn post_one_full(
-    rpc: &RpcClient,
-    payer: &Keypair,
+    pass: Pass<'_>,
     wormhole: &Pubkey,
     guardian_set: Pubkey,
     vaa: &[u8],
@@ -489,7 +512,9 @@ async fn post_one_full(
     let space = ENCODED_VAA_HEADER
         .checked_add(vaa.len())
         .ok_or_else(|| anyhow!("VAA too large"))?;
-    let rent = rpc
+    pass.throttle.acquire().await;
+    let rent = pass
+        .rpc
         .get_minimum_balance_for_rent_exemption(space)
         .await
         .context("rent for the VAA buffer")?;
@@ -498,7 +523,7 @@ async fn post_one_full(
     //    transaction: `#[account(zero)]` requires the account to exist, be owned by the
     //    program, and still be zeroed, which is only reliably true right after creation.
     let create = create_account_ix(
-        &payer.pubkey(),
+        &pass.payer.pubkey(),
         &encoded_vaa.pubkey(),
         rent,
         u64::try_from(space)?,
@@ -507,12 +532,12 @@ async fn post_one_full(
     let init = Instruction {
         program_id: *wormhole,
         accounts: vec![
-            meta(payer.pubkey(), true, false),       // write_authority
+            meta(pass.payer.pubkey(), true, false),  // write_authority
             meta(encoded_vaa.pubkey(), false, true), // encoded_vaa
         ],
         data: IX_INIT_ENCODED_VAA.to_vec(),
     };
-    send_signed(rpc, payer, &[&encoded_vaa], vec![create, init], 100_000)
+    send_signed(&pass, &[&encoded_vaa], vec![create, init], 100_000)
         .await
         .context("init_encoded_vaa")?;
 
@@ -531,12 +556,12 @@ async fn post_one_full(
         let write = Instruction {
             program_id: *wormhole,
             accounts: vec![
-                meta(payer.pubkey(), true, false),
+                meta(pass.payer.pubkey(), true, false),
                 meta(encoded_vaa.pubkey(), false, true),
             ],
             data,
         };
-        send_signed(rpc, payer, &[], vec![write], 100_000)
+        send_signed(&pass, &[], vec![write], 100_000)
             .await
             .with_context(|| format!("write_encoded_vaa at offset {offset}"))?;
         offset = end;
@@ -547,13 +572,13 @@ async fn post_one_full(
     let verify = Instruction {
         program_id: *wormhole,
         accounts: vec![
-            meta(payer.pubkey(), true, false),
+            meta(pass.payer.pubkey(), true, false),
             meta(encoded_vaa.pubkey(), false, true),
             meta(guardian_set, false, false),
         ],
         data: IX_VERIFY_ENCODED_VAA.to_vec(),
     };
-    send_signed(rpc, payer, &[], vec![verify], 400_000)
+    send_signed(&pass, &[], vec![verify], 400_000)
         .await
         .context("verify_encoded_vaa_v1 — is the guardian set cloned and current?")?;
 
@@ -569,17 +594,17 @@ async fn post_one_full(
     let post = Instruction {
         program_id: pyth_solana_receiver_sdk::ID,
         accounts: vec![
-            meta(payer.pubkey(), true, true),                // payer
+            meta(pass.payer.pubkey(), true, true),           // payer
             meta(encoded_vaa.pubkey(), false, false),        // encoded_vaa
             meta(get_config_address(), false, false),        // config
             meta(get_treasury_address(0), false, true),      // treasury
             meta(price_update_account.pubkey(), true, true), // price_update_account
             meta(anchor_lang::system_program::ID, false, false),
-            meta(payer.pubkey(), true, false), // write_authority
+            meta(pass.payer.pubkey(), true, false), // write_authority
         ],
         data,
     };
-    let sig = send_signed(rpc, payer, &[price_update_account], vec![post], 400_000)
+    let sig = send_signed(&pass, &[price_update_account], vec![post], 400_000)
         .await
         .context("post_update")?;
 
@@ -588,12 +613,12 @@ async fn post_one_full(
     let close = Instruction {
         program_id: *wormhole,
         accounts: vec![
-            meta(payer.pubkey(), true, true),
+            meta(pass.payer.pubkey(), true, true),
             meta(encoded_vaa.pubkey(), false, true),
         ],
         data: IX_CLOSE_ENCODED_VAA.to_vec(),
     };
-    let _ = send_signed(rpc, payer, &[], vec![close], 60_000).await;
+    let _ = send_no_confirm(&pass, vec![close], 60_000).await;
 
     Ok(sig)
 }
@@ -617,25 +642,144 @@ fn create_account_ix(
     }
 }
 
-async fn send_signed(
-    rpc: &RpcClient,
+/// A token bucket over every RPC call the poster makes.
+///
+/// Reducing the call count was necessary but not sufficient: six feeds starting at once still
+/// burst well past a free tier's ceiling in the first instant of a pass, and the ceiling is on
+/// the *rate*, not the total. Handing out evenly spaced slots turns the burst into a queue.
+///
+/// This has to live above the `RpcClient`, not inside it. `solana-rpc-client`'s HTTP sender
+/// reacts to a 429 by retrying five times and honouring `Retry-After` for up to 120 s each,
+/// which against a 60-second staleness gate means one throttled call can cost the feed its
+/// whole reason for existing. The point of the bucket is that the 429 never happens.
+struct Throttle {
+    /// When the next slot opens. Held under a mutex only long enough to claim one.
+    next: tokio::sync::Mutex<std::time::Instant>,
+    spacing: std::time::Duration,
+}
+
+impl Throttle {
+    fn new(max_rps: u32) -> Self {
+        // A zero would divide by zero and an unbounded rate is what we are here to prevent.
+        let rps = u64::from(max_rps.max(1));
+        Self {
+            next: tokio::sync::Mutex::new(std::time::Instant::now()),
+            spacing: std::time::Duration::from_nanos(1_000_000_000u64.saturating_div(rps)),
+        }
+    }
+
+    /// Claim the next slot and wait for it. Callers are served in arrival order.
+    async fn acquire(&self) {
+        let wait = {
+            let mut next = self.next.lock().await;
+            let now = std::time::Instant::now();
+            let at = if *next > now { *next } else { now };
+            *next = at.checked_add(self.spacing).unwrap_or(at);
+            at.saturating_duration_since(now)
+        };
+        if !wait.is_zero() {
+            tokio::time::sleep(wait).await;
+        }
+    }
+}
+
+/// What every transaction in one pass shares: where to send it, who pays for it, and the
+/// blockhash they all sign against. Grouped because it is threaded through every layer of the
+/// five-transaction path, and because the blockhash being *per pass* rather than per
+/// transaction is the point — see `send_signed`.
+#[derive(Clone, Copy)]
+struct Pass<'a> {
+    rpc: &'a RpcClient,
+    payer: &'a Keypair,
+    throttle: &'a Throttle,
+    blockhash: Hash,
+}
+
+/// How often to ask whether a signature has landed, and how many times to ask.
+///
+/// One call a second, rather than the client's two calls every half second. The attempt count
+/// outlives a blockhash (~150 slots, ~60 s), so a transaction whose blockhash expired is
+/// reported as unconfirmed instead of polled forever.
+const CONFIRM_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+const CONFIRM_ATTEMPTS: usize = 45;
+
+/// Build and sign. Shared by the confirming and the fire-and-forget sender.
+fn sign(
     payer: &Keypair,
     extra: &[&Keypair],
     ixs: Vec<Instruction>,
     cu: u32,
-) -> Result<String> {
+    blockhash: Hash,
+) -> Result<Transaction> {
     let mut all = vec![
         ComputeBudgetInstruction::set_compute_unit_limit(cu),
         ComputeBudgetInstruction::set_compute_unit_price(1_000),
     ];
     all.extend(ixs);
-    let blockhash = rpc.get_latest_blockhash().await.context("blockhash")?;
     let message = Message::new(&all, Some(&payer.pubkey()));
     let mut tx = Transaction::new_unsigned(message);
     let mut signers: Vec<&Keypair> = vec![payer];
     signers.extend_from_slice(extra);
     tx.try_sign(&signers, blockhash).context("signing")?;
-    Ok(rpc.send_and_confirm_transaction(&tx).await?.to_string())
+    Ok(tx)
+}
+
+/// Sign on `blockhash`, send, and wait for `confirmed`.
+///
+/// # Why this is not `RpcClient::send_and_confirm_transaction`
+///
+/// That helper cannot be run six feeds wide against a rate-limited endpoint. It fetches its
+/// own blockhash for every transaction, and then on every poll where the signature has not
+/// landed it makes *two* calls — `getSignatureStatuses` and `isBlockhashValid` — twice a
+/// second ([`solana-rpc-client` `send_and_confirm_transaction`]). Five transactions per feed
+/// and six feeds at once comes to roughly 400 RPC calls inside a ~25 s pass: about 16/s
+/// against a free tier that allows 10. That is where the intermittent `429 Too Many Requests`
+/// on `verify_encoded_vaa_v1` came from — one feed lost per pass, at random.
+///
+/// Retrying the 429 is the wrong fix, and would make it worse. `solana-rpc-client`'s HTTP
+/// sender already retries a 429 five times and honours `Retry-After` for as much as 120 s
+/// each time, so a throttled call can hold one feed for minutes — against a 60-second
+/// staleness gate. The remedy is to send less traffic, not to wait harder for it.
+///
+/// So: one blockhash fetched per *pass* and shared by every transaction in it, and one status
+/// call per second with expiry bounded by an attempt count rather than by asking the node.
+/// Same guarantee, roughly a third of the calls.
+async fn send_signed(
+    pass: &Pass<'_>,
+    extra: &[&Keypair],
+    ixs: Vec<Instruction>,
+    cu: u32,
+) -> Result<String> {
+    let tx = sign(pass.payer, extra, ixs, cu, pass.blockhash)?;
+    pass.throttle.acquire().await;
+    let signature = pass.rpc.send_transaction(&tx).await.context("send")?;
+    for _ in 0..CONFIRM_ATTEMPTS {
+        tokio::time::sleep(CONFIRM_POLL).await;
+        pass.throttle.acquire().await;
+        match pass
+            .rpc
+            .get_signature_status_with_commitment(&signature, CommitmentConfig::confirmed())
+            .await
+            .context("signature status")?
+        {
+            Some(Ok(())) => return Ok(signature.to_string()),
+            Some(Err(e)) => bail!("{signature} failed on chain: {e}"),
+            None => {}
+        }
+    }
+    bail!("{signature} was not confirmed in {CONFIRM_ATTEMPTS}s")
+}
+
+/// Send and do not wait.
+///
+/// Only for the rent reclaim, whose outcome changes nothing: the price is already on chain by
+/// the time it runs, and a leaked buffer is a cost rather than a correctness problem.
+/// Confirming it would put a poll cycle on the critical path of every feed for no gain.
+async fn send_no_confirm(pass: &Pass<'_>, ixs: Vec<Instruction>, cu: u32) -> Result<()> {
+    let tx = sign(pass.payer, &[], ixs, cu, pass.blockhash)?;
+    pass.throttle.acquire().await;
+    pass.rpc.send_transaction(&tx).await.context("send")?;
+    Ok(())
 }
 
 /// The guardian set the receiver will check this VAA against.

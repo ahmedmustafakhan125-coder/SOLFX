@@ -32,3 +32,6 @@ export const HERMES_URL: string = import.meta.env.VITE_HERMES_URL ?? "/hermes";
 
 /** Unused when proxying; the proxy holds the token. Kept for a direct-fetch fallback. */
 export const HERMES_TOKEN: string | undefined = import.meta.env.VITE_HERMES_TOKEN;
+
+/** Pyth Pro History API, proxied — see the note in vite.config.ts. */
+export const PYTHPRO_URL: string = import.meta.env.VITE_PYTHPRO_URL ?? "/pythpro";

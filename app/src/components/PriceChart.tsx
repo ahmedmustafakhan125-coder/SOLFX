@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi } from "lightweight-charts";
 
-import { fetchBars, toDisplay, type Bar } from "@/lib/history";
-import { HERMES_TOKEN, HERMES_URL } from "@/config";
+import { fetchOhlc, toDisplay, TIMEFRAMES, type Ohlc, type Timeframe } from "@/lib/ohlc";
+import { PYTHPRO_URL } from "@/config";
 import type { LivePrice } from "@/lib/prices";
 import { priceplaces } from "@/lib/format";
 
 type Props = {
-  feedIdHex: string;
   symbol: string;
   live?: LivePrice | undefined;
 };
@@ -15,15 +14,21 @@ type Props = {
 /**
  * The oracle's own price history.
  *
- * Deliberately not a third-party feed. A chart drawn from an exchange API would disagree
- * with the price the program fills at, and a trader comparing the two would be right to
- * distrust the venue. These are Pyth's numbers — the same feed the poster publishes.
+ * Deliberately not a third-party feed. A chart drawn from an exchange API would disagree with
+ * the price the program fills at, and a trader comparing the two would be right to distrust
+ * the venue. These are Pyth's numbers — the same feed the poster publishes.
+ *
+ * The candles are Pyth's too, from the Pro History API, rather than bucketed from samples we
+ * took ourselves. That distinction matters for the wicks: a sampled high is only the highest
+ * price we happened to *ask* for, so it understates the real range by however much we missed
+ * between polls. These are the true extremes of each interval.
  */
-export function PriceChart({ feedIdHex, symbol, live }: Props) {
+export function PriceChart({ symbol, live }: Props) {
   const box = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const last = useRef<Bar | undefined>(undefined);
+  const last = useRef<Ohlc | undefined>(undefined);
+  const [tf, setTf] = useState<Timeframe>(TIMEFRAMES[2]); // 1H
   const [state, setState] = useState<"loading" | "ready" | "empty">("loading");
 
   // Create the chart once.
@@ -37,19 +42,19 @@ export function PriceChart({ feedIdHex, symbol, live }: Props) {
         fontSize: 10,
       },
       grid: {
-        vertLines: { color: "rgba(42,42,48,0.4)" },
-        horzLines: { color: "rgba(42,42,48,0.4)" },
+        vertLines: { color: "rgba(76,69,70,0.35)" },
+        horzLines: { color: "rgba(76,69,70,0.35)" },
       },
-      rightPriceScale: { borderColor: "#2a2a30" },
-      timeScale: { borderColor: "#2a2a30", timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: "#4c4546" },
+      timeScale: { borderColor: "#4c4546", timeVisible: true, secondsVisible: false },
       crosshair: { mode: 1 },
       autoSize: true,
     });
     const s = c.addSeries(CandlestickSeries, {
       // Purple up, white down.
-      upColor: "#9945ff",
-      wickUpColor: "#9945ff",
-      borderUpColor: "#9945ff",
+      upColor: "#9843fe",
+      wickUpColor: "#9843fe",
+      borderUpColor: "#9843fe",
       downColor: "#e5e2e1",
       wickDownColor: "#e5e2e1",
       borderDownColor: "#e5e2e1",
@@ -68,15 +73,12 @@ export function PriceChart({ feedIdHex, symbol, live }: Props) {
     };
   }, [symbol]);
 
-  // Load history whenever the market changes.
+  // Reload whenever the market or the timeframe changes.
   useEffect(() => {
     let cancelled = false;
     setState("loading");
     void (async () => {
-      const bars = await fetchBars(
-        { hermesUrl: HERMES_URL, token: HERMES_TOKEN },
-        feedIdHex,
-      ).catch((): Bar[] => []);
+      const bars = await fetchOhlc(PYTHPRO_URL, symbol, tf).catch((): Ohlc[] => []);
       if (cancelled) return;
       if (bars.length === 0) {
         setState("empty");
@@ -90,18 +92,19 @@ export function PriceChart({ feedIdHex, symbol, live }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [feedIdHex]);
+  }, [symbol, tf]);
 
-  // Fold each poll into the current bar, opening a new one when the minute rolls over.
-  // `update` requires a time >= the last bar's, so the bar being extended must keep its
-  // original stamp rather than take the tick's.
+  // Fold each poll into the bar in progress, opening a new one when the interval rolls over.
+  // `update` requires a time >= the last bar's, so the bar being extended keeps its original
+  // stamp rather than taking the tick's.
   useEffect(() => {
     if (!live || state !== "ready") return;
     const price = toDisplay(live.price);
-    const slot = Math.floor(Number(live.publishTime) / 60) * 60;
+    const slot = Math.floor(Number(live.publishTime) / tf.seconds) * tf.seconds;
     const prev = last.current;
+    if (prev && slot < prev.time) return; // a stale poll must not rewind the series
 
-    const bar: Bar =
+    const bar: Ohlc =
       prev && prev.time === slot
         ? {
             time: slot,
@@ -112,29 +115,41 @@ export function PriceChart({ feedIdHex, symbol, live }: Props) {
           }
         : { time: slot, open: prev?.close ?? price, high: price, low: price, close: price };
 
-    if (prev && slot < prev.time) return; // a stale poll must not rewind the series
     last.current = bar;
     series.current?.update({ ...bar, time: bar.time as never });
-  }, [live, state]);
+  }, [live, state, tf]);
 
   return (
-    <div className="relative min-h-0 flex-1">
-      <div ref={box} className="absolute inset-0" />
-      {state !== "ready" ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="max-w-sm text-center text-xs text-ink-dim">
-            {state === "loading" ? (
-              "Loading oracle history…"
-            ) : (
-              <>
-                No history for {symbol}. Pyth serves history per timestamp and rate-limits, so
-                a closed market or a throttled response leaves this empty. The live figures
-                above are read straight from the price account.
-              </>
-            )}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center gap-1 border-b border-[var(--sf-border)] px-2 py-1">
+        {TIMEFRAMES.map((t) => (
+          <button
+            key={t.label}
+            type="button"
+            onClick={() => setTf(t)}
+            className={
+              "px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide transition-colors " +
+              (t.label === tf.label
+                ? "bg-[var(--sf-purple)] text-white"
+                : "text-ink-dim hover:text-ink")
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="relative min-h-0 flex-1">
+        <div ref={box} className="absolute inset-0" />
+        {state !== "ready" ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="max-w-sm text-center text-xs text-ink-dim">
+              {state === "loading"
+                ? "Loading oracle history…"
+                : `No ${tf.label} history for ${symbol}.`}
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -54,6 +54,9 @@ pythnet-sdk = "3.0.0"
 solana-client = "3"
 solana-account-decoder-client-types = "3"
 solana-commitment-config = "3"
+# Only for the `Hash` type threaded through the senders. Re-exports the same
+# `solana_hash_v4::Hash` that `solana-transaction 3` signs with, so the pins agree.
+solana-hash = "3"
 solana-compute-budget-interface = "3"
 solana-instruction = "3"
 solana-keypair = "3"

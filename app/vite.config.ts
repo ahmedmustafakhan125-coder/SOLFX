@@ -42,6 +42,13 @@ export default defineConfig({
     include: ["@solana/kit", "@solana/client", "@solana/react-hooks"],
   },
   server: {
+    // The repo lives on /mnt/e, a 9p mount, and inotify events do not cross it. Without
+    // polling, Vite's watcher never fires: the dev server keeps serving the transform it
+    // built at startup, so edits appear to do nothing and a module deleted since startup
+    // still answers 200. A half-stale module graph is also the most likely explanation for
+    // the blank page — an import that no longer matches what the rest of the graph expects
+    // throws before anything renders. Polling costs a little CPU and buys a working reload.
+    watch: { usePolling: true, interval: 400 },
     fs: { allow: [fileURLToPath(new URL("..", import.meta.url))] },
     proxy: {
       // Hermes answers the CORS preflight but omits `access-control-allow-origin` on the
@@ -50,6 +57,16 @@ export default defineConfig({
       "/hermes": {
         target: "https://pyth.dourolabs.app",
         changeOrigin: true,
+        headers: { Authorization: `Bearer ${hermesToken()}` },
+      },
+      // Pyth Pro's History API — real OHLC at every resolution TradingView understands, on
+      // the same host and the same key. Proxied for the same two reasons as Hermes: the
+      // browser cannot read a cross-origin response without the header, and the token must
+      // not ship in client JavaScript.
+      "/pythpro": {
+        target: "https://pyth.dourolabs.app",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/pythpro/, "/v1"),
         headers: { Authorization: `Bearer ${hermesToken()}` },
       },
     },

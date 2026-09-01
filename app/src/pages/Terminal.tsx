@@ -69,11 +69,7 @@ export function Terminal() {
             {market ? (
               <>
                 <MarketPanel market={market} price={prices[market.feedIdHex]} />
-                <PriceChart
-                  feedIdHex={market.feedIdHex}
-                  symbol={market.symbol}
-                  live={prices[market.feedIdHex]}
-                />
+                <PriceChart symbol={market.symbol} live={prices[market.feedIdHex]} />
                 <PositionsPanel
                   positions={positions}
                   markets={markets}
