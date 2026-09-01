@@ -288,7 +288,7 @@ useful result.
 |---|---|---|
 | `MarketClosedForOpens` | `initialize_market` leaves a market `Initialized`; nothing called `set_market_status` | Deliberate: a mistyped feed id or risk parameter cannot be traded the instant it is listed |
 | `WrongOracleFeed` | `post_update_atomic` can only produce `VerificationLevel::Partial` | SolFX requires `Full`. The receiver SDK itself warns partial updates lower the collusion threshold |
-| `OracleStale` | Posting 33 feeds at ~5 tx each took 102s; feeds expired before their next turn | The 60s staleness gate does exactly what it should |
+| `OracleStale` | Posting 33 feeds at ~5 tx each took 102s, serially, so each feed aged by every feed before it | The 60s staleness gate does exactly what it should |
 | `SlippageExceeded` | The client passed `price_limit: 0` expecting "disabled" | There is no disabled. `validate_slippage` always compares, so no order can go out unbounded |
 | `PositionSizeOutOfBounds` | Position bounds derived from the FX lot for every asset, making BTC's *minimum* ~0.1 BTC | Bounds are enforced, and they were wrong in the config, not the code |
 
@@ -334,9 +334,34 @@ close_encoded_vaa      reclaim the rent
 now derives and clones it along with the receiver's config and treasury PDAs and the
 guardian set — `price-poster --print-clone-args` computes them from a live cluster.
 
-**Cost:** ~5 transactions per feed. Posting all 33 takes ~102s, which leaves everything
-stale; posting only the listed markets takes **~16s**. The poster reads `deployment.json`
-and does the latter by default.
+**Cost:** ~5 transactions per feed. The poster reads `deployment.json` and posts only the
+listed markets by default; posting all 33 leaves everything stale before its next turn.
+
+**Feeds are posted concurrently, and the RPC rate is capped.** Both are load-bearing for the
+60s gate, and each was measured after the naive version failed:
+
+- *Serial posting.* A price is dated when Hermes serves it, not when it lands, so the last
+  feed in a serial pass carried a price as old as every preceding feed's transactions put
+  together. BTC/USD, posted last of six, landed **142s** old against the 60s gate.
+- *Unthrottled concurrency.* Fixing the ordering exposed the next ceiling. Helius's free tier
+  allows ~10 RPC calls/s, and `RpcClient::send_and_confirm_transaction` fetches its own
+  blockhash per transaction and then makes **two** calls per unconfirmed poll —
+  `getSignatureStatuses` *and* `isBlockhashValid` — twice a second. Five transactions per feed
+  across six feeds is ~400 calls in a ~25s pass, about 16/s. Whole feeds were lost to
+  `429 Too Many Requests` at random, most often on the longest step, `verify_encoded_vaa_v1`.
+
+Retrying the 429 would have made it worse: `solana-rpc-client`'s HTTP sender already retries
+one five times, honouring `Retry-After` for up to 120s each (`solana-rpc-client-3.1.14`,
+`src/http_sender.rs:147`), so a throttled call can hold a feed for minutes. The poster
+instead sends less: one blockhash per *pass* shared by every transaction in it, one status call per second, the rent reclaim no longer confirmed on the
+critical path, and a token bucket above the client (`--max-rps`, default 8) that spaces every
+call so the burst never forms.
+
+**Measured 2026-09-01**, devnet, six markets, `--interval-secs 2 --concurrency 8 --max-rps 8`:
+seven consecutive passes, **42 of 42 feeds posted, zero 429s**, worst on-chain age **38s**
+against the 60s gate, with all six feeds within **two seconds of each other**. Raise
+`--max-rps` on a paid endpoint or a local validator; it is the binding constraint here, not
+concurrency.
 
 ## Devnet feed availability — measured 2026-08-23
 
