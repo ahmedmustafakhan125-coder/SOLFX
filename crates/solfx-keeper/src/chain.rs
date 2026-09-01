@@ -20,11 +20,20 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 
 use crate::config::Config;
+use crate::throttle::Throttle;
 
 pub struct Chain {
     pub rpc: Arc<RpcClient>,
     pub payer: Arc<Keypair>,
     pub commitment: CommitmentConfig,
+    /// Paces every RPC call this process makes. See [`crate::throttle`].
+    ///
+    /// The keeper is a busier RPC client than it looks: the scan loop runs every 400 ms and a
+    /// book refresh reads four account sets. On its own that is fine; beside the price poster
+    /// on one free-tier key it is not, and the poster is the one that suffers because its
+    /// calls are the ones with a 60-second deadline. Measured: the poster alone ran 11
+    /// consecutive clean passes, and lost 491 feeds across 371 passes while a keeper ran.
+    throttle: Arc<Throttle>,
     priority_fee: u64,
     cu_limit: u32,
     dry_run: bool,
@@ -39,6 +48,7 @@ impl Chain {
             )),
             payer: Arc::new(payer),
             commitment: cfg.commitment(),
+            throttle: Arc::new(Throttle::new(cfg.max_rps)),
             priority_fee: cfg.priority_fee_micro_lamports,
             cu_limit: cfg.compute_unit_limit,
             dry_run: cfg.dry_run,
@@ -51,6 +61,7 @@ impl Chain {
 
     /// Fetch one Anchor account and deserialize it.
     pub async fn account<T: AccountDeserialize>(&self, key: &Pubkey) -> Result<T> {
+        self.throttle.acquire().await;
         let data = self
             .rpc
             .get_account_data(key)
@@ -80,6 +91,7 @@ impl Chain {
             },
             ..Default::default()
         };
+        self.throttle.acquire().await;
         let raw = self
             .rpc
             .get_program_ui_accounts_with_config(program, cfg)
@@ -112,6 +124,7 @@ impl Chain {
         let mut out = Vec::with_capacity(keys.len());
         // `getMultipleAccounts` caps at 100 keys per call.
         for chunk in keys.chunks(100) {
+            self.throttle.acquire().await;
             let accounts = self
                 .rpc
                 .get_multiple_accounts(chunk)
@@ -138,6 +151,7 @@ impl Chain {
             ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee),
             ix,
         ];
+        self.throttle.acquire().await;
         let blockhash = self
             .rpc
             .get_latest_blockhash()
@@ -148,6 +162,7 @@ impl Chain {
         tx.try_sign(&[self.payer.as_ref()], blockhash)
             .context("signing")?;
 
+        self.throttle.acquire().await;
         let sig = self
             .rpc
             .send_and_confirm_transaction(&tx)

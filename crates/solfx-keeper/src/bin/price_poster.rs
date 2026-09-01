@@ -70,6 +70,9 @@
 #[path = "../pyth.rs"]
 mod pyth;
 
+#[path = "../throttle.rs"]
+mod throttle;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -85,6 +88,8 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_hash::Hash;
+
+use crate::throttle::Throttle;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_message::Message;
@@ -639,47 +644,6 @@ fn create_account_ix(
         program_id: anchor_lang::system_program::ID,
         accounts: vec![meta(*from, true, true), meta(*to, true, true)],
         data,
-    }
-}
-
-/// A token bucket over every RPC call the poster makes.
-///
-/// Reducing the call count was necessary but not sufficient: six feeds starting at once still
-/// burst well past a free tier's ceiling in the first instant of a pass, and the ceiling is on
-/// the *rate*, not the total. Handing out evenly spaced slots turns the burst into a queue.
-///
-/// This has to live above the `RpcClient`, not inside it. `solana-rpc-client`'s HTTP sender
-/// reacts to a 429 by retrying five times and honouring `Retry-After` for up to 120 s each,
-/// which against a 60-second staleness gate means one throttled call can cost the feed its
-/// whole reason for existing. The point of the bucket is that the 429 never happens.
-struct Throttle {
-    /// When the next slot opens. Held under a mutex only long enough to claim one.
-    next: tokio::sync::Mutex<std::time::Instant>,
-    spacing: std::time::Duration,
-}
-
-impl Throttle {
-    fn new(max_rps: u32) -> Self {
-        // A zero would divide by zero and an unbounded rate is what we are here to prevent.
-        let rps = u64::from(max_rps.max(1));
-        Self {
-            next: tokio::sync::Mutex::new(std::time::Instant::now()),
-            spacing: std::time::Duration::from_nanos(1_000_000_000u64.saturating_div(rps)),
-        }
-    }
-
-    /// Claim the next slot and wait for it. Callers are served in arrival order.
-    async fn acquire(&self) {
-        let wait = {
-            let mut next = self.next.lock().await;
-            let now = std::time::Instant::now();
-            let at = if *next > now { *next } else { now };
-            *next = at.checked_add(self.spacing).unwrap_or(at);
-            at.saturating_duration_since(now)
-        };
-        if !wait.is_zero() {
-            tokio::time::sleep(wait).await;
-        }
     }
 }
 

@@ -95,6 +95,17 @@ pub struct Config {
     )]
     pub price_accounts: PathBuf,
 
+    /// Ceiling on RPC calls per second.
+    ///
+    /// Set below the endpoint's limit, and remember the limit is shared: `price-poster` has
+    /// the same flag, and a keeper and a poster on one free-tier key must divide the budget
+    /// between them rather than each assume the whole of it. Measured on a free Helius key —
+    /// the poster alone ran 11 consecutive clean passes, and lost 491 feeds across 371 passes
+    /// with an unthrottled keeper beside it. The poster is the one that suffers, because its
+    /// calls are the ones carrying a 60-second deadline.
+    #[arg(long, default_value_t = 5, env = "SOLFX_MAX_RPS")]
+    pub max_rps: u32,
+
     #[arg(long, env = "SOLFX_TRACE_EVAL")]
     pub trace_eval: bool,
 

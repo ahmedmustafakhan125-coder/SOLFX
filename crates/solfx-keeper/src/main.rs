@@ -38,6 +38,7 @@ mod danger;
 mod price_map;
 mod pyth;
 mod services;
+mod throttle;
 
 use std::sync::Arc;
 
