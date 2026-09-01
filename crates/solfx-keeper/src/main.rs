@@ -35,6 +35,7 @@ mod danger;
 // keeper does the reverse — so "never used" is a property of which binary is compiling, not
 // dead code. The `#[path]` includes carry the same allow.
 #[allow(dead_code)]
+mod price_map;
 mod pyth;
 mod services;
 
@@ -75,10 +76,20 @@ async fn main() -> Result<()> {
         "connected"
     );
 
+    // Where this cluster's prices actually live. Empty on a sponsored cluster, where every
+    // address derives; populated on one where `price-poster` publishes into its own accounts.
+    let price_entries = price_map::load(&cfg.price_accounts)?;
+    let overrides = price_map::by_feed_id(&price_entries);
+    tracing::info!(
+        map = %cfg.price_accounts.display(),
+        feeds = overrides.len(),
+        "price account map"
+    );
+
     let shared = Arc::new(services::Shared {
         chain,
         cfg: cfg.clone(),
-        book: RwLock::new(book::Book::empty()),
+        book: RwLock::new(book::Book::with_price_accounts(overrides)),
         vaults,
     });
 
@@ -90,6 +101,36 @@ async fn main() -> Result<()> {
         .refresh(&shared.chain)
         .await
         .context("initial book load")?;
+
+    // Same reasoning as the protocol check above, one level deeper. A keeper whose price
+    // accounts all resolve to addresses that hold nothing runs perfectly, reports healthy, and
+    // liquidates nothing — the failure mode that hides. Every market unresolved is not a dead
+    // feed, it is the wrong address book, so refuse to start and say which flag fixes it.
+    {
+        let book = shared.book.read().await;
+        let unresolved = book.markets_without_prices();
+        let total = book.feeds.len();
+        if !unresolved.is_empty() && unresolved.len() == total {
+            for (index, account) in &unresolved {
+                tracing::error!(market = index, %account, "no price at this address");
+            }
+            anyhow::bail!(
+                "none of the {total} listed markets has a price account on this cluster.\n\
+                 The keeper derives the sponsored Pyth PDA `[shard, feed_id]`, which is right \
+                 on mainnet but wrong wherever `price-poster` publishes into its own keypair \
+                 accounts.\n\
+                 Point --price-accounts at the map the poster wrote (default \
+                 price-accounts.json), or run the poster first to create it."
+            );
+        }
+        for (index, account) in &unresolved {
+            tracing::error!(
+                market = index,
+                %account,
+                "market has no price on chain — it will not be liquidated or triggered"
+            );
+        }
+    }
 
     let mut tasks = tokio::task::JoinSet::new();
     tasks.spawn(services::run_refresher(Arc::clone(&shared)));

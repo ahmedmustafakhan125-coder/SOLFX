@@ -82,6 +82,19 @@ pub struct Config {
 
     /// Log every evaluation rather than only actions. Very loud; for a single position under
     /// investigation.
+    /// Feed id → price account map, for clusters where `price-poster` publishes the prices.
+    ///
+    /// Without it the keeper derives the sponsored `[shard, feed_id]` PDA, which is correct on
+    /// mainnet and wrong anywhere the poster writes into its own keypair accounts — it then
+    /// watches addresses that hold nothing and liquidates nothing. A missing file is fine and
+    /// means "this cluster's feeds are sponsored"; see `price_map.rs`.
+    #[arg(
+        long,
+        default_value = "price-accounts.json",
+        env = "SOLFX_PRICE_ACCOUNTS"
+    )]
+    pub price_accounts: PathBuf,
+
     #[arg(long, env = "SOLFX_TRACE_EVAL")]
     pub trace_eval: bool,
 

@@ -24,7 +24,7 @@
 use std::time::Duration;
 
 use anchor_lang::AccountDeserialize;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{anyhow, bail, Context as _, Result};
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use solana_pubkey::Pubkey;
 
@@ -324,12 +324,28 @@ impl Hermes {
             .join("&");
         let url = format!("{}/v2/updates/price/latest?{query}&parsed=true", self.base);
 
-        let body: HermesLatest = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .context("hermes request")?
+        let response = self.http.get(&url).send().await.context("hermes request")?;
+
+        // A 403 here is almost never a broken client or a bad key: Hermes entitles keys
+        // *per feed*, so a key that serves every listed market still refuses the feeds it
+        // does not cover — measured on this cluster, where 6 of 8 feeds return 200 and the
+        // two belonging to halted markets return 403 on the same key in the same second.
+        // Reporting that as "hermes unreachable" sends an operator hunting a network fault
+        // that does not exist, so say which feeds and why.
+        if response.status() == reqwest::StatusCode::FORBIDDEN {
+            bail!(
+                "hermes refused {} feed(s) with 403 — the API key is not entitled to them, \
+                 not a connectivity problem. Feeds: {}",
+                feed_ids.len(),
+                feed_ids
+                    .iter()
+                    .map(|id| feed_hex(id))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
+        let body: HermesLatest = response
             .error_for_status()
             .context("hermes status")?
             .json()

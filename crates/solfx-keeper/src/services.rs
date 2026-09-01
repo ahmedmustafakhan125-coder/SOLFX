@@ -450,6 +450,14 @@ pub async fn run_watchdog(shared: Arc<Shared>) {
             let book = shared.book.read().await;
             let mut legs = Vec::new();
             for market in book.markets.values() {
+                // Only markets that can actually be traded. Two reasons, and the second is
+                // the one that bites: a halted market's price drifting harms nobody because
+                // no order can reach it, and Hermes entitles API keys *per feed* and refuses
+                // an entire batch if any single feed in it is unentitled — so one dead feed
+                // belonging to a halted market blinds the watchdog for every live one.
+                if market.status != MarketStatus::Active {
+                    continue;
+                }
                 let ids = [
                     Some(market.pyth_feed_id),
                     crate::pyth::is_set(&market.secondary_feed_id)
@@ -458,7 +466,7 @@ pub async fn run_watchdog(shared: Arc<Shared>) {
                         .then_some(market.quote_conversion_feed),
                 ];
                 for id in ids.into_iter().flatten() {
-                    let Some(update) = book.prices.get(&crate::pyth::price_account(&id)) else {
+                    let Some(update) = book.prices.get(&book.price_account_for(&id)) else {
                         continue;
                     };
                     legs.push((
@@ -480,9 +488,12 @@ pub async fn run_watchdog(shared: Arc<Shared>) {
         let latest = match hermes.latest(&ids).await {
             Ok(l) => l,
             Err(e) => {
-                // Hermes being unreachable is a monitoring outage, not a protocol one. Say so
-                // at warn, not error: escalating it would page someone about a dashboard.
-                tracing::warn!(error = %format!("{e:#}"), "hermes unreachable");
+                // Losing the Hermes reference is a monitoring outage, not a protocol one. Say
+                // so at warn, not error: escalating it would page someone about a dashboard.
+                // The message is the error's own, because the two causes need different
+                // responses — an unreachable endpoint is transient, a 403 means the API key is
+                // not entitled to those feeds and no amount of waiting fixes it.
+                tracing::warn!(error = %format!("{e:#}"), "watchdog reference unavailable");
                 continue;
             }
         };

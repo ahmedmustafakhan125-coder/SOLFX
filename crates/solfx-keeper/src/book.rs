@@ -90,14 +90,35 @@ pub struct FeedSet {
     pub quote_conversion: Option<Pubkey>,
 }
 
+/// The address this cluster keeps `feed_id`'s price at: the map's answer when it has one, the
+/// derived sponsored PDA otherwise.
+///
+/// **Every** lookup of a price account must come through here, and the reason is a bug that
+/// has now appeared twice. `Book::prices` is keyed by the *resolved* address, so any code that
+/// derives the sponsored PDA independently indexes that map with a key it does not contain,
+/// finds nothing, and carries on quietly — the watchdog compared an empty set of legs that way
+/// and reported healthy while checking nothing at all.
+fn resolve_price_account(overrides: &HashMap<[u8; 32], Pubkey>, feed_id: &[u8; 32]) -> Pubkey {
+    overrides
+        .get(feed_id)
+        .copied()
+        .unwrap_or_else(|| pyth::price_account(feed_id))
+}
+
 impl FeedSet {
-    fn for_market(market: &Market) -> Self {
+    /// Resolve a market's feeds, consulting `overrides` before deriving.
+    ///
+    /// The order is the whole point. On a cluster with sponsored feeds the map is empty and
+    /// every address derives, exactly as before. On a cluster where `price-poster` publishes
+    /// into its own keypair accounts the derived address holds a stale price or none at all,
+    /// and only the map knows where the traded price lives — see [`crate::price_map`].
+    fn for_market(market: &Market, overrides: &HashMap<[u8; 32], Pubkey>) -> Self {
         Self {
-            primary: pyth::price_account(&market.pyth_feed_id),
+            primary: resolve_price_account(overrides, &market.pyth_feed_id),
             secondary: pyth::is_set(&market.secondary_feed_id)
-                .then(|| pyth::price_account(&market.secondary_feed_id)),
+                .then(|| resolve_price_account(overrides, &market.secondary_feed_id)),
             quote_conversion: pyth::is_set(&market.quote_conversion_feed)
-                .then(|| pyth::price_account(&market.quote_conversion_feed)),
+                .then(|| resolve_price_account(overrides, &market.quote_conversion_feed)),
         }
     }
 
@@ -121,11 +142,17 @@ pub struct Book {
     /// against the keeper's wall clock, because staleness gates compare to on-chain time.
     pub clock: Clock,
     pub refreshed_at: std::time::Instant,
+    /// Feed id → price account, for feeds this cluster does not host at the derived address.
+    price_account_overrides: HashMap<[u8; 32], Pubkey>,
 }
 
 impl Book {
-    pub fn empty() -> Self {
+    /// An empty book that prefers `overrides` when resolving a feed's price account, and
+    /// derives the sponsored PDA for anything the map does not name. Pass an empty map on a
+    /// cluster whose feeds are sponsored.
+    pub fn with_price_accounts(overrides: HashMap<[u8; 32], Pubkey>) -> Self {
         Self {
+            price_account_overrides: overrides,
             markets: HashMap::new(),
             feeds: HashMap::new(),
             positions: HashMap::new(),
@@ -148,8 +175,10 @@ impl Book {
         self.markets.clear();
         self.feeds.clear();
         for (_, market) in markets {
-            self.feeds
-                .insert(market.market_index, FeedSet::for_market(&market));
+            self.feeds.insert(
+                market.market_index,
+                FeedSet::for_market(&market, &self.price_account_overrides),
+            );
             self.markets.insert(market.market_index, market);
         }
 
@@ -168,6 +197,31 @@ impl Book {
         self.refresh_prices(chain).await?;
         self.refreshed_at = std::time::Instant::now();
         Ok(())
+    }
+
+    /// Where this cluster keeps `feed_id`'s price. See [`resolve_price_account`].
+    #[must_use]
+    pub fn price_account_for(&self, feed_id: &[u8; 32]) -> Pubkey {
+        resolve_price_account(&self.price_account_overrides, feed_id)
+    }
+
+    /// Markets whose primary price account is not present on this cluster.
+    ///
+    /// Returned rather than logged so the caller chooses the severity. The distinction that
+    /// matters: *every* market unresolved is a misconfiguration — almost always a self-posted
+    /// cluster with no `--price-accounts` map, where the derived sponsored addresses simply do
+    /// not exist — and the keeper should refuse to start rather than run blind. *One* market
+    /// unresolved is a dead feed, and stopping would abandon the other markets it protects.
+    #[must_use]
+    pub fn markets_without_prices(&self) -> Vec<(u16, Pubkey)> {
+        let mut out: Vec<(u16, Pubkey)> = self
+            .feeds
+            .iter()
+            .filter(|(_, set)| !self.prices.contains_key(&set.primary))
+            .map(|(index, set)| (*index, set.primary))
+            .collect();
+        out.sort_unstable();
+        out
     }
 
     /// Re-read only the oracle accounts and the clock. This is the fast loop: prices move

@@ -32,6 +32,12 @@ mod pyth;
 #[path = "../contracts.rs"]
 mod contracts;
 
+// The feed id → price account map, shared with the keeper rather than reimplemented. Both
+// have to agree about where a self-posted price lives; two loaders would drift and the
+// symptom would be a transaction rejected on chain, not a test failure.
+#[path = "../price_map.rs"]
+mod price_map;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -826,21 +832,7 @@ impl Deployment {
 }
 
 fn load_price_accounts(path: &PathBuf) -> Result<HashMap<String, Pubkey>> {
-    #[derive(serde::Deserialize)]
-    struct Entry {
-        symbol: String,
-        #[serde(deserialize_with = "pubkey_str::deserialize")]
-        price_account: Pubkey,
-    }
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Ok(HashMap::new());
-    };
-    let entries: Vec<Entry> =
-        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    Ok(entries
-        .into_iter()
-        .map(|e| (e.symbol.to_uppercase(), e.price_account))
-        .collect())
+    Ok(price_map::by_symbol(&price_map::load(path)?))
 }
 
 async fn send(rpc: &RpcClient, payer: &Keypair, ixs: Vec<Instruction>, cu: u32) -> Result<String> {
