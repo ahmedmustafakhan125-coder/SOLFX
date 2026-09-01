@@ -13,6 +13,7 @@ import {
   findUserAccountPda,
   getDepositCollateralInstruction,
   getInitializeUserAccountInstruction,
+  getWithdrawCollateralInstruction,
 } from "@solfx/client";
 import {
   TOKEN_PROGRAM_ADDRESS,
@@ -154,4 +155,46 @@ export async function buildDeposit(
     }),
   );
   return ixs;
+}
+
+/**
+ * Take collateral back out of the protocol.
+ *
+ * The counterpart to `buildDeposit`, and the reason it matters more than it looks: a
+ * non-custodial venue whose users can put money in but not take it out is custodial in every
+ * way that counts.
+ *
+ * No client-side check that the amount is withdrawable. The program owns that rule — it
+ * refuses a withdrawal that would drop equity below the margin every open position requires —
+ * and duplicating it here would produce a second, unaudited margin engine that disagrees with
+ * the chain by a rounding step. Send it, and surface the program's refusal verbatim.
+ *
+ * The ATA is not created here as it is for deposit: collateral can only exist inside the
+ * protocol because it was deposited from that same account, so it necessarily already exists.
+ */
+export async function buildWithdraw(
+  signer: TransactionSigner,
+  usdcMint: Address,
+  amount: bigint,
+): Promise<Instruction[]> {
+  const [protocolPda] = await findProtocolPda();
+  const [userAccount] = await findUserAccountPda({ authority: signer.address });
+  const [collateralVault] = await findCollateralVaultPda();
+  const [ata] = await findAssociatedTokenPda({
+    mint: usdcMint,
+    owner: signer.address,
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+  });
+
+  return [
+    getWithdrawCollateralInstruction({
+      authority: signer,
+      protocol: protocolPda,
+      userAccount,
+      collateralMint: usdcMint,
+      collateralVault,
+      userTokenAccount: ata,
+      amount,
+    }),
+  ];
 }

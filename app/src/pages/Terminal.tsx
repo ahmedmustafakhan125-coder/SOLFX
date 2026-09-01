@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Header } from "@/components/Header";
+import { RiskDisclosure } from "@/components/RiskDisclosure";
 import { PriceChart } from "@/components/PriceChart";
 import { MarketList } from "@/components/MarketList";
 import { MarketPanel } from "@/components/MarketPanel";
@@ -27,20 +28,21 @@ export function Terminal() {
   // Positions are priced from the same poll the terminal already runs, keyed by market
   // index rather than feed id because that is what the position accounts carry.
   const priceByIndex = Object.fromEntries(
-    markets.map((m) => [m.index, prices[m.feedIdHex]?.price]),
+    markets.map((m) => [m.index, prices[m.feedIdHex]?.price])
   );
   const accountByIndex = Object.fromEntries(
-    markets.map((m) => [m.index, priceAccounts[m.feedIdHex]]),
+    markets.map((m) => [m.index, priceAccounts[m.feedIdHex]])
   );
   const { positions, refresh: refreshPositions } = usePositions(
     markets.map((m) => m.index),
-    priceByIndex,
+    priceByIndex
   );
 
   const market = markets.find((m) => m.index === selected);
 
   return (
     <div className="flex h-screen flex-col bg-bg text-ink">
+      <RiskDisclosure />
       <Header rpcLabel={rpcLabel(RPC_URL)} />
 
       {error ? (
@@ -48,8 +50,8 @@ export function Terminal() {
           <div className="font-semibold">Could not read the protocol</div>
           <div className="mt-1 font-mono text-xs opacity-80">{error}</div>
           <div className="mt-2 text-xs opacity-70">
-            Set <span className="font-mono">VITE_SOLFX_RPC_URL</span> to an endpoint that has
-            SolFX deployed.
+            Set <span className="font-mono">VITE_SOLFX_RPC_URL</span> to an
+            endpoint that has SolFX deployed.
           </div>
         </div>
       ) : loading ? (
@@ -69,7 +71,10 @@ export function Terminal() {
             {market ? (
               <>
                 <MarketPanel market={market} price={prices[market.feedIdHex]} />
-                <PriceChart symbol={market.symbol} live={prices[market.feedIdHex]} />
+                <PriceChart
+                  symbol={market.symbol}
+                  live={prices[market.feedIdHex]}
+                />
                 <PositionsPanel
                   positions={positions}
                   markets={markets}

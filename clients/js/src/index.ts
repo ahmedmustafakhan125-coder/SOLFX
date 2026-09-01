@@ -10,6 +10,8 @@ export * from "./generated/index.js";
 
 // Hand-written, because an IDL cannot express any of it.
 export * from "./constants.js";
+export * from "./carry.js";
+export * from "./margin.js";
 export * from "./contracts.js";
 export * from "./sizing.js";
 export * from "./pdas.js";

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { maxPositionBase, minPositionBase, unitsPerLot } from "../contracts.js";
+import {
+  maxPositionBase,
+  minPositionBase,
+  pipSize,
+  pipsTenths,
+  unitsPerLot,
+} from "../contracts.js";
 import {
   SizingError,
   lotsToBase,
@@ -136,5 +142,48 @@ describe("resolveSize", () => {
 
   it("refuses notional without a price rather than guessing one", () => {
     expect(() => resolveSize("BTC/USD", { mode: "notional", usd: 1_000n })).toThrow(SizingError);
+  });
+});
+
+describe("pipSize", () => {
+  /**
+   * The decade is the whole point. A pip table that treats USD/JPY like EUR/USD reports a
+   * move as a hundred times what a trader would call it — the same class of error as applying
+   * the FX lot size to Bitcoin, and just as plausible-looking on the way past.
+   */
+  it("gives JPY pairs a pip two decades larger than a 4-decimal pair", () => {
+    expect(pipSize("EUR/USD")).toBe(100_000n);
+    expect(pipSize("GBP/USD")).toBe(100_000n);
+    expect(pipSize("USD/JPY")).toBe(10_000_000n);
+    expect(pipSize("EUR/JPY")).toBe(10_000_000n);
+    expect(pipSize("USD/JPY") / pipSize("EUR/USD")).toBe(100n);
+  });
+
+  it("uses the metals and crypto conventions", () => {
+    expect(pipSize("XAU/USD")).toBe(10_000_000n);
+    expect(pipSize("XAG/USD")).toBe(10_000_000n);
+    // No pip convention exists for crypto, so one quote unit — "pips" reads as dollars.
+    expect(pipSize("BTC/USD")).toBe(1_000_000_000n);
+  });
+
+  it("is unaffected by the slash", () => {
+    expect(pipSize("EURUSD")).toBe(pipSize("EUR/USD"));
+    expect(pipSize("USDJPY")).toBe(pipSize("USD/JPY"));
+  });
+});
+
+describe("pipsTenths", () => {
+  it("counts a 32-pip move on a 4-decimal pair", () => {
+    // 1.0850 -> 1.0882 is 32 pips.
+    expect(pipsTenths("EUR/USD", 1_088_200_000n - 1_085_000_000n)).toBe(320n);
+  });
+
+  it("keeps the sign of a losing move", () => {
+    expect(pipsTenths("EUR/USD", 1_085_000_000n - 1_088_200_000n)).toBe(-320n);
+  });
+
+  it("counts a JPY move on the JPY scale", () => {
+    // 160.00 -> 160.32 is 32 pips, not 3200.
+    expect(pipsTenths("USD/JPY", 160_320_000_000n - 160_000_000_000n)).toBe(320n);
   });
 });

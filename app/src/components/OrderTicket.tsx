@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { Direction, SizingError, resolveSize, unitsPerLot, type Sizing } from "@solfx/client";
+import {
+  Direction,
+  SizingError,
+  carryOver,
+  carryRatePerHour,
+  resolveSize,
+  unitsPerLot,
+  type Sizing,
+} from "@solfx/client";
 import type { Address } from "@solana/kit";
 
 import type { LoadedMarket } from "@/lib/markets";
@@ -9,7 +17,11 @@ import { useAccount } from "@/hooks/useAccount";
 import { useSigner } from "@/hooks/useSigner";
 import { useSend } from "@/hooks/useSend";
 import { useRpc } from "@/hooks/useSolfx";
-import { OPEN_POSITION_CU, buildOpenPosition, firstFreeNonce } from "@/lib/trade";
+import {
+  OPEN_POSITION_CU,
+  buildOpenPosition,
+  firstFreeNonce,
+} from "@/lib/trade";
 
 const NOTIONAL_DIVISOR = 1_000_000_000_000n; // 1e12
 const RATE_PRECISION = 1_000_000_000n; // 1e9
@@ -18,7 +30,11 @@ const BPS = 10_000n;
 type Mode = Sizing["mode"];
 
 const MODES: { id: Mode; label: string; hint: string }[] = [
-  { id: "lots", label: "Lots", hint: "1 lot = contract size for this asset class" },
+  {
+    id: "lots",
+    label: "Lots",
+    hint: "1 lot = contract size for this asset class",
+  },
   { id: "quantity", label: "Quantity", hint: "units of the base asset" },
   { id: "notional", label: "Notional", hint: "whole USD of exposure" },
 ];
@@ -64,7 +80,42 @@ export function OrderTicket({
       // MIN_NOTIONAL_QUOTE is $1.00 and the floor is inclusive.
       const belowNotional = notional < 1_000_000n;
 
-      return { sizeBase, notional, margin, fee, spread, belowMin, aboveMax, belowNotional };
+      // Carry, per side, over a day. Shown for both directions because the ticket has no
+      // direction until submit — and because a swap table with both sides is what a trader
+      // expects anyway. The markup is kept separate from the interest differential: that
+      // split is the whole reason `Market` stores them as two fields (§ 6.7), and quoting one
+      // blended number is the opacity we are supposed to be improving on.
+      const rates = {
+        long: carryRatePerHour({
+          baseAnnual: d.rateBaseAnnual,
+          quoteAnnual: d.rateQuoteAnnual,
+          markupPerHour: d.carryRatePerHour,
+          direction: Direction.Long,
+        }),
+        short: carryRatePerHour({
+          baseAnnual: d.rateBaseAnnual,
+          quoteAnnual: d.rateQuoteAnnual,
+          markupPerHour: d.carryRatePerHour,
+          direction: Direction.Short,
+        }),
+      };
+      const carry = {
+        long: carryOver(notional, rates.long.total, 24n),
+        short: carryOver(notional, rates.short.total, 24n),
+        markup: carryOver(notional, rates.long.markup, 24n),
+      };
+
+      return {
+        sizeBase,
+        notional,
+        margin,
+        fee,
+        spread,
+        carry,
+        belowMin,
+        aboveMax,
+        belowNotional,
+      };
     } catch (e) {
       return { error: e instanceof SizingError ? e.message : String(e) };
     }
@@ -84,9 +135,14 @@ export function OrderTicket({
     price?.stale === true;
 
   async function submit(direction: Direction) {
-    if (!signer || !account || !priceAccount || !price || "error" in quote) return;
+    if (!signer || !account || !priceAccount || !price || "error" in quote)
+      return;
     reset();
-    const nonce = await firstFreeNonce(rpc, account.userAccountPda, market.index);
+    const nonce = await firstFreeNonce(
+      rpc,
+      account.userAccountPda,
+      market.index
+    );
     if (nonce === undefined) return;
     const ix = await buildOpenPosition({
       signer,
@@ -111,10 +167,14 @@ export function OrderTicket({
             title={m.hint}
             onClick={() => {
               setMode(m.id);
-              setValue(m.id === "notional" ? "1000" : m.id === "lots" ? "0.01" : "1000");
+              setValue(
+                m.id === "notional" ? "1000" : m.id === "lots" ? "0.01" : "1000"
+              );
             }}
             className={`rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-              mode === m.id ? "bg-brand text-white" : "text-ink-muted hover:text-ink"
+              mode === m.id
+                ? "bg-brand text-white"
+                : "text-ink-muted hover:text-ink"
             }`}
           >
             {m.label}
@@ -125,7 +185,11 @@ export function OrderTicket({
       <label className="block">
         <div className="mb-1 flex items-baseline justify-between">
           <span className="text-[10px] uppercase tracking-[0.14em] text-ink-dim">
-            {mode === "notional" ? "Exposure" : mode === "lots" ? "Lots" : "Quantity"}
+            {mode === "notional"
+              ? "Exposure"
+              : mode === "lots"
+                ? "Lots"
+                : "Quantity"}
           </span>
           <span className="text-[10px] text-ink-dim">
             {mode === "notional"
@@ -145,7 +209,9 @@ export function OrderTicket({
 
       <div>
         <div className="mb-1 flex items-baseline justify-between">
-          <span className="text-[10px] uppercase tracking-[0.14em] text-ink-dim">Leverage</span>
+          <span className="text-[10px] uppercase tracking-[0.14em] text-ink-dim">
+            Leverage
+          </span>
           <span className="tnum text-xs text-brand-soft">{leverage}x</span>
         </div>
         <input
@@ -164,8 +230,12 @@ export function OrderTicket({
 
       <div>
         <div className="mb-1 flex items-baseline justify-between">
-          <span className="text-[10px] uppercase tracking-[0.14em] text-ink-dim">Slippage</span>
-          <span className="tnum text-xs text-ink-muted">{(slippageBps / 100).toFixed(2)}%</span>
+          <span className="text-[10px] uppercase tracking-[0.14em] text-ink-dim">
+            Slippage
+          </span>
+          <span className="tnum text-xs text-ink-muted">
+            {(slippageBps / 100).toFixed(2)}%
+          </span>
         </div>
         <div className="grid grid-cols-4 gap-1">
           {[10, 50, 100, 300].map((b) => (
@@ -173,7 +243,9 @@ export function OrderTicket({
               key={b}
               onClick={() => setSlippageBps(b)}
               className={`tnum rounded px-1 py-1 text-[11px] ${
-                slippageBps === b ? "bg-brand text-white" : "bg-surface-high text-ink-muted"
+                slippageBps === b
+                  ? "bg-brand text-white"
+                  : "bg-surface-high text-ink-muted"
               }`}
             >
               {(b / 100).toFixed(b < 100 ? 1 : 0)}%
@@ -181,8 +253,8 @@ export function OrderTicket({
           ))}
         </div>
         <p className="mt-1 text-[10px] leading-snug text-ink-dim">
-          A bound, not a preference — the program always compares, so there is no way to
-          disable it.
+          A bound, not a preference — the program always compares, so there is
+          no way to disable it.
         </p>
       </div>
 
@@ -191,11 +263,26 @@ export function OrderTicket({
           <div className="text-warn">{quote.error}</div>
         ) : (
           <>
-            <Row label="Size" value={`${fmtBase(quote.sizeBase)} ${market.symbol.slice(0, 3)}`} />
+            <Row
+              label="Size"
+              value={`${fmtBase(quote.sizeBase)} ${market.symbol.slice(0, 3)}`}
+            />
             <Row label="Notional" value={`$${fmtUsd(quote.notional)}`} />
             <Row label="Margin required" value={`$${fmtUsd(quote.margin)}`} />
             <Row label="Open fee" value={`$${fmtUsd(quote.fee, 6)}`} />
             <Row label="Spread cost" value={`$${fmtUsd(quote.spread, 6)}`} />
+            <Row
+              label="Carry / day, long"
+              value={`$${fmtUsd(quote.carry.long, 6)}`}
+            />
+            <Row
+              label="Carry / day, short"
+              value={`$${fmtUsd(quote.carry.short, 6)}`}
+            />
+            <Row
+              label="…of which SolFX markup"
+              value={`$${fmtUsd(quote.carry.markup, 6)}`}
+            />
             {price ? (
               <Row label="Oracle" value={fmtPrice(price.price, places)} />
             ) : null}
@@ -256,7 +343,8 @@ export function OrderTicket({
       ) : null}
 
       <p className="text-[10px] leading-relaxed text-ink-dim">
-        Every figure above is computed with the program's own formulas from live account data.
+        Every figure above is computed with the program's own formulas from live
+        account data.
       </p>
     </div>
   );
@@ -282,13 +370,15 @@ function Warnings(p: {
   status: string;
 }) {
   const items: string[] = [];
-  if (!p.tradeable) items.push(`Market is ${p.status}; it does not permit opening.`);
+  if (!p.tradeable)
+    items.push(`Market is ${p.status}; it does not permit opening.`);
   if (p.underfunded) {
     items.push(
-      `Margin exceeds your free collateral${p.free === undefined ? "" : ` of $${fmtUsd(p.free)}`}. Deposit more above.`,
+      `Margin exceeds your free collateral${p.free === undefined ? "" : ` of $${fmtUsd(p.free)}`}. Deposit more above.`
     );
   }
-  if (p.stale) items.push("Oracle is older than 60s — the program would reject this.");
+  if (p.stale)
+    items.push("Oracle is older than 60s — the program would reject this.");
   if (p.belowNotional) items.push("Below the $1.00 minimum notional.");
   if (p.belowMin) items.push("Below this market's minimum position size.");
   if (p.aboveMax) items.push("Above this market's maximum position size.");

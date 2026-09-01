@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useWalletConnection } from "@solana/react-hooks";
 
-import { buildDeposit, buildInitUserAccount } from "@/lib/account";
+import { buildDeposit, buildInitUserAccount, buildWithdraw } from "@/lib/account";
 import { useAccount } from "@/hooks/useAccount";
 import { useSigner } from "@/hooks/useSigner";
 import { useSend } from "@/hooks/useSend";
@@ -24,6 +24,7 @@ export function AccountPanel() {
   const { status, loading, error, refresh } = useAccount();
   const { send, busy, signature, error: sendError, logs, reset } = useSend();
   const [amount, setAmount] = useState("1000");
+  const [mode, setMode] = useState<"deposit" | "withdraw">("deposit");
 
   if (!wallet) {
     return (
@@ -34,6 +35,11 @@ export function AccountPanel() {
   }
 
   const parsed = toQuote(amount);
+  // What the amount is checked against: the wallet's own balance on the way in, and the
+  // protocol's `free_collateral` field on the way out. Both are figures we read rather than
+  // compute — the margin rule that decides a withdrawal belongs to the program, and a second
+  // copy of it here would be an unaudited margin engine that disagrees by a rounding step.
+  const ceiling = mode === "deposit" ? (status?.walletUsdc ?? 0n) : (status?.freeCollateral ?? 0n);
 
   async function onInit() {
     if (!signer) return;
@@ -42,10 +48,13 @@ export function AccountPanel() {
     if (await send([ix])) refresh();
   }
 
-  async function onDeposit() {
+  async function onSubmit() {
     if (!signer || !status || parsed === undefined) return;
     reset();
-    const ixs = await buildDeposit(signer, status.usdcMint, parsed, !status.hasAta);
+    const ixs =
+      mode === "deposit"
+        ? await buildDeposit(signer, status.usdcMint, parsed, !status.hasAta)
+        : await buildWithdraw(signer, status.usdcMint, parsed);
     if (await send(ixs)) refresh();
   }
 
@@ -91,9 +100,27 @@ export function AccountPanel() {
             </>
           ) : (
             <>
+              <div className="flex gap-1">
+                {(["deposit", "withdraw"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    className={
+                      "flex-1 rounded-md py-1.5 text-[11px] font-semibold capitalize transition-colors " +
+                      (mode === m
+                        ? "bg-surface-high text-ink"
+                        : "text-ink-dim hover:text-ink")
+                    }
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+
               <label className="block">
                 <span className="mb-1 block text-[10px] uppercase tracking-[0.14em] text-ink-dim">
-                  Deposit collateral (USDC)
+                  {mode === "deposit" ? "Deposit collateral (USDC)" : "Withdraw collateral (USDC)"}
                 </span>
                 <input
                   value={amount}
@@ -107,17 +134,32 @@ export function AccountPanel() {
                   Enter a positive amount with at most six decimals.
                 </p>
               ) : null}
-              {parsed !== undefined && parsed > status.walletUsdc ? (
+              {parsed !== undefined && parsed > ceiling ? (
                 <p className="text-[11px] text-warn">
-                  More than this wallet holds. The token transfer would fail.
+                  {mode === "deposit"
+                    ? "More than this wallet holds. The token transfer would fail."
+                    : "More than your free collateral. The program would refuse it."}
+                </p>
+              ) : null}
+              {mode === "withdraw" ? (
+                <p className="text-[11px] leading-relaxed text-ink-dim">
+                  Free collateral is what is not backing an open position. The program checks
+                  this again on chain and refuses anything that would leave a position
+                  under-margined — this figure is its own, not an estimate.
                 </p>
               ) : null}
               <button
-                onClick={() => void onDeposit()}
-                disabled={busy || !signer || parsed === undefined || parsed > status.walletUsdc}
+                onClick={() => void onSubmit()}
+                disabled={busy || !signer || parsed === undefined || parsed > ceiling}
                 className="w-full rounded-md bg-brand py-2 text-xs font-semibold text-white hover:bg-brand-dim disabled:opacity-50"
               >
-                {busy ? "Confirming…" : status.hasAta ? "Deposit" : "Create token account & deposit"}
+                {busy
+                  ? "Confirming…"
+                  : mode === "withdraw"
+                    ? "Withdraw"
+                    : status.hasAta
+                      ? "Deposit"
+                      : "Create token account & deposit"}
               </button>
             </>
           )}
