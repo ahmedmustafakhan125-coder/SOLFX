@@ -6,21 +6,22 @@
  * Dark only: this is a trading terminal, and every venue it will be compared against is dark.
  */
 :root {
-  --sf-bg: #0b0b0d;
+  /* Tokens taken from design/stitch — the Material 3 set the sketches were built on. */
+  --sf-bg: #0e0e0e;
   --sf-surface: #131313;
-  --sf-surface-high: #1b1b1e;
-  --sf-surface-highest: #232327;
-  --sf-border: #2a2a30;
-  --sf-border-soft: #1e1e22;
+  --sf-surface-high: #20201f;
+  --sf-surface-highest: #2a2a2a;
+  --sf-border: #4c4546;
+  --sf-border-soft: #2a2a2a;
   --sf-text: #e5e2e1;
-  --sf-text-muted: #8b8b93;
-  --sf-text-dim: #5f5f68;
-  --sf-purple: #9945ff;
-  --sf-purple-dim: #8535e5;
+  --sf-text-muted: #cfc4c5;
+  --sf-text-dim: #8a8384;
+  --sf-purple: #9843fe;
+  --sf-purple-dim: #7b2fd6;
   --sf-purple-soft: #d8b9ff;
   --sf-green: #00ffa3;
-  --sf-red: #ff6b6b;
-  --sf-amber: #ffd166;
+  --sf-red: #ffb4ab;
+  --sf-amber: #fed639;
 }
 
 @theme inline {
@@ -60,4 +61,27 @@ body {
 .tnum {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The sketches use square corners everywhere — `rounded-none` on every panel, button and
+ * badge. It is the strongest single signature of the look, so it is a token rather than a
+ * class repeated on each element.
+ */
+.panel {
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 0;
+  transition: border-color 150ms ease;
+}
+.panel:hover {
+  border-color: var(--sf-purple);
+}
+
+/* The faint engineering grid behind the hero. */
+.gridwork {
+  background-image:
+    linear-gradient(rgba(76, 69, 70, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(76, 69, 70, 0.35) 1px, transparent 1px);
+  background-size: 64px 64px;
 }

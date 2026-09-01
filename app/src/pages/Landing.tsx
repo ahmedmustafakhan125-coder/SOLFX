@@ -1,32 +1,112 @@
 import { Link } from "react-router-dom";
 
+import { TICKER, useTicker } from "@/hooks/useTicker";
+
 const PROGRAM_ID = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi";
 
-function Stat({ k, v, note }: { k: string; v: string; note?: string }) {
+function Nav() {
   return (
-    <div className="rounded-lg border border-line-soft bg-surface p-4">
-      <div className="tnum text-2xl font-semibold text-ink">{v}</div>
-      <div className="mt-1 text-xs font-medium text-ink">{k}</div>
-      {note ? <div className="mt-1 text-[11px] leading-snug text-ink-dim">{note}</div> : null}
+    <header className="sticky top-0 z-50 border-b border-line bg-[#0e0e0e]/95 backdrop-blur">
+      <div className="mx-auto flex max-w-[1440px] items-center gap-8 px-4 py-4 md:px-8">
+        <Link to="/" className="text-xl font-extrabold tracking-tighter text-brand-soft">
+          SOL-FX
+        </Link>
+        <nav className="hidden items-center gap-6 text-sm md:flex">
+          <Link
+            to="/trade"
+            className="border-b-2 border-brand-soft pb-1 font-bold uppercase tracking-wider text-brand-soft"
+          >
+            Trade
+          </Link>
+          <Link to="/trade" className="uppercase tracking-wider text-ink-muted hover:text-ink">
+            Markets
+          </Link>
+          <Link to="/about" className="uppercase tracking-wider text-ink-muted hover:text-ink">
+            About
+          </Link>
+          <a
+            href="#status"
+            className="uppercase tracking-wider text-ink-muted hover:text-ink"
+          >
+            Status
+          </a>
+        </nav>
+        <div className="ml-auto">
+          <Link
+            to="/trade"
+            className="bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-dim"
+          >
+            Launch Terminal
+          </Link>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Quote({ t }: { t: (typeof TICKER)[number] }) {
+  const quotes = useTicker();
+  const q = quotes[t.symbol];
+  const up = (q?.changePct ?? 0) >= 0;
+  return (
+    <div className="panel flex items-center gap-4 p-4">
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-line bg-surface-highest text-brand-soft">
+        <span className="text-lg font-semibold">{t.glyph}</span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-base font-bold">{t.symbol}</div>
+        <div className="truncate text-[10px] uppercase tracking-wider text-ink-dim">{t.name}</div>
+      </div>
+      <div className="text-right">
+        <div className="tnum text-base">
+          {q ? q.price.toFixed(t.places) : "—"}
+        </div>
+        <div className={`tnum text-[11px] ${up ? "text-long" : "text-short"}`}>
+          {q ? `${up ? "▲" : "▼"} ${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}%` : ""}
+        </div>
+      </div>
     </div>
   );
 }
 
-function Section({
+function Feature({ icon, title, body }: { icon: string; title: string; body: string }) {
+  return (
+    <div className="panel p-6">
+      <div className="flex h-10 w-10 items-center justify-center border border-line bg-surface-highest text-brand-soft">
+        <span className="text-lg">{icon}</span>
+      </div>
+      <h3 className="mt-5 text-base font-bold uppercase tracking-wide">{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed text-ink-muted">{body}</p>
+    </div>
+  );
+}
+
+function Band({
   eyebrow,
   title,
+  accent,
+  sub,
   children,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
+  accent?: string;
+  sub?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-t border-line-soft px-6 py-16 md:px-10">
-      <div className="mx-auto max-w-5xl">
-        <div className="text-[10px] uppercase tracking-[0.2em] text-brand">{eyebrow}</div>
-        <h2 className="mt-2 max-w-2xl text-2xl font-bold tracking-tight md:text-3xl">{title}</h2>
-        <div className="mt-6">{children}</div>
+    <section className="border-t border-line px-4 py-20 md:px-8">
+      <div className="mx-auto max-w-[1440px]">
+        <div className="mx-auto max-w-3xl text-center">
+          {eyebrow ? (
+            <div className="text-[10px] uppercase tracking-[0.2em] text-brand">{eyebrow}</div>
+          ) : null}
+          <h2 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
+            {title} {accent ? <span className="text-brand">{accent}</span> : null}
+          </h2>
+          {sub ? <p className="mt-3 text-sm text-ink-muted">{sub}</p> : null}
+        </div>
+        <div className="mt-12">{children}</div>
       </div>
     </section>
   );
@@ -34,188 +114,206 @@ function Section({
 
 export function Landing() {
   return (
-    <div className="min-h-screen bg-bg text-ink">
+    <div className="min-h-screen bg-[#0e0e0e] text-ink">
+      <Nav />
+
       {/* Hero */}
-      <section className="relative overflow-hidden px-6 py-24 md:px-10 md:py-32">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.35]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(153,69,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(153,69,255,0.06) 1px, transparent 1px)",
-            backgroundSize: "56px 56px",
-          }}
-        />
-        <div className="relative mx-auto max-w-5xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-[11px] text-ink-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-long" />
-            Live on Solana devnet
+      <section className="relative flex min-h-[700px] items-center overflow-hidden px-4 py-24 md:px-8">
+        <div className="gridwork pointer-events-none absolute inset-0 opacity-60" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-0 w-1/2 bg-gradient-to-l from-white/10 via-brand/10 to-transparent" />
+
+        <div className="relative z-10 mx-auto grid w-full max-w-[1440px] grid-cols-1 items-center gap-8 lg:grid-cols-12">
+          <div className="flex flex-col gap-8 lg:col-span-7">
+            <div className="flex w-fit items-center gap-2 border border-line bg-surface px-4 py-2">
+              <span className="h-2 w-2 bg-long" />
+              <span className="tnum text-xs uppercase tracking-wider text-ink-muted">
+                Devnet is live
+              </span>
+            </div>
+
+            <h1 className="text-4xl font-extrabold leading-[1.05] tracking-tight md:text-6xl">
+              A Decentralized
+              <br />
+              Forex <span className="text-brand">Brokerage.</span>
+            </h1>
+
+            <p className="max-w-2xl text-lg leading-relaxed text-ink-muted">
+              Margin FX, metals and crypto on Solana, settled in USDC. Prices come from Pyth,
+              collateral stays in your own wallet's control, and the rules that govern a trade
+              are the program's — applied before the fill rather than after.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-4 pt-2">
+              <Link
+                to="/trade"
+                className="bg-brand px-7 py-3.5 text-sm font-semibold text-white hover:bg-brand-dim"
+              >
+                Trade Now →
+              </Link>
+              <Link
+                to="/about"
+                className="border border-line px-7 py-3.5 text-sm font-medium hover:border-brand"
+              >
+                About the project
+              </Link>
+            </div>
           </div>
 
-          <h1 className="mt-6 max-w-3xl text-4xl font-extrabold leading-[1.05] tracking-tight md:text-6xl">
-            A decentralized forex
-            <br />
-            brokerage.
-          </h1>
-
-          <p className="mt-6 max-w-2xl text-base leading-relaxed text-ink-muted">
-            Margin FX, metals and crypto settled in USDC on Solana. Prices come from Pyth,
-            positions live in your own wallet, and the rules that govern a trade are the
-            program's — readable by anyone, applied before the fill rather than after.
-          </p>
-
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              to="/trade"
-              className="rounded-md bg-brand px-6 py-3 text-sm font-semibold text-white hover:bg-brand-dim"
-            >
-              Open the terminal
-            </Link>
-            <Link
-              to="/about"
-              className="rounded-md border border-line px-6 py-3 text-sm font-medium text-ink hover:border-brand"
-            >
-              About
-            </Link>
-          </div>
-
-          <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat k="Live markets" v="6" note="FX majors, a managed currency, gold, silver, BTC" />
-            <Stat k="Settlement" v="USDC" note="Non-custodial; collateral stays in program vaults" />
-            <Stat k="Oracle" v="Pyth" note="Full guardian verification, 60-second staleness gate" />
-            <Stat k="Tests" v="549" note="0 failed, 0 ignored, clippy clean" />
+          <div className="relative z-10 mt-12 flex flex-col gap-4 lg:col-span-5 lg:mt-0">
+            {TICKER.slice(0, 3).map((t) => (
+              <Quote key={t.symbol} t={t} />
+            ))}
+            <p className="text-[11px] leading-relaxed text-ink-dim">
+              Live from Pyth — the same feed the program prices against. Change is measured
+              against the feed's own EMA.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* Non-custodial / immutability */}
-      <Section
-        eyebrow="Custody and control"
-        title="The code can be frozen. The market list cannot be, and that is the point."
+      {/* Performance */}
+      <Band
+        title="Engineered for"
+        accent="Precision"
+        sub="Why this is built on Solana, and what that actually buys a forex trader."
       >
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Feature
+            icon="⚡"
+            title="Sub-second settlement"
+            body="Roughly 400ms block times, so a fill confirms while you are still looking at it. Opening a position measures about 60,000 compute units against a 140,000 ceiling."
+          />
+          <Feature
+            icon="◎"
+            title="Fractions of a cent"
+            body="A round trip on $1,000 of notional costs about $0.08 in protocol fees beyond the spread — measured on devnet across all six markets, not estimated."
+          />
+          <Feature
+            icon="⊞"
+            title="One binary, many markets"
+            body="The engine is the formula and markets are rows. Twelve were listed against a single unchanged program in the test suite, so new pairs need no redeploy."
+          />
+        </div>
+      </Band>
+
+      {/* Markets */}
+      <Band
+        title="Six live"
+        accent="Markets"
+        sub="Majors, a managed currency, both metals, and the one instrument that trades all weekend."
+      >
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {TICKER.map((t) => (
+            <Quote key={t.symbol} t={t} />
+          ))}
+        </div>
+        <p className="mx-auto mt-6 max-w-2xl text-center text-xs leading-relaxed text-ink-dim">
+          FX and metals trade Sunday 21:00 to Friday 21:00 UTC and are correctly refused
+          outside it — Pyth stops publishing at the close and the program will not price a
+          stale market. Only BTC/USD is continuous.
+        </p>
+      </Band>
+
+      {/* Custody */}
+      <Band
+        eyebrow="Custody and control"
+        title="The code can be frozen. The market list"
+        accent="cannot."
+      >
+        <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4 text-sm leading-relaxed text-ink-muted">
             <p>
-              A Solana program is upgradeable while an upgrade authority exists. Setting that
+              A Solana program stays upgradeable while an upgrade authority exists. Setting that
               authority to <span className="tnum text-ink">None</span> makes the bytecode
               permanently immutable — nobody, including us, can change it again. That is the
               intended end state once the protocol stops needing changes.
             </p>
             <p>
-              Freezing the code does not freeze the venue. Listing a new pair is a{" "}
-              <span className="text-ink">state</span> operation, not a code change: the engine
-              is the formula and markets are rows. Twelve markets have been listed against one
-              unchanged binary in the test suite, which is what makes this claim checkable
-              rather than aspirational.
+              Freezing the code does not freeze the venue. Listing a pair is a{" "}
+              <span className="text-ink">state</span> operation rather than a code change, which
+              is why an admin key survives the burn. It is deliberately narrow: list a market,
+              halt one, repoint a retired oracle, retune risk parameters.
             </p>
             <p>
-              So an admin key remains, and it is deliberately narrow — list a market, halt one,
-              repoint a retired oracle, retune risk parameters. It cannot touch your collateral,
-              cannot close your position, and cannot alter a rule the program enforces.
+              It cannot touch your collateral, cannot close your position, and cannot alter a
+              rule the program enforces.
             </p>
           </div>
-          <div className="rounded-lg border border-line-soft bg-surface p-5 text-xs">
-            <div className="mb-3 text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+          <div className="panel p-6 text-sm">
+            <div className="mb-4 text-[10px] uppercase tracking-[0.16em] text-ink-dim">
               What each key can do
             </div>
             <table className="w-full">
               <tbody className="align-top">
                 {[
                   ["Upgrade authority", "Replace the program's code. To be burned.", "text-warn"],
-                  ["Protocol admin", "List / halt markets, repoint oracles, retune risk.", "text-brand-soft"],
+                  ["Protocol admin", "List and halt markets, repoint oracles, retune risk.", "text-brand-soft"],
                   ["Your wallet", "Deposit, open, close, withdraw. Only you.", "text-long"],
                 ].map(([who, what, tone]) => (
-                  <tr key={who} className="border-b border-line-soft/60 last:border-0">
-                    <td className={`py-2.5 pr-4 font-medium ${tone}`}>{who}</td>
-                    <td className="py-2.5 text-ink-muted">{what}</td>
+                  <tr key={who} className="border-b border-line-soft last:border-0">
+                    <td className={`py-3 pr-4 font-medium ${tone}`}>{who}</td>
+                    <td className="py-3 text-ink-muted">{what}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="mt-4 border-t border-line-soft pt-3 text-[11px] leading-relaxed text-ink-dim">
-              Program <span className="tnum break-all text-ink-muted">{PROGRAM_ID}</span> — the
+            <div className="mt-5 border-t border-line-soft pt-4 text-[11px] leading-relaxed text-ink-dim">
+              Program <span className="tnum break-all text-ink-muted">{PROGRAM_ID}</span>. The
               IDL is published on chain, so any explorer can decode every instruction.
             </div>
           </div>
         </div>
-      </Section>
+      </Band>
 
-      {/* What it does */}
-      <Section eyebrow="The venue" title="Built for FX traders, not for perp traders.">
-        <div className="grid gap-4 md:grid-cols-3">
-          {[
-            [
-              "Sized the way you already trade",
-              "Lots, quantity, or plain dollars of exposure. A lot means 100,000 units in FX, 100 ounces in gold and one coin in crypto — the conventions retail platforms use, not base units.",
-            ],
-            [
-              "The swap rate is published",
-              "Carry is a field on the market account, readable before you open. Most brokers reveal it after rollover. Here it is on chain, in advance, in basis points.",
-            ],
-            [
-              "Rules enforced before the fill",
-              "Leverage caps, minimum notional, slippage bounds and the oracle staleness gate are program constraints. A trade that breaks one is not flagged afterwards — it never executes.",
-            ],
-            [
-              "Per-market risk, not one global number",
-              "Leverage is 50x on EUR/USD and 10x on BTC because they are different instruments. Margin, spread and confidence limits are all per market.",
-            ],
-            [
-              "Session-aware",
-              "FX and metals trade Sunday 21:00 to Friday 21:00 UTC and are refused outside it. The oracle stops publishing at the close and the program will not price a stale market.",
-            ],
-            [
-              "Your keys, your collateral",
-              "Deposits sit in program vaults under PDA authority. There is no operator withdrawal path, and the accounting invariants that prove it are asserted in the test suite.",
-            ],
-          ].map(([h, b]) => (
-            <div key={h} className="rounded-lg border border-line-soft bg-surface p-5">
-              <h3 className="text-sm font-semibold">{h}</h3>
-              <p className="mt-2 text-xs leading-relaxed text-ink-muted">{b}</p>
+      {/* Status */}
+      <section id="status" className="border-t border-line px-4 py-20 md:px-8">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-brand">Status</div>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
+              What is true <span className="text-brand">today.</span>
+            </h2>
+          </div>
+          <div className="mt-12 grid gap-4 md:grid-cols-2">
+            <div className="border border-long/25 bg-long/5 p-6">
+              <div className="text-xs font-bold uppercase tracking-wider text-long">Working</div>
+              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-ink-muted">
+                <li>· Six markets live on devnet, priced and tradeable</li>
+                <li>· Full round trip — open, hold, close — verified on every one</li>
+                <li>· 549 tests passing, none ignored; property tests over the money paths</li>
+                <li>· Liquidation, funding, carry, LP vault and IB rebates implemented</li>
+              </ul>
             </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* Honest status */}
-      <Section eyebrow="Status" title="What is true today, stated plainly.">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-long/25 bg-long/5 p-5">
-            <div className="text-xs font-semibold text-long">Working</div>
-            <ul className="mt-3 space-y-2 text-xs leading-relaxed text-ink-muted">
-              <li>· Six markets live on devnet, priced and tradeable</li>
-              <li>· Full round trip — open, hold, close — on every one of them</li>
-              <li>· 549 tests passing, none ignored; property tests over the money paths</li>
-              <li>· Liquidation, funding, carry, LP vault and IB rebates all implemented</li>
-            </ul>
-          </div>
-          <div className="rounded-lg border border-warn/25 bg-warn/5 p-5">
-            <div className="text-xs font-semibold text-warn">Not yet</div>
-            <ul className="mt-3 space-y-2 text-xs leading-relaxed text-ink-muted">
-              <li>· <strong className="text-ink">No external audit.</strong> None. Fuzzing is planned, not done</li>
-              <li>· Devnet only — this is test money and nothing here is production</li>
-              <li>· The upgrade authority still exists, so the code is not yet immutable</li>
-              <li>· A verifiable build is roadmap; today you verify by reading the source</li>
-            </ul>
+            <div className="border border-warn/25 bg-warn/5 p-6">
+              <div className="text-xs font-bold uppercase tracking-wider text-warn">Not yet</div>
+              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-ink-muted">
+                <li>· <strong className="text-ink">No external audit.</strong> None. Fuzzing is planned, not done</li>
+                <li>· Devnet only — test money, and nothing here is production</li>
+                <li>· The upgrade authority still exists, so the code is not yet immutable</li>
+                <li>· A verifiable build is roadmap; today you verify by reading the source</li>
+              </ul>
+            </div>
           </div>
         </div>
-      </Section>
+      </section>
 
-      {/* A-book — last, as the closing argument */}
-      <Section
+      {/* A-book, last */}
+      <Band
         eyebrow="Where this is going"
-        title="Today the pool is the counterparty. A-book is the destination."
+        title="Today the pool is the counterparty. A-book is the"
+        accent="destination."
       >
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4 text-sm leading-relaxed text-ink-muted">
             <p>
               SolFX is B-book: a capitalised LP pool takes the other side of every trade. That
-              is how GMX, gTrade and Hyperliquid's HLP work too — it is the on-chain norm, not
-              a shortcut, and it is what lets the venue exist without a banking relationship.
+              is how GMX, gTrade and Hyperliquid's HLP work too — the on-chain norm, not a
+              shortcut, and what lets the venue exist without a banking relationship.
             </p>
             <p>
-              What we set out to build was A-book — orders passed through to real interbank
+              What this set out to be was A-book — orders passed through to real interbank
               liquidity, the broker earning commission instead of taking the other side. The
-              obstacle was never the technology. It is licensing: routing retail FX to a prime
+              obstacle was never technology. It is licensing: routing retail FX to a prime
               broker requires being a regulated broker or an FCM.
             </p>
             <p className="text-ink">That gate has started to move.</p>
@@ -227,35 +325,31 @@ export function Landing() {
             </p>
             <p>
               Retail FX is <span className="text-ink">not</span> in scope yet, and those
-              permissions rest on no-action letters rather than settled rules. So we are honest
-              about the present: the pool is the counterparty today. The hedging bridge is built
-              at a defined seam — per-market open-interest limits — so that when the gate opens,
-              flow above a threshold routes out instead of being warehoused.
+              permissions rest on no-action letters rather than settled rules. So the present
+              is stated plainly: the pool is the counterparty today. The hedging bridge sits at
+              a defined seam — per-market open-interest limits — so when the gate opens, flow
+              above a threshold routes out instead of being warehoused.
             </p>
           </div>
 
           <div className="space-y-3">
             {[
-              ["Today", "B-book. LP pool is the counterparty, capitalised and transparent.", true],
-              ["Seam already built", "Per-market OI caps define where hedging plugs in.", true],
-              ["Gate", "Retail FX access to stablecoin-margined prime liquidity.", false],
-              ["Then", "Hybrid: internalise small flow, route large or toxic flow out.", false],
+              ["Today", "B-book. The LP pool is the counterparty, capitalised and transparent.", true],
+              ["Seam already built", "Per-market OI caps define exactly where hedging plugs in.", true],
+              ["The gate", "Retail FX access to stablecoin-margined prime liquidity.", false],
+              ["Then", "Hybrid — internalise small flow, route large or toxic flow out.", false],
             ].map(([label, body, done]) => (
               <div
                 key={label as string}
-                className={`rounded-lg border p-4 ${
-                  done ? "border-brand/30 bg-brand/5" : "border-line-soft bg-surface"
-                }`}
+                className={`border p-5 ${done ? "border-brand/40 bg-brand/5" : "border-line bg-surface"}`}
               >
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${done ? "bg-brand" : "bg-ink-dim"}`}
-                  />
-                  <span className="text-xs font-semibold">{label as string}</span>
+                  <span className={`h-2 w-2 ${done ? "bg-brand" : "bg-ink-dim"}`} />
+                  <span className="text-xs font-bold uppercase tracking-wider">
+                    {label as string}
+                  </span>
                 </div>
-                <p className="mt-1.5 pl-3.5 text-xs leading-relaxed text-ink-muted">
-                  {body as string}
-                </p>
+                <p className="mt-2 pl-4 text-sm leading-relaxed text-ink-muted">{body as string}</p>
               </div>
             ))}
             <p className="pt-2 text-[11px] leading-relaxed text-ink-dim">
@@ -264,19 +358,19 @@ export function Landing() {
             </p>
           </div>
         </div>
-      </Section>
+      </Band>
 
-      <footer className="border-t border-line-soft px-6 py-10 md:px-10">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 text-xs text-ink-dim">
-          <div>
-            <span className="font-semibold text-ink">SolFX</span> — a decentralized forex
-            brokerage
-          </div>
-          <div className="flex gap-5">
+      <footer className="border-t border-line px-4 py-10 md:px-8">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4">
+          <span className="text-xl font-extrabold tracking-tighter text-brand-soft">SOL-FX</span>
+          <div className="flex gap-6 text-xs uppercase tracking-wider text-ink-dim">
             <Link to="/trade" className="hover:text-ink">Terminal</Link>
             <Link to="/about" className="hover:text-ink">About</Link>
+            <a href="#status" className="hover:text-ink">Status</a>
           </div>
-          <div>Devnet · not investment advice · unaudited</div>
+          <div className="text-xs text-ink-dim">
+            © 2026 SolFX · devnet · unaudited · not investment advice
+          </div>
         </div>
       </footer>
     </div>
