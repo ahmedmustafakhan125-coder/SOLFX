@@ -1,7 +1,9 @@
 import { useCallback, useState } from "react";
-import { useSolanaClient, useWalletConnection } from "@solana/react-hooks";
+import { useSolanaClient } from "@solana/react-hooks";
 import type { Instruction } from "@solana/kit";
 import { diagnoseSendError } from "@solfx/client";
+
+import { useSigner } from "@/hooks/useSigner";
 
 export type SendState = {
   readonly busy: boolean;
@@ -19,7 +21,7 @@ export type SendState = {
  */
 export function useSend() {
   const client = useSolanaClient();
-  const { wallet } = useWalletConnection();
+  const signer = useSigner();
   const [state, setState] = useState<SendState>({
     busy: false,
     signature: undefined,
@@ -32,7 +34,7 @@ export function useSend() {
       instructions: Instruction[],
       computeUnitLimit?: number
     ): Promise<string | undefined> => {
-      if (!wallet) {
+      if (!signer) {
         setState({
           busy: false,
           signature: undefined,
@@ -49,7 +51,13 @@ export function useSend() {
       });
       try {
         const prepared = await client.helpers.transaction.prepare({
-          authority: wallet,
+          // The *same* signer instance the instruction builders used. Passing the wallet
+          // session here instead makes the client derive its own signer for this address,
+          // and kit then sees two distinct signers for one address and refuses. The type
+          // accepts either (`TransactionAuthority = TransactionSigner | WalletSession`), and
+          // `resolveSignerMode` derives the same partial/send mode from the signer, so
+          // nothing else changes.
+          authority: signer,
           instructions,
           ...(computeUnitLimit === undefined ? {} : { computeUnitLimit }),
         });
@@ -69,7 +77,7 @@ export function useSend() {
         return undefined;
       }
     },
-    [client, wallet]
+    [client, signer]
   );
 
   const reset = useCallback(
