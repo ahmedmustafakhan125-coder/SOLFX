@@ -33,7 +33,11 @@ export function Terminal() {
   const accountByIndex = Object.fromEntries(
     markets.map((m) => [m.index, priceAccounts[m.feedIdHex]])
   );
-  const { positions, refresh: refreshPositions } = usePositions(
+  const {
+    positions,
+    error: positionsError,
+    refresh: refreshPositions,
+  } = usePositions(
     markets.map((m) => m.index),
     priceByIndex
   );
@@ -80,6 +84,7 @@ export function Terminal() {
                   markets={markets}
                   prices={priceByIndex}
                   priceAccounts={accountByIndex}
+                  loadError={positionsError}
                   onClosed={refreshPositions}
                 />
               </>

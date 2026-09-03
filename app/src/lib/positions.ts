@@ -21,7 +21,13 @@ import {
   getPositionDecoder,
   type Position,
 } from "@solfx/client";
-import type { Address, Instruction, Rpc, SolanaRpcApi, TransactionSigner } from "@solana/kit";
+import type {
+  Address,
+  Instruction,
+  Rpc,
+  SolanaRpcApi,
+  TransactionSigner,
+} from "@solana/kit";
 
 const BPS = 10_000n;
 const NOTIONAL_DIVISOR = 1_000_000_000_000n;
@@ -58,14 +64,18 @@ export async function loadPositions(
   owner: Address,
   marketIndexes: readonly number[],
   prices: Record<number, bigint | undefined>,
-  maxNonce = 8,
+  maxNonce = 8
 ): Promise<OpenPosition[]> {
   const [userAccount] = await findUserAccountPda({ authority: owner });
 
   const wanted: { address: Address; marketIndex: number; nonce: number }[] = [];
   for (const marketIndex of marketIndexes) {
     for (let nonce = 0; nonce < maxNonce; nonce++) {
-      const [address] = await findPositionPda({ userAccount, marketIndex, nonce });
+      const [address] = await findPositionPda({
+        userAccount,
+        marketIndex,
+        nonce,
+      });
       wanted.push({ address, marketIndex, nonce });
     }
   }
@@ -77,7 +87,7 @@ export async function loadPositions(
     const { value } = await rpc
       .getMultipleAccounts(
         chunk.map((w) => w.address),
-        { encoding: "base64" },
+        { encoding: "base64" }
       )
       .send();
     value.forEach((raw, j) => {
@@ -86,7 +96,8 @@ export async function loadPositions(
       const data = getPositionDecoder().decode(base64ToBytes(raw.data[0]));
       if (data.sizeBase === 0n) return;
       const price = prices[w.marketIndex];
-      const notionalNow = price === undefined ? 0n : (data.sizeBase * price) / NOTIONAL_DIVISOR;
+      const notionalNow =
+        price === undefined ? 0n : (data.sizeBase * price) / NOTIONAL_DIVISOR;
       const unrealised =
         price === undefined
           ? 0n
@@ -107,6 +118,30 @@ export async function loadPositions(
 }
 
 /**
+ * Re-price positions against the latest oracle, without re-reading the chain.
+ *
+ * `loadPositions` fixes `notionalNow` and `unrealised` at the prices that were current when
+ * it ran, and it runs only when the wallet or the market set changes. Left there, unrealised
+ * P&L freezes at whatever the price was on connect — the one number on the row a trader
+ * watches move. Only the marks change here; the position data itself still comes from chain.
+ */
+export function repricePositions(
+  positions: readonly OpenPosition[],
+  prices: Record<number, bigint | undefined>
+): OpenPosition[] {
+  return positions.map((p) => {
+    const price = prices[p.marketIndex];
+    if (price === undefined) return p;
+    const notionalNow = (p.data.sizeBase * price) / NOTIONAL_DIVISOR;
+    const unrealised =
+      p.data.direction === Direction.Long
+        ? notionalNow - p.data.entryNotional
+        : p.data.entryNotional - notionalNow;
+    return { ...p, notionalNow, unrealised };
+  });
+}
+
+/**
  * The bound for closing, which is the mirror of opening.
  *
  * Closing a **long** is a sell, so the limit is a **minimum**; closing a **short** is a buy,
@@ -116,7 +151,7 @@ export async function loadPositions(
 export function closePriceLimit(
   direction: Direction,
   price: bigint,
-  slippageBps: number,
+  slippageBps: number
 ): bigint {
   const delta = (price * BigInt(slippageBps)) / BPS;
   return direction === Direction.Long ? price - delta : price + delta;
@@ -132,7 +167,9 @@ export async function buildClosePosition(p: {
   priceUpdate: Address;
 }): Promise<Instruction> {
   const [protocol] = await findProtocolPda();
-  const [userAccount] = await findUserAccountPda({ authority: p.signer.address });
+  const [userAccount] = await findUserAccountPda({
+    authority: p.signer.address,
+  });
   const [market] = await findMarketPda({ marketIndex: p.marketIndex });
   const [position] = await findPositionPda({
     userAccount,

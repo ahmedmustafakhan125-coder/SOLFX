@@ -21,6 +21,8 @@ type Props = {
   markets: LoadedMarket[];
   prices: Record<number, bigint | undefined>;
   priceAccounts: Record<number, Address | undefined>;
+  /** Why the position list could not be read, if it could not be. */
+  loadError?: string | undefined;
   onClosed: () => void;
 };
 
@@ -29,6 +31,7 @@ export function PositionsPanel({
   markets,
   prices,
   priceAccounts,
+  loadError,
   onClosed,
 }: Props) {
   const signer = useSigner();
@@ -69,7 +72,14 @@ export function PositionsPanel({
         </span>
       </div>
 
-      {positions.length === 0 ? (
+      {loadError ? (
+        // Distinguishing "you have none" from "we could not find out" matters here more than
+        // almost anywhere else in the app: the two look identical and only one is safe to act on.
+        <div className="mx-5 mb-4 rounded border border-short/40 bg-short/10 p-2 text-[11px] text-short">
+          Could not read your positions — this is not the same as having none.{" "}
+          {loadError}
+        </div>
+      ) : positions.length === 0 ? (
         <div className="px-5 pb-4 text-xs text-ink-dim">No open positions.</div>
       ) : (
         <div className="overflow-x-auto">
