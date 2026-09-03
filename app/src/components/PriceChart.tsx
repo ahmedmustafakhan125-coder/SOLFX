@@ -1,14 +1,29 @@
 import { useEffect, useRef, useState } from "react";
-import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi } from "lightweight-charts";
+import {
+  CandlestickSeries,
+  createChart,
+  type IChartApi,
+  type IPriceLine,
+  type ISeriesApi,
+} from "lightweight-charts";
 
 import { fetchOhlc, toDisplay, TIMEFRAMES, type Ohlc, type Timeframe } from "@/lib/ohlc";
 import { PYTHPRO_URL } from "@/config";
 import type { LivePrice } from "@/lib/prices";
 import { priceplaces } from "@/lib/format";
 
+/** One horizontal line to draw on the chart: an entry, or the price it liquidates at. */
+export type ChartLevel = {
+  readonly price: bigint;
+  readonly label: string;
+  readonly kind: "long" | "short" | "liquidation";
+};
+
 type Props = {
   symbol: string;
   live?: LivePrice | undefined;
+  /** Entry and liquidation levels for open positions on this market. */
+  levels?: readonly ChartLevel[];
 };
 
 /**
@@ -23,11 +38,12 @@ type Props = {
  * price we happened to *ask* for, so it understates the real range by however much we missed
  * between polls. These are the true extremes of each interval.
  */
-export function PriceChart({ symbol, live }: Props) {
+export function PriceChart({ symbol, live, levels }: Props) {
   const box = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const last = useRef<Ohlc | undefined>(undefined);
+  const lines = useRef<IPriceLine[]>([]);
   const [tf, setTf] = useState<Timeframe>(TIMEFRAMES[2]); // 1H
   const [state, setState] = useState<"loading" | "ready" | "empty">("loading");
 
@@ -118,6 +134,38 @@ export function PriceChart({ symbol, live }: Props) {
     last.current = bar;
     series.current?.update({ ...bar, time: bar.time as never });
   }, [live, state, tf]);
+
+  // Draw where each position was entered and where it dies.
+  //
+  // Price lines rather than markers on a candle: an entry does not belong to a bar, it is a
+  // level that stays relevant at every timeframe, and it survives the series being replaced
+  // when the timeframe changes. Every line is torn down and redrawn when the levels change,
+  // because lightweight-charts has no way to reconcile them by identity.
+  useEffect(() => {
+    const series_ = series.current;
+    if (!series_) return;
+    for (const line of lines.current) series_.removePriceLine(line);
+    lines.current = [];
+    if (state !== "ready") return;
+
+    for (const level of levels ?? []) {
+      lines.current.push(
+        series_.createPriceLine({
+          price: toDisplay(level.price),
+          color:
+            level.kind === "liquidation"
+              ? "#e0a33e"
+              : level.kind === "long"
+                ? "#3fb950"
+                : "#f85149",
+          lineWidth: 1,
+          lineStyle: level.kind === "liquidation" ? 2 : 0,
+          axisLabelVisible: true,
+          title: level.label,
+        }),
+      );
+    }
+  }, [levels, state, tf, symbol]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">

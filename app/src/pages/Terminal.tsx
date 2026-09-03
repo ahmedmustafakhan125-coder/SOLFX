@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 
 import { Header } from "@/components/Header";
 import { RiskDisclosure } from "@/components/RiskDisclosure";
-import { PriceChart } from "@/components/PriceChart";
+import { PriceChart, type ChartLevel } from "@/components/PriceChart";
 import { MarketList } from "@/components/MarketList";
 import { MarketPanel } from "@/components/MarketPanel";
 import { AccountPanel } from "@/components/AccountPanel";
 import { PositionsPanel } from "@/components/PositionsPanel";
 import { usePositions } from "@/hooks/usePositions";
+import { Direction, liquidationPrice, maintenanceMargin } from "@solfx/client";
+import { fmtBase } from "@/lib/format";
 import { OrderTicket } from "@/components/OrderTicket";
 import { useSolfx } from "@/hooks/useSolfx";
 import { RPC_URL, rpcLabel } from "@/config";
@@ -44,6 +46,39 @@ export function Terminal() {
 
   const market = markets.find((m) => m.index === selected);
 
+  // Where each open position on this market was entered, and where it liquidates. Drawn as
+  // price lines so a trader can see their entry against the candles rather than having to
+  // read it off the table below — the answer to "where did I get filled".
+  const chartLevels: ChartLevel[] = market
+    ? positions
+        .filter((p) => p.marketIndex === market.index)
+        .flatMap((p): ChartLevel[] => {
+          const long = p.data.direction === Direction.Long;
+          const out: ChartLevel[] = [
+            {
+              price: p.data.entryPrice,
+              kind: long ? "long" : "short",
+              label: `${long ? "Long" : "Short"} ${fmtBase(p.data.sizeBase)}`,
+            },
+          ];
+          const liq = liquidationPrice({
+            sizeBase: p.data.sizeBase,
+            entryPrice: p.data.entryPrice,
+            collateral: p.data.collateral,
+            maintenanceMargin: maintenanceMargin(
+              p.notionalNow,
+              market.data.mmrBps
+            ),
+            costs: { carry: 0n, funding: 0n, closeFee: 0n },
+            direction: p.data.direction,
+          });
+          if (liq !== undefined) {
+            out.push({ price: liq, kind: "liquidation", label: "Liquidation" });
+          }
+          return out;
+        })
+    : [];
+
   return (
     <div className="flex h-screen flex-col bg-bg text-ink">
       <RiskDisclosure />
@@ -78,6 +113,7 @@ export function Terminal() {
                 <PriceChart
                   symbol={market.symbol}
                   live={prices[market.feedIdHex]}
+                  levels={chartLevels}
                 />
                 <PositionsPanel
                   positions={positions}

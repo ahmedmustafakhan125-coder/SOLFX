@@ -29,7 +29,16 @@ type State = {
  * a price is only tradeable for 60 seconds after publication, so the interesting question is
  * "how old is the account right now", and a poll answers it directly.
  */
-export function useSolfx(pollMs = 5_000): State & { refresh: () => void } {
+/**
+ * `pollMs` is a rate-limit budget, not a freshness preference.
+ *
+ * The browser, the price poster and the keeper all share one RPC endpoint, and a free tier
+ * allows about ten calls a second between them. Polling harder does not make a price fresher
+ * — the poster decides that — it just spends budget that a *transaction* needs, and the
+ * symptom is an `HTTP error (429)` on close rather than anything a trader can act on. Eight
+ * seconds is well inside the 60-second staleness gate and leaves room for the send path.
+ */
+export function useSolfx(pollMs = 8_000): State & { refresh: () => void } {
   const rpc = useRpc();
   const [state, setState] = useState<State>({
     markets: [],

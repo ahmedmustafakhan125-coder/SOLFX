@@ -159,11 +159,18 @@ describe("pipSize", () => {
     expect(pipSize("USD/JPY") / pipSize("EUR/USD")).toBe(100n);
   });
 
-  it("uses the metals and crypto conventions", () => {
-    expect(pipSize("XAU/USD")).toBe(10_000_000n);
-    expect(pipSize("XAG/USD")).toBe(10_000_000n);
-    // No pip convention exists for crypto, so one quote unit — "pips" reads as dollars.
+  it("gives metals and crypto one whole quote unit", () => {
+    // No settled convention exists for either, and 0.01 makes a $36 gold move read as 3,618
+    // pips — a number large enough to stop meaning anything. One unit keeps "pips" and
+    // "dollars moved" the same figure.
+    expect(pipSize("XAU/USD")).toBe(1_000_000_000n);
+    expect(pipSize("XAG/USD")).toBe(1_000_000_000n);
     expect(pipSize("BTC/USD")).toBe(1_000_000_000n);
+  });
+
+  /** The move that motivated the change: gold 4,444.66 -> 4,480.84 is 36.2 pips, not 3,617.8. */
+  it("reports a real gold move at a readable scale", () => {
+    expect(pipsTenths("XAU/USD", 4_480_840_000_000n - 4_444_660_000_000n)).toBe(361n);
   });
 
   it("is unaffected by the slash", () => {

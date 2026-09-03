@@ -64,16 +64,19 @@ export function minPositionBase(symbol: string): bigint {
  * |------------------|--------|-------------|
  * | FX, 4-decimal    | 0.0001 | 100,000     |
  * | FX, JPY-quoted   | 0.01   | 10,000,000  |
- * | Gold, silver     | 0.01   | 10,000,000  |
- * | Crypto           | 1.00   | 1e9         |
+ * | Metals, crypto   | 1.00   | 1e9         |
  *
- * JPY pairs are the trap: quoted to three decimals rather than five, so their pip is two
- * decades larger than every other pair's, and a single table that ignores that reports a
- * USD/JPY move as a hundred times what a trader would call it.
+ * JPY pairs are the trap on the FX side: quoted to three decimals rather than five, so their
+ * pip is two decades larger than every other pair's, and a single table that ignores that
+ * reports a USD/JPY move as a hundred times what a trader would call it.
  *
- * Crypto has no pip convention at all — brokers quote it in dollars — so one unit of the quote
- * currency is used, which makes "pips" and "dollars per coin" the same number and keeps the
- * display honest rather than inventing a scale.
+ * **Metals and crypto use one whole unit of the quote currency**, so gold moving 4,444 → 4,480
+ * reads as +36 pips rather than +3,618. There is no single industry convention here — brokers
+ * variously call 0.01, 0.1 or 1.00 a gold pip, and crypto has no pip convention at all — so a
+ * figure that is large enough to be unreadable is worse than one that is merely a choice. This
+ * makes "pips" and "quote currency moved" the same number, which is how gold and crypto
+ * traders actually talk. FX keeps the real convention, because that is what an FX trader
+ * compares against the broker they already use.
  */
 export function pipSize(symbol: string): bigint {
   const s = symbol.toUpperCase().replace("/", "");
@@ -81,7 +84,7 @@ export function pipSize(symbol: string): bigint {
     return PRICE_PRECISION;
   }
   if (s.startsWith("XAU") || s.startsWith("XAG") || s.startsWith("XPT") || s.startsWith("XPD")) {
-    return PRICE_PRECISION / 100n;
+    return PRICE_PRECISION;
   }
   if (s.endsWith("JPY")) return PRICE_PRECISION / 100n;
   return PRICE_PRECISION / 10_000n;
