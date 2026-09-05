@@ -14,14 +14,45 @@ import { OrderTicket } from "@/components/OrderTicket";
 import { useSolfx } from "@/hooks/useSolfx";
 import { RPC_URL, rpcLabel } from "@/config";
 
+/** Remembers which market you were on. See `useSelectedMarket`. */
+const MARKET_KEY = "solfx.selected-market.v1";
+
 export function Terminal() {
   const { markets, prices, priceAccounts, loading, error } = useSolfx();
-  const [selected, setSelected] = useState<number | undefined>(undefined);
+
+  // Restored from the last session rather than defaulting every time. Being thrown back to
+  // the first pair on every reload is a small thing that makes the terminal feel broken —
+  // and a reload is exactly what happens after a wallet prompt or a dropped connection.
+  const [selected, setSelected] = useState<number | undefined>(() => {
+    try {
+      const stored = localStorage.getItem(MARKET_KEY);
+      if (stored === null) return undefined;
+      const index = Number.parseInt(stored, 10);
+      return Number.isInteger(index) ? index : undefined;
+    } catch {
+      // Private browsing or blocked site data. Fall through to the default below.
+      return undefined;
+    }
+  });
+
+  function selectMarket(index: number) {
+    setSelected(index);
+    try {
+      localStorage.setItem(MARKET_KEY, String(index));
+    } catch {
+      // Not remembering the choice is a smaller problem than failing to make it.
+    }
+  }
 
   // Default to the first market that can actually be traded, rather than index 0 — on this
   // cluster index 0 happens to be live, but that is a fact about the deployment, not a rule.
+  // Also covers a remembered market that has since been halted or delisted.
   useEffect(() => {
-    if (selected === undefined) {
+    if (markets.length === 0) return;
+    const stillTradeable =
+      selected !== undefined &&
+      markets.some((m) => m.index === selected && m.tradeable);
+    if (!stillTradeable) {
       const first = markets.find((m) => m.tradeable);
       if (first) setSelected(first.index);
     }
@@ -103,7 +134,7 @@ export function Terminal() {
             markets={markets}
             prices={prices}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={selectMarket}
           />
 
           <main className="flex min-w-0 flex-1 flex-col">
@@ -138,6 +169,7 @@ export function Terminal() {
                 market={market}
                 price={prices[market.feedIdHex]}
                 priceAccount={priceAccounts[market.feedIdHex]}
+                onOpened={refreshPositions}
               />
             ) : null}
           </div>

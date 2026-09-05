@@ -43,10 +43,19 @@ export function OrderTicket({
   market,
   price,
   priceAccount,
+  onOpened,
 }: {
   market: LoadedMarket;
   price?: LivePrice;
   priceAccount?: Address;
+  /**
+   * Called after a fill lands, so the positions table can re-read the chain.
+   *
+   * Without it the ticket refreshed only the *account* panel, and a new position stayed
+   * invisible until a full page reload — the position was open and accruing the whole time,
+   * which is the worst version of that bug.
+   */
+  onOpened?: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("notional");
   const [value, setValue] = useState("1000");
@@ -155,7 +164,10 @@ export function OrderTicket({
       priceUpdate: priceAccount,
       nonce,
     });
-    if (await send([ix], OPEN_POSITION_CU)) refreshAccount();
+    if (await send([ix], OPEN_POSITION_CU)) {
+      refreshAccount();
+      onOpened?.();
+    }
   }
 
   return (
