@@ -58,3 +58,4 @@ price-accounts.json
 # Written by init-protocol; regenerate rather than commit — it names cluster-specific
 # accounts and is meaningless against a different ledger.
 deployment.json
+.stack-logs/

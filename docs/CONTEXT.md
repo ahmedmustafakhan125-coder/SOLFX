@@ -1,11 +1,21 @@
 # SolFX — Complete Context and Build Status
 
-**Last updated:** 2026-08-24  
-**Status:** Phases 1–7 complete. **529/529 tests passing** (`cargo test --workspace`, verified 2026-08-23). Pre-devnet audit passed.  
-**Verified end to end on localnet 2026-08-24** — a real `open_position` and `close_position`
-landed against a live validator with live Pyth prices. See *Localnet: verified working*.
+**Last updated:** 2026-09-07
+**Status:** Phases 1–7 complete. **Phase 8 (frontend + SDK) substantially built.**
+555 Rust tests + 128 SDK tests passing, clippy clean.
 
-**Next:** devnet. NOXFUNDING starts only after SolFX is live there.
+**Live on devnet.** Program `2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi`, 9 markets listed
+(6 active), on-chain IDL current at 38 instructions. Real trades open and close from the
+browser with Phantom.
+
+**Next: put the off-chain half on a VPS** so it runs 24/7 instead of dying when a laptop
+sleeps. See *Deploying to a VPS* below. After that: the test-suite honesty pass, then Phase 9.
+NOXFUNDING still starts only after all of that.
+
+> **Deadline: 11 Sep 2026 — the Pyth API key trial expires.** Every Hermes endpoint now
+> requires a key (measured, see *Pyth access*), so there is no free endpoint to fall back to.
+> The key and the endpoint are both configuration, not code, so swapping either is a one-line
+> change plus a restart.
 
 ---
 
@@ -194,6 +204,135 @@ crates/solfx-keeper/
 ```
 
 ---
+
+## Phase 8 — what is built, 2026-09-07
+
+Devnet, `2EQzy2…ZVKi`. `./scripts/deploy-devnet.sh` verifies bytecode and IDL against the
+local build and changes nothing when they already match.
+
+**Working end to end from the browser:** create account, deposit, withdraw, open, close,
+stop-loss and take-profit, live liquidation price, P&L in pips and dollars, the swap-rate
+table with the SolFX markup split out, real OHLC candles at 15m/30m/1H/4H/1D with entry and
+liquidation lines drawn on them, and a risk disclosure on first connect.
+
+**Not built.** Named so a missing feature is not mistaken for a bug: LP pool page, IB referral
+dashboard, trade history / portfolio (needs an indexer — the largest remaining piece),
+partial-close UI (the program supports it; the ticket does not expose it), market search and
+favourites, ADL controls.
+
+### Five client bugs found by trading it, all worth remembering
+
+The pattern from localnet repeated exactly: **the protocol rejected nothing incorrectly, and
+every failure was in the client.** Three of the five were errors that had been swallowed.
+
+| Symptom | Cause |
+|---|---|
+| "The provided transaction plan failed to execute" | kit attaches the real cause to `context.transactionPlanResult` **non-enumerably**, and the failure sits inside a `plans[]` array. A walker that enumerates keys finds nothing. `diagnoseSendError` in `clients/js/src/errors.ts` reaches both. |
+| "Multiple distinct signers were identified for address …" | The instruction carried `useSigner()`'s signer while `prepare` was handed the raw wallet *session*, so the client built a second signer for the same address. `useMemo` alone cannot fix it — its cache is per component — so the signer is now cached in a module-level `WeakMap` keyed on the session. |
+| Position open on chain, terminal said "Open Positions (0)" | `usePositions` caught every failure and rendered it as an empty list. Indistinguishable from having none, and the more dangerous reading. It now says so and prints the cause. |
+| Unrealised P&L frozen at the price on connect | `loadPositions` baked prices in at load and only re-ran when the wallet or market set changed. `repricePositions` now marks against the live oracle each poll. |
+| New position invisible until a manual reload | The ticket refreshed the account panel and told nothing else. It now calls back on a fill. |
+
+## Pyth access — measured 2026-09-05, and the 11 Sep deadline
+
+**Every Hermes endpoint requires an API key.** The docs page describing
+`hermes.pyth.network` as a free public endpoint with a 10-req/10s limit is **out of date** —
+it returns `unauthorized` on BTC/USD, the most basic feed there is:
+
+| Endpoint | No key | With our key |
+|---|---|---|
+| `hermes.pyth.network` | **401** | 200 |
+| `pyth.dourolabs.app/hermes` (in use) | — | 200 |
+| `hermes-beta.pyth.network` | **401** | — |
+
+So there is no free endpoint to fall back to when the trial expires on **11 Sep 2026**. What
+happens to the key on that date is account state on pythdata.app and cannot be determined from
+any doc — check the dashboard before the date, not after.
+
+**Swapping the key is configuration, not code.** It lives in one place, `PYTH_API_KEY` in
+`.env`, and all three consumers read it from there: `price-poster` and `solfx-keeper` via
+clap's `env = "PYTH_API_KEY"`, and the browser via the Vite proxy, which injects the `Bearer`
+header server-side so the key never ships in client JavaScript. It is read at process start,
+so a restart is required. **The endpoint is equally swappable** — `SOLFX_HERMES_URL`,
+`--hermes-url`, `VITE_HERMES_URL`, `VITE_PYTHPRO_URL` — which is what makes a move to another
+provider, or to a self-hosted Hermes, a config change rather than a rewrite.
+
+**Load is small**, which widens the options: the poster fetches 6 feeds per pass, one pass per
+~27 s — about **0.22 requests/second**. The expensive dependency is the browser chart (Pyth Pro
+History), not the protocol.
+
+Three ways out, most independent first: self-host Hermes (Pyth documents it as open-source,
+listening to Pythnet and Wormhole — the only option with no expiry date); pay for a Pyth plan
+(Pro has no hard rate limits, parameters come from a service agreement); or split the
+dependency so charts fall back to `benchmarks.pyth.network` while the poster keeps a keyed
+Hermes.
+
+## RPC — the free tier is the binding constraint
+
+All off-chain processes share one endpoint. Measured on a free Helius key: **the poster alone
+ran 11 consecutive clean passes, and lost 491 feeds across 371 passes with an unthrottled
+keeper beside it.** The poster is the one that suffers, because its calls are the only ones
+carrying a 60-second deadline.
+
+Both now share the token bucket in `crates/solfx-keeper/src/throttle.rs`, and the budget is
+split deliberately: **poster `--max-rps 5`, keeper `--max-rps 4`, browser polling every 8 s.**
+Raise all three together on a paid endpoint; raising one alone starves the others.
+
+Free tiers, for when Helius's 10 RPS is the wall:
+
+| Provider | Free tier |
+|---|---|
+| **Chainstack** | **3M requests, 25 RPS** ← best free option |
+| Alchemy | ~1.11M requests |
+| Helius | 1M credits, 10 RPS ← currently in use |
+| QuickNode | no perpetual free tier |
+
+Measured with both running at 5 and 4 against the 10 RPS tier: **14 passes, 6 of 6 posted,
+zero failures**, worst on-chain age 21 s against the 60 s gate.
+
+## Deploying to a VPS
+
+**The program is not on the VPS.** It is on devnet already. The VPS runs the off-chain half —
+the parts that otherwise die when a laptop sleeps.
+
+| What | Why it must run 24/7 |
+|---|---|
+| `price-poster` | Publishes prices on-chain. Stop it and every trade fails `OracleStale` after 60 s. |
+| `solfx-keeper` | Liquidations, trigger execution, funding cranks, watchdog. Stop it and stops never fire. |
+| Static web build (`app/dist`) | Served by nginx. |
+| **A small API service — does not exist yet** | Replaces the two Vite dev proxies. |
+| nginx + TLS | Domain, Let's Encrypt, proxies `/hermes` and `/pythpro` to the API service. |
+
+### The API service is not optional
+
+`/hermes` and `/pythpro` are **Vite dev-server proxies** (`app/vite.config.ts`). They exist
+only while `npx vite` is running. A static production build has no server, so the ticker and
+the charts 404 — and those proxies are also what keep `PYTH_API_KEY` server-side. Moving them
+into the browser would publish the key. This has to be written before the app can be hosted.
+
+### Two traps that fail silently
+
+**Copy `price-accounts/` — 35 keypair files.** These are the accounts the markets point at.
+The directory is gitignored, so a fresh clone will not have it, and the poster then
+**generates new accounts**. The markets keep pointing at the old ones and go stale
+permanently, while the poster reports `6 posted, 0 failed` throughout. `deployment.json` and
+`.env` are gitignored for the same reason and must be copied too.
+
+**Do not put the admin wallet on the VPS.** `7ktphn…BdWs` is simultaneously the program
+upgrade authority, the protocol admin and the USDC mint authority. None of that privilege is
+needed out there: every keeper instruction — `crank_funding`, `crank_market_price`,
+`crank_market_session`, liquidation, triggers — takes a plain `Signer` named `keeper` with
+**no admin check**. Generate a dedicated operator keypair, fund it with a few SOL, and give
+the VPS only that. Losing it costs devnet SOL and nothing else.
+
+### Also worth knowing
+
+`scripts/run-devnet-stack.sh` starts the three local processes with the right budgets and
+health-checks them (`--stop`, `--status`). It is the local equivalent of what systemd will do.
+
+When stopping processes by name, **match the absolute binary path**. `pkill -f price-poster`
+also matches the shell running the command and kills that instead — a trap this project fell
+into three times in one session.
 
 ## Known Limitations & Open Items
 
