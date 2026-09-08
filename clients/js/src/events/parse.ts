@@ -27,6 +27,23 @@ export type SolfxEvent = {
   readonly data: Record<string, unknown>;
 };
 
+/**
+ * Base64 to bytes, in whichever runtime this is.
+ *
+ * `Buffer` is Node-only, and this parser has to run in the browser too — the terminal reads
+ * its own trade history straight from transaction logs. `atob` is the web platform's decoder
+ * and exists in every browser; Node has had it since 16, but `Buffer` is still preferred
+ * there because `atob` is deprecated in that runtime. Neither branch throws on bad input in
+ * the same way, so the caller keeps its try/catch.
+ */
+function fromBase64(b64: string): Uint8Array {
+  if (typeof Buffer !== "undefined") return Uint8Array.from(Buffer.from(b64, "base64"));
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 const sameBytes = (a: Uint8Array, b: Uint8Array) =>
   a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -73,7 +90,7 @@ export function parseEvents(
 
     let bytes: Uint8Array;
     try {
-      bytes = Uint8Array.from(Buffer.from(line.slice(PROGRAM_DATA.length), "base64"));
+      bytes = fromBase64(line.slice(PROGRAM_DATA.length));
     } catch {
       continue; // not base64; not ours to interpret
     }

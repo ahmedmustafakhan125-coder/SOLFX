@@ -7,6 +7,9 @@ export const RPC_URL: string =
 
 export function rpcLabel(url: string): string {
   try {
+    // The deployed app talks to the same-origin `/rpc` proxy, which forwards to a keyed
+    // devnet endpoint. The host is the site, so name the cluster it actually reaches.
+    if (url === "/rpc" || url.endsWith("/rpc")) return "devnet";
     const host = new URL(url).hostname;
     if (host.includes("devnet")) return "devnet";
     if (host.includes("testnet")) return "testnet";

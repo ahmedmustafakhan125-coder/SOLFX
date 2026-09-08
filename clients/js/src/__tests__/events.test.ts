@@ -85,3 +85,23 @@ describe("coverage", () => {
     expect(SOLFX_EVENTS.map((e) => e.name)).toContain("MarketOracleChanged");
   });
 });
+
+describe("decoding without Node's Buffer", () => {
+  // The terminal parses its own trade history in the browser, where `Buffer` does not exist
+  // and `atob` is the decoder. Every other test in this file runs in Node and so only ever
+  // exercises the `Buffer` branch — this one takes the branch the browser actually takes,
+  // against the same real logs, and demands an identical result.
+  it("takes the atob path and decodes identically", async () => {
+    const parsed = parseEvents(REAL_LOGS);
+
+    const buffer = globalThis.Buffer;
+    // @ts-expect-error — deleting a global is the point of the test.
+    delete globalThis.Buffer;
+    try {
+      expect(typeof Buffer).toBe("undefined");
+      expect(parseEvents(REAL_LOGS)).toEqual(parsed);
+    } finally {
+      globalThis.Buffer = buffer;
+    }
+  });
+});

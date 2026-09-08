@@ -6,7 +6,7 @@ import { PriceChart, type ChartLevel } from "@/components/PriceChart";
 import { MarketList } from "@/components/MarketList";
 import { MarketPanel } from "@/components/MarketPanel";
 import { AccountPanel } from "@/components/AccountPanel";
-import { PositionsPanel } from "@/components/PositionsPanel";
+import { ActivityPanel } from "@/components/ActivityPanel";
 import { usePositions } from "@/hooks/usePositions";
 import { Direction, liquidationPrice, maintenanceMargin } from "@solfx/client";
 import { fmtBase } from "@/lib/format";
@@ -146,12 +146,12 @@ export function Terminal() {
                   live={prices[market.feedIdHex]}
                   levels={chartLevels}
                 />
-                <PositionsPanel
+                <ActivityPanel
                   positions={positions}
                   markets={markets}
                   prices={priceByIndex}
                   priceAccounts={accountByIndex}
-                  loadError={positionsError}
+                  positionsError={positionsError}
                   onClosed={refreshPositions}
                 />
               </>

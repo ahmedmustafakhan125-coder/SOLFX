@@ -85,7 +85,7 @@ use pyth_solana_receiver_sdk::pda::{get_config_address, get_treasury_address};
 use pyth_solana_receiver_sdk::PostUpdateParams;
 use pythnet_sdk::wire::v1::{AccumulatorUpdateData, Proof};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_commitment_config::CommitmentConfig;
+use solana_commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_hash::Hash;
 
@@ -94,6 +94,7 @@ use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_message::Message;
 use solana_pubkey::Pubkey;
+use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_signer::Signer as _;
 use solana_transaction::Transaction;
 
@@ -368,34 +369,51 @@ async fn post_pass(
     feeds: &[(String, String)],
     accounts: &HashMap<String, Keypair>,
 ) -> Result<(usize, usize)> {
-    // One blockhash for the whole pass. A pass is ~25 s and a blockhash lives ~60 s, so every
-    // transaction in it signs against a valid one — and this removes the 30 `getLatestBlockhash`
-    // calls a six-feed pass used to make, one per transaction. See `send_signed`.
+    // One blockhash per *feed*, not one for the whole pass.
+    //
+    // A single pass-wide blockhash held while all six feeds went out together, which is what
+    // `--concurrency 8` did. At `--concurrency 2` a six-feed pass is three sequential waves,
+    // and the last wave starts ~40 s after the blockhash was fetched — inside the 150-slot
+    // (~60 s) life on paper, past it by the time five transactions have been sent and
+    // confirmed one after another. The symptom was not an error but a silence: the send was
+    // accepted and the transaction then dropped, surfacing as `not confirmed in 45s` on
+    // whichever two feeds were sent last. It looked like a guardian-set or a rate problem
+    // because it always struck the same two, BTC/USD and XAG/USD, which are simply last.
+    //
+    // Six `getLatestBlockhash` calls a pass rather than one is a rounding error against the
+    // ~30 sends and ~100 status polls a pass already makes, and unlike a concurrency setting
+    // it stays correct however this is tuned.
     let throttle = Throttle::new(args.max_rps);
-    throttle.acquire().await;
-    let blockhash = rpc
-        .get_latest_blockhash()
-        .await
-        .context("blockhash for the pass")?;
-    let pass = Pass {
-        rpc,
-        payer,
-        throttle: &throttle,
-        blockhash,
-    };
 
     let outcomes: Vec<bool> = stream::iter(feeds.iter())
-        .map(|(symbol, feed_id)| async move {
-            match post_feed(pass, args, config, symbol, feed_id, accounts).await {
-                Ok(Some(sig)) => {
-                    println!("  {symbol:<14} {sig}");
-                    true
-                }
-                // Not one of ours, or no account for it — neither a success nor a failure.
-                Ok(None) => false,
-                Err(e) => {
-                    eprintln!("  {symbol:<14} FAILED: {e:#}");
-                    false
+        .map(|(symbol, feed_id)| {
+            let throttle = &throttle;
+            async move {
+                throttle.acquire().await;
+                let blockhash = match rpc.get_latest_blockhash().await {
+                    Ok(hash) => hash,
+                    Err(e) => {
+                        eprintln!("  {symbol:<14} FAILED: blockhash: {e:#}");
+                        return false;
+                    }
+                };
+                let pass = Pass {
+                    rpc,
+                    payer,
+                    throttle,
+                    blockhash,
+                };
+                match post_feed(pass, args, config, symbol, feed_id, accounts).await {
+                    Ok(Some(sig)) => {
+                        println!("  {symbol:<14} {sig}");
+                        true
+                    }
+                    // Not one of ours, or no account for it — neither a success nor a failure.
+                    Ok(None) => false,
+                    Err(e) => {
+                        eprintln!("  {symbol:<14} FAILED: {e:#}");
+                        false
+                    }
                 }
             }
         })
@@ -649,7 +667,7 @@ fn create_account_ix(
 
 /// What every transaction in one pass shares: where to send it, who pays for it, and the
 /// blockhash they all sign against. Grouped because it is threaded through every layer of the
-/// five-transaction path, and because the blockhash being *per pass* rather than per
+/// five-transaction path, and because the blockhash being *per feed* rather than per
 /// transaction is the point — see `send_signed`.
 #[derive(Clone, Copy)]
 struct Pass<'a> {
@@ -666,6 +684,32 @@ struct Pass<'a> {
 /// reported as unconfirmed instead of polled forever.
 const CONFIRM_POLL: std::time::Duration = std::time::Duration::from_secs(1);
 const CONFIRM_ATTEMPTS: usize = 45;
+
+/// How every transaction in a pass is sent.
+///
+/// `skip_preflight` is load-bearing here, not an optimisation. A pass signs all ~30 of its
+/// transactions against the one blockhash fetched at the top, but the endpoint is load
+/// balanced: the node that answered `getLatestBlockhash` is not necessarily the node that
+/// runs the preflight simulation, and a node a few slots behind rejects a blockhash it has
+/// not seen yet with `Transaction simulation failed: Blockhash not found`. It read as a
+/// guardian-set problem because `verify_encoded_vaa_v1` is the longest step and so the most
+/// likely to be the one still in flight — but it cost whichever two feeds were sent last in
+/// the pass, BTC/USD and XAG/USD, while the first four went through every time.
+///
+/// Skipping preflight hands the transaction to the leader, which does know the blockhash.
+/// No error reporting is lost: `send_signed` already polls the signature and reports an
+/// on-chain failure. It also removes one simulation per transaction from a rate-limited
+/// endpoint, which is the same economy the rest of this module is built on.
+///
+/// `preflight_commitment` is still set to the level the blockhash was fetched at, which is
+/// what Helius documents even when preflight is skipped.
+fn send_config() -> RpcSendTransactionConfig {
+    RpcSendTransactionConfig {
+        skip_preflight: true,
+        preflight_commitment: Some(CommitmentLevel::Confirmed),
+        ..Default::default()
+    }
+}
 
 /// Build and sign. Shared by the confirming and the fire-and-forget sender.
 fn sign(
@@ -705,8 +749,9 @@ fn sign(
 /// each time, so a throttled call can hold one feed for minutes — against a 60-second
 /// staleness gate. The remedy is to send less traffic, not to wait harder for it.
 ///
-/// So: one blockhash fetched per *pass* and shared by every transaction in it, and one status
-/// call per second with expiry bounded by an attempt count rather than by asking the node.
+/// So: one blockhash fetched per *feed* and shared by that feed's five transactions, and one
+/// status call per second with expiry bounded by an attempt count rather than by asking the
+/// node.
 /// Same guarantee, roughly a third of the calls.
 async fn send_signed(
     pass: &Pass<'_>,
@@ -716,7 +761,11 @@ async fn send_signed(
 ) -> Result<String> {
     let tx = sign(pass.payer, extra, ixs, cu, pass.blockhash)?;
     pass.throttle.acquire().await;
-    let signature = pass.rpc.send_transaction(&tx).await.context("send")?;
+    let signature = pass
+        .rpc
+        .send_transaction_with_config(&tx, send_config())
+        .await
+        .context("send")?;
     for _ in 0..CONFIRM_ATTEMPTS {
         tokio::time::sleep(CONFIRM_POLL).await;
         pass.throttle.acquire().await;
@@ -742,7 +791,10 @@ async fn send_signed(
 async fn send_no_confirm(pass: &Pass<'_>, ixs: Vec<Instruction>, cu: u32) -> Result<()> {
     let tx = sign(pass.payer, &[], ixs, cu, pass.blockhash)?;
     pass.throttle.acquire().await;
-    pass.rpc.send_transaction(&tx).await.context("send")?;
+    pass.rpc
+        .send_transaction_with_config(&tx, send_config())
+        .await
+        .context("send")?;
     Ok(())
 }
 

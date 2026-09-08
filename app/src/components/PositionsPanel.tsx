@@ -62,16 +62,9 @@ export function PositionsPanel({
   }
 
   return (
-    <div className="border-t border-line-soft">
-      <div className="flex items-baseline gap-3 px-5 py-2.5">
-        <span className="text-xs font-medium">
-          Open Positions ({positions.length})
-        </span>
-        <span className="text-[10px] text-ink-dim">
-          unrealised is marked at the oracle mid; a close fills after the spread
-        </span>
-      </div>
-
+    // No heading and no top border of its own: this is rendered inside `ActivityPanel`,
+    // whose tab bar carries both, and which shows the count in the tab itself.
+    <div>
       {loadError ? (
         // Distinguishing "you have none" from "we could not find out" matters here more than
         // almost anywhere else in the app: the two look identical and only one is safe to act on.

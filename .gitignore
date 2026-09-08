@@ -51,9 +51,18 @@ keys/
 
 # Per-feed price-update account keypairs written by the price poster.
 price-accounts/
+# ...and any renamed or set-aside copy of them. On 2026-09-07 the admin-owned set was moved
+# to `price-accounts.admin-owned/` so a fresh operator-owned set could be generated beside
+# it. The rename stepped straight out from under the rule above, leaving 35 raw private keys
+# untracked but committable in a repo with a public remote. The glob is the fix: a directory
+# whose name starts `price-accounts.` holds private keys whatever the suffix says.
+price-accounts.*/
 
 # Generated map of feed id -> price account; regenerate with the poster.
 price-accounts.json
+# The map itself is only public addresses, but the same reasoning applies to its copies:
+# ignore them all and publish the one the web tier serves, from `web-public/`.
+price-accounts.*.json
 
 # Written by init-protocol; regenerate rather than commit — it names cluster-specific
 # accounts and is meaningless against a different ledger.

@@ -334,6 +334,79 @@ When stopping processes by name, **match the absolute binary path**. `pkill -f p
 also matches the shell running the command and kills that instead — a trap this project fell
 into three times in one session.
 
+### As built on the VPS — 2026-09-07
+
+The box is **not** a dedicated machine. It already runs an n8n stack and `noxyra-ai.com`, and
+two assumptions in the plan above were wrong because of it.
+
+**There is no nginx.** A Traefik container owns ports 80 and 443 and terminates TLS for n8n
+and noxyra. Installing nginx there does not "add a vhost", it fights for the port and loses —
+and on a reboot it might win, which takes the other two sites down. nginx is installed but has
+been `systemctl disable`d for exactly that reason. SolFX is published by adding a router to
+the existing Traefik, not by running a second web server.
+
+**The build must be constrained.** 7.8 GB of RAM, no swap, ~2 GB free with the other services
+up. `cargo build --release` at default parallelism OOM-killed itself on `init_protocol`, and
+the kernel could as easily have picked a container. Build like this instead:
+
+```
+systemd-run --scope -p MemoryMax=3G -p CPUQuota=150% \
+  cargo build --release -j 1 --bin solfx-keeper --bin price-poster
+```
+
+Only those two binaries are needed to run the stack; the other four are development tools.
+The cgroup means an overrun kills the build and nothing else.
+
+**`npm install` runs in two places.** `clients/js` has its own `package.json`, and the app
+consumes the SDK as TypeScript source. Install only in `app/` and `tsc -b` fails with
+`Cannot find module '@solana/kit'` across every generated file.
+
+| Path | What it is |
+|---|---|
+| `.` | the clone — note the doubled directory |
+| `$SOLFX_OPERATOR_KEYPAIR` | operator keypair, `EyvqeDSh2Y4ZhobJY4bF8ueEZAjRx2V3r2GDf35ktPyo` |
+| `services/api/server.mjs` | serves `app/dist`, proxies `/hermes` and `/pythpro` with the bearer |
+| `scripts/vps-health.sh` | the probe behind `solfx-health.timer` |
+| `/docker/solfx/docker-compose.yml` | the web tier — a compose project of its own |
+
+**The site is https://solfx.cloud** (and `www.`), certificate from the Traefik ACME resolver
+the n8n stack already had.
+
+The web tier is a **container, not a unit**. Traefik discovers backends over the Docker
+socket, so only a container can be routed without adding a file provider — and adding one
+means restarting Traefik, which would drop n8n and noxyra. `/docker/solfx` is a separate
+compose project that joins the external `n8n_default` network: it never edits the n8n compose
+file, and `up`/`down` on it leaves the other three containers running. It publishes 8787 on
+loopback only, for the health probe; the public port is Traefik's.
+
+It mounts just `app/dist` and `services/`, so `price-accounts/` and `deployment.json` are not
+visible to the internet-facing process. `.env` is an `env_file` rather than a bind mount:
+an scp that replaces it writes a new inode, which would silently detach a file mount.
+`docker compose up -d` re-reads it — **after copying a new `.env`, restart the container.**
+
+Three units in `/etc/systemd/system`, all `solfx-`prefixed:
+
+| Unit | State | Notes |
+|---|---|---|
+| `solfx-price-poster` | installed, stopped | needs `.env`, `deployment.json`, `price-accounts/` |
+| `solfx-keeper` | installed, stopped | same, plus a funded operator wallet |
+| `solfx-health.timer` | enabled | every 5 min; POSTs to `$SOLFX_ALERT_WEBHOOK` if set |
+
+`solfx-api.service` still exists but is disabled — it was the host-side version of the web
+tier, replaced by the container. Do not start both; they contend for 8787.
+
+Both chain units declare `Environment=SOLFX_RPC_URL=...` *before* `EnvironmentFile=`, so `.env`
+still overrides it — but the keeper's own default is localnet, which on devnet would look like
+a keeper that simply never does anything. The keeper also pins `SOLFX_KEYPAIR` *after*
+`EnvironmentFile=` so it wins: a `.env` copied off the Windows machine names a path that does
+not exist here, and names the admin wallet, which must never reach this box.
+
+The health check tests for a *completed pass*, not for a live process. A poster that is up but
+making no progress is still `active`, and that is the failure mode that matters. It also probes
+`https://solfx.cloud/healthz` as well as loopback, because a router misconfiguration or a
+certificate that failed to renew looks perfectly healthy from inside the box.
+
+
 ## Known Limitations & Open Items
 
 ### Q1 — Weekend metals (UNRESOLVED)
@@ -492,15 +565,91 @@ listed markets by default; posting all 33 leaves everything stale before its nex
 Retrying the 429 would have made it worse: `solana-rpc-client`'s HTTP sender already retries
 one five times, honouring `Retry-After` for up to 120s each (`solana-rpc-client-3.1.14`,
 `src/http_sender.rs:147`), so a throttled call can hold a feed for minutes. The poster
-instead sends less: one blockhash per *pass* shared by every transaction in it, one status call per second, the rent reclaim no longer confirmed on the
-critical path, and a token bucket above the client (`--max-rps`, default 8) that spaces every
-call so the burst never forms.
+instead sends less: one blockhash per *feed*, one status call per second, the rent reclaim no
+longer confirmed on the critical path, and a token bucket above the client (`--max-rps`,
+default 8) that spaces every call so the burst never forms.
+
+### The blockhash is per feed, and preflight is skipped — 2026-09-08
+
+Both were one bug, and it cost exactly two feeds per pass for weeks.
+
+A blockhash was originally fetched once per *pass* and shared by all ~30 transactions in it,
+on the reasoning that a pass is ~25 s and a blockhash lives ~60 s. That holds at
+`--concurrency 8`, where all six feeds go out together. At `--concurrency 2` — which the VPS
+runs, because Helius throttles *transaction* sends far harder than reads — a six-feed pass is
+three sequential waves, and the last wave starts ~40 s in, then spends five more transactions
+getting to `post_update`. BTC/USD and XAG/USD failed every pass because they are simply last,
+never because of anything about those feeds.
+
+It presented as two different errors, neither of which named the cause:
+
+| Symptom | What it actually was |
+|---|---|
+| `verify_encoded_vaa_v1 — is the guardian set cloned and current?` | the poster's own hint on the longest step, which is just the step most likely to still be in flight |
+| `Transaction simulation failed: Blockhash not found` | **preflight**, run on a load-balanced node a few slots behind the one that served the blockhash — Helius documents this as the mismatched-RPC case |
+| `was not confirmed in 45s` | what remained after preflight was skipped: the blockhash had genuinely expired, so the send was accepted and the transaction silently dropped |
+
+So: `skip_preflight` (with `preflight_commitment` still set to the level the blockhash was
+fetched at, which is what Helius prescribes even when preflight is skipped), and a blockhash
+per feed rather than per pass. Six `getLatestBlockhash` calls a pass instead of one is a
+rounding error against the ~30 sends and ~100 status polls it already makes, and unlike a
+concurrency setting it stays correct however this is tuned.
+
+**Measured 2026-09-08**, devnet, `--concurrency 2 --max-rps 2`: **14 consecutive passes, 6 of
+6 posted, zero failures**, all six feeds inside the 60 s gate — including BTC/USD, whose price
+account had never been successfully created before this.
 
 **Measured 2026-09-01**, devnet, six markets, `--interval-secs 2 --concurrency 8 --max-rps 8`:
 seven consecutive passes, **42 of 42 feeds posted, zero 429s**, worst on-chain age **38s**
 against the 60s gate, with all six feeds within **two seconds of each other**. Raise
 `--max-rps` on a paid endpoint or a local validator; it is the binding constraint here, not
 concurrency.
+
+## The RPC ceiling is the binding constraint, measured — 2026-09-08
+
+**The poster and the keeper cannot both run against this endpoint.** Not a configuration
+mistake and not something scheduling can fix: the demand exceeds the supply.
+
+It works on a dev machine because a dev machine runs a local validator, where an RPC call is
+free. `--scan-ms` defaults to **400** — two and a half book reads a second, forever — which
+localnet absorbs without noticing. Pointed at a metered endpoint it is, on its own, more than
+the whole budget.
+
+Measured here, same keypair, same everything, one variable:
+
+| Running | gateway traffic (60 s) | upstream 429s | poster |
+|---|---|---|---|
+| poster + keeper | high=152 low=135 | **160** | `0 posted, 6 failed` |
+| poster alone | high=110 low=0 | **0** | `6 posted, 0 failed` |
+
+Slowing the keeper ten-fold (`--scan-ms 4000`) was not enough: it still drew ~3.3 calls/s,
+and the poster stayed at 0/6. The endpoint starts refusing somewhere around 5–6 calls/s
+sustained, well under the ~10/s the free tier advertises.
+
+### The gateway, and what it does not do
+
+`services/rpc-gateway/` holds one budget for every off-chain process and serves the poster
+first — `/high` for the poster, `/low` for the keeper, one token bucket, the poster queued
+almost without bound and the keeper shed under pressure. It is correct and it is installed,
+and it did not make both fit, because **allocating a budget is not the same as raising one**.
+It earns its place the moment there is enough capacity to divide, and until then it is what
+keeps the poster from being crowded out by the browser or by an operator command.
+
+Two traps it cost to learn, both now in comments:
+
+- A single queue cap sheds the *poster*, which is the one caller that must never be shed. Its
+  log filled with `429 ... for url (http://127.0.0.1:8899/high)` — a rate limit it had
+  imposed on itself.
+- `EnvironmentFile=` overrides `Environment=` **regardless of order in the unit file**. The
+  keeper kept the raw endpoint from `.env` and bypassed the gateway entirely while appearing
+  configured. Verified by reading `/proc/<pid>/environ`. Pass the URL on the command line.
+
+### What unblocks it
+
+1. **A paid RPC tier**, or a second endpoint for the keeper. This is the real answer and it
+   is a purchase, not a patch.
+2. Until then the keeper stays stopped and `disable`d. Liquidations are not automated. That
+   is a real gap and it should be stated plainly rather than left implied by a stopped unit.
 
 ## Devnet feed availability — measured 2026-08-23
 
