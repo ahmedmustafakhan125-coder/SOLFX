@@ -8,9 +8,11 @@
 (6 active), on-chain IDL current at 38 instructions. Real trades open and close from the
 browser with Phantom.
 
-**Next: put the off-chain half on a VPS** so it runs 24/7 instead of dying when a laptop
-sleeps. See *Deploying to a VPS* below. After that: the test-suite honesty pass, then Phase 9.
-NOXFUNDING still starts only after all of that.
+**The off-chain half runs 24/7 on the VPS.** Poster, keeper, gateway and web tier are all up
+and all `enable`d at boot as of 2026-09-09; six markets are `Active` and the keeper is
+cranking, liquidating and executing triggers. See *Deploying to a VPS* and *What unblocked
+it* below. Next: the test-suite honesty pass, then Phase 9. NOXFUNDING still starts only
+after all of that.
 
 > **Deadline: 11 Sep 2026 — the Pyth API key trial expires.** Every Hermes endpoint now
 > requires a key (measured, see *Pyth access*), so there is no free endpoint to fall back to.
@@ -644,12 +646,59 @@ Two traps it cost to learn, both now in comments:
   keeper kept the raw endpoint from `.env` and bypassed the gateway entirely while appearing
   configured. Verified by reading `/proc/<pid>/environ`. Pass the URL on the command line.
 
-### What unblocks it
+### What unblocked it — 2026-09-09, and it was free
 
-1. **A paid RPC tier**, or a second endpoint for the keeper. This is the real answer and it
-   is a purchase, not a patch.
-2. Until then the keeper stays stopped and `disable`d. Liquidations are not automated. That
-   is a real gap and it should be stated plainly rather than left implied by a stopped unit.
+**A second endpoint, not a paid tier.** The framing above was wrong in one respect: the
+answer was never to divide a budget that is too small, it was to stop sharing. The poster
+keeps the keyed Helius endpoint through the gateway; the keeper goes straight to Solana's
+public devnet RPC. Measured before switching: 19 keeper-shaped calls (4 `getProgramAccounts`
++ 15 `getMultipleAccounts`) against `api.devnet.solana.com` in **0.6 s, zero 429s**, and a
+`getProgramAccounts` returning all 9 markets in **50 ms**. With both running: poster
+**6 posted, 0 failed** on every pass, keeper cranking, zero rate limiting on either side.
+
+The Solana MCP supplied the two facts that made the choice: Helius bills `getProgramAccounts`
+at **10 credits** and rate-limits it *separately from* the plan's RPS — which is why slowing
+the keeper's scan loop ten-fold had not helped, since the cost was never the call count — and
+`getProgramAccountsV2` bills at 1. Chainstack's free tier (**3M requests, 25 RPS**) is the
+fallback if the public endpoint starts throttling.
+
+Both units are now `enable`d. Before this they were not: the poster was running but
+`disabled`, so a reboot would have taken the venue down silently and left it down.
+
+### A stopped keeper is a closed venue, not just an unliquidated one
+
+Found the same day, and the more important half. Eight of nine markets were sitting in
+`MarketStatus::Halted` — the *correct* fail-closed response to the stale feeds of 8 Sep, set
+by `crank_market_session`. But `crank_market_session` is also the **only** instruction that
+can move a market back out of `Halted`, and only the keeper sends it. So the markets stayed
+shut for 23 hours while the poster published six perfect feeds. Recovery is deliberately
+two-step — `Halted → GapWindow → Active`, `GAP_WINDOW_SECONDS` = 5 min apart — and took
+about six minutes once the keeper was cranking again.
+
+### `--refresh-secs` must be shorter than `--max-book-age-secs`
+
+The shipped defaults are refresh **30 s** against a tolerance of **20 s**, so the book is
+stale by construction for a third of every cycle. Worse, the crank tick (60 s) is an exact
+multiple of the refresh interval, so once a tick lands inside that stale window it lands
+there every time. Measured: **165 `book is stale; standing down this pass` in ten minutes and
+zero cranks in eight** — while systemd reported the unit `active (running)` and
+`scripts/vps-health.sh` reported it healthy. The deployment now runs `--refresh-secs 15
+--max-book-age-secs 45`; after the change, zero stale-book errors and 28 cranks in two
+minutes. **The defaults themselves are still wrong and should refuse to start** — a startup
+check that `refresh_secs < max_book_age_secs` is a one-line guard in `crates/solfx-keeper`
+and is not yet written.
+
+The health probe deserves the same criticism it levels at the poster: it tests that the unit
+is active, which a keeper doing nothing at all still is.
+
+### Three markets are listed that nothing can price
+
+`EUR/JPY` (#1), `USD/INR` (#2) and one of the two `BTC/USD` markets (#4) carry feed ids the
+poster does not publish, so they will stay `Halted` for as long as that is true, and the
+keeper logs `price account missing on chain` for #4 on every pass. #1 and #2 are a
+`deployment.json` change — the poster posts what is listed there. #4 is a **duplicate
+listing** (#5 is the BTC/USD that works) and can only be retired with `set_market_status`,
+which needs the admin wallet that is deliberately not on this box.
 
 ## Devnet feed availability — measured 2026-08-23
 
