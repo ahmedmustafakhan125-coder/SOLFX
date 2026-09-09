@@ -14,6 +14,10 @@ cranking, liquidating and executing triggers. See *Deploying to a VPS* and *What
 it* below. Next: the test-suite honesty pass, then Phase 9. NOXFUNDING still starts only
 after all of that.
 
+> **Session log:** [`CLAUDE-SESSION.md`](../CLAUDE-SESSION.md) at the repo root records what
+> changed on 2026-09-09 and when, including the things that are true but not yet fixed. Read it
+> if you are picking this up cold; this document is what *is*, that one is what *changed*.
+
 > **Deadline: 11 Sep 2026 — the Pyth API key trial expires.** Every Hermes endpoint now
 > requires a key (measured, see *Pyth access*), so there is no free endpoint to fall back to.
 > The key and the endpoint are both configuration, not code, so swapping either is a one-line
