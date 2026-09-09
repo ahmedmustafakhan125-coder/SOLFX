@@ -217,10 +217,43 @@ stop-loss and take-profit, live liquidation price, P&L in pips and dollars, the 
 table with the SolFX markup split out, real OHLC candles at 15m/30m/1H/4H/1D with entry and
 liquidation lines drawn on them, and a risk disclosure on first connect.
 
-**Not built.** Named so a missing feature is not mistaken for a bug: LP pool page, IB referral
-dashboard, trade history / portfolio (needs an indexer — the largest remaining piece),
-partial-close UI (the program supports it; the ticket does not expose it), market search and
-favourites, ADL controls.
+**Added 2026-09-09.** Positions | History | Summary under the chart, read from
+`PositionOpened`/`Decreased`/`Liquidated` events in transaction logs rather than an indexer —
+a closed position leaves no account, only its events. A **liquidity pool page** at `/pool`:
+AUM, NAV per share, the fee schedule and lifetime flows public with no wallet, then deposit
+and the request → cooldown → settle withdrawal state machine. A **partners page** at
+`/partners`: the referral pool's real accrual from `solfx-core`, the tier ladder recomputed
+from `solfx-math`'s rules, and a trader's own referrer and generated fees.
+
+**Not built.** Named so a missing feature is not mistaken for a bug: partial-close UI (the
+program supports it; the ticket does not expose it), market search and favourites, ADL
+controls. IB **registration and claiming** are written in the SDK but not wired into the
+page — see below.
+
+### The referral programme is deployed and switched off
+
+`solfx-referral` (`J7dwkNcy…MHsyt`) is on devnet and holds **zero accounts**:
+`initialize_referral` has never run, and `Protocol.referral_authority` is still
+`Pubkey::default()`, which is the protocol's own way of saying it pays no rebates. Turning it
+on is two admin transactions by two different authorities — `initialize_referral` on the
+referral program, then `set_referral_authority` on the core — and the admin wallet is
+deliberately not on the VPS. Until then `/partners` reports that state rather than rendering
+buttons that would fail.
+
+Measured while building it: `fee_split_referral_bps` is **500** on devnet, not the 1000
+`ARCHITECTURE.md` § 8.3 assumes. Since `entitlement` caps a tier's share at what the pool
+actually holds, every tier from Bronze (8%) up is currently capped at the pool. The maths
+handles it; the number is a configuration decision nobody has made yet.
+
+### `solfx_referral` has no generated client
+
+`codama.json` names one IDL, `target/idl/solfx_core.json`. Neither program has an IDL account
+at the classic Anchor address on devnet either — `anchor idl fetch` has nothing to return —
+so `clients/js/src/referral/` is **hand-written**: three accounts, four instructions, three
+PDAs, and the tier maths ported from `crates/solfx-math/src/referral.rs`. Its tests re-derive
+every discriminator from `sha256("global:<name>")` and assert account order, because Anchor
+matches accounts positionally and a swapped pair is a runtime constraint violation that names
+neither account. **Add `solfx_referral` to `codama.json` and delete that directory.**
 
 ### Five client bugs found by trading it, all worth remembering
 
