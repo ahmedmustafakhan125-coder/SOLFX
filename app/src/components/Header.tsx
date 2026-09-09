@@ -5,6 +5,7 @@ import { useWalletConnection } from "@solana/react-hooks";
 const NAV = [
   { to: "/trade", label: "Trade" },
   { to: "/pool", label: "Pool" },
+  { to: "/partners", label: "Partners" },
   { to: "/about", label: "About" },
   { to: "/", label: "Home" },
 ] as const;

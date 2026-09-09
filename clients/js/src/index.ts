@@ -19,3 +19,5 @@ export * from "./sizing.js";
 export * from "./pdas.js";
 export * from "./priceAccounts.js";
 export * from "./events/index.js";
+// Hand-written because `solfx_referral` is not in `codama.json`. See referral/index.ts.
+export * as referral from "./referral/index.js";
