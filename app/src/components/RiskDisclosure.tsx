@@ -52,34 +52,52 @@ export function RiskDisclosure() {
 
         <ul className="mt-4 space-y-3 text-xs leading-relaxed text-ink-dim">
           <li>
-            <span className="text-ink">Leverage magnifies losses.</span> A small move against
-            you can remove your entire margin. Maximum leverage is set per market, not
-            protocol-wide.
+            <span className="text-ink">Leverage magnifies losses.</span> A small
+            move against you can remove your entire margin. Maximum leverage is
+            set per market, not protocol-wide.
           </li>
           <li>
-            <span className="text-ink">You can be liquidated.</span> When equity falls below
-            the maintenance margin, anyone may close your position and collect a fee from it.
-            This is automatic and does not wait for you.
+            <span className="text-ink">You can be liquidated.</span> When equity
+            falls below the maintenance margin, anyone may close your position
+            and collect a fee from it. This is automatic and does not wait for
+            you.
           </li>
           <li>
-            <span className="text-ink">A stop is not a guaranteed price.</span> Triggers fire
-            on the oracle and then fill at the execution price, including the spread. In a gap
-            the fill may be far past your trigger.
+            <span className="text-ink">A stop is not a guaranteed price.</span>{" "}
+            Triggers fire on the oracle and then fill at the execution price,
+            including the spread. In a gap the fill may be far past your
+            trigger.
           </li>
           <li>
-            <span className="text-ink">Sessions and gaps.</span> FX and metals do not trade
-            continuously. A market can reopen far from where it closed, and the protocol
-            correctly refuses to trade while its oracle is stale — which can also mean you
-            cannot close when you want to.
+            {/* ARCHITECTURE.md § 6.9 requires this to be said in plain language before a
+                position is opened. It was the one item missing from this list. */}
+            <span className="text-ink">
+              Your profit can be taken to cover someone else's loss.
+            </span>{" "}
+            If a position gaps through its liquidation price the loss can exceed
+            the collateral behind it. The insurance fund covers that first; if
+            it cannot, the most profitable positions on the other side are
+            closed and part of their profit is withheld. This is called
+            auto-deleveraging, you cannot opt out of it, and it can happen to a
+            position that is doing nothing wrong. It never takes your collateral
+            — the worst case is being returned to flat. The ADL tab shows the
+            insurance fund and where your positions sit in the queue.
           </li>
           <li>
-            <span className="text-ink">Auto-deleveraging.</span> In extreme conditions
-            profitable positions can be reduced to keep the pool solvent.
+            <span className="text-ink">Sessions and gaps.</span> FX and metals
+            do not trade continuously. A market can reopen far from where it
+            closed, and the protocol correctly refuses to trade while its oracle
+            is stale — which can also mean you cannot close when you want to.
+          </li>
+          <li>
+            <span className="text-ink">Auto-deleveraging.</span> In extreme
+            conditions profitable positions can be reduced to keep the pool
+            solvent.
           </li>
           <li>
             <span className="text-ink">Smart-contract risk.</span> SolFX has had{" "}
-            <span className="text-ink">no external audit</span>. A bug can lose funds, and
-            nobody can reverse a Solana transaction.
+            <span className="text-ink">no external audit</span>. A bug can lose
+            funds, and nobody can reverse a Solana transaction.
           </li>
         </ul>
 

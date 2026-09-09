@@ -18,6 +18,7 @@ import {
   findProtocolPda,
   findUserAccountPda,
   getClosePositionInstruction,
+  getDecreasePositionInstruction,
   getPositionDecoder,
   type Position,
 } from "@solfx/client";
@@ -33,6 +34,13 @@ const BPS = 10_000n;
 const NOTIONAL_DIVISOR = 1_000_000_000_000n;
 
 export const CLOSE_POSITION_CU = 120_000;
+
+/**
+ * `decrease_position` does the same work as a close plus the book-keeping to keep a smaller
+ * position alive, so it is budgeted the same. `docs/compute-budget.md` measures the close at
+ * 51,724 against a 120,000 ceiling.
+ */
+export const DECREASE_POSITION_CU = 120_000;
 
 export type OpenPosition = {
   readonly address: Address;
@@ -196,6 +204,67 @@ export async function buildClosePosition(p: {
     insuranceVault,
     feeVault,
     priceUpdate: p.priceUpdate,
+    priceLimit: closePriceLimit(p.direction, p.price, p.slippageBps),
+  });
+}
+
+/**
+ * Close part of a position.
+ *
+ * Built from the same derivations as `buildClosePosition`: the two instructions take the same
+ * accounts in the same order, so two copies would only drift apart. They are not quite
+ * identical, and the difference is instructive — `close_position` takes the authority
+ * *writable* because it closes the position account and refunds the rent to them, while this
+ * one closes nothing and leaves the authority read-only. The generated builders set that;
+ * `reduce.test.ts` asserts it.
+ *
+ * **The caller must not send this for a full close.** `decrease_position` requires
+ * `size_delta < position.size_base` strictly and rejects an equal size with
+ * `ReductionExceedsSize`; `close_position` is the instruction for the whole thing and it
+ * reclaims the position account's rent as well. `reduceIsFullClose` in `@solfx/client` is
+ * that boundary.
+ */
+export async function buildDecreasePosition(p: {
+  signer: TransactionSigner;
+  marketIndex: number;
+  nonce: number;
+  direction: Direction;
+  price: bigint;
+  slippageBps: number;
+  priceUpdate: Address;
+  sizeDelta: bigint;
+}): Promise<Instruction> {
+  const [protocol] = await findProtocolPda();
+  const [userAccount] = await findUserAccountPda({
+    authority: p.signer.address,
+  });
+  const [market] = await findMarketPda({ marketIndex: p.marketIndex });
+  const [position] = await findPositionPda({
+    userAccount,
+    marketIndex: p.marketIndex,
+    nonce: p.nonce,
+  });
+  const [collateralVault] = await findCollateralVaultPda();
+  const [lpPool] = await findLpPoolPda();
+  const [lpVault] = await findLpVaultPda();
+  const [insuranceFund] = await findInsuranceFundPda();
+  const [insuranceVault] = await findInsuranceVaultPda();
+  const [feeVault] = await findFeeVaultPda();
+
+  return getDecreasePositionInstruction({
+    authority: p.signer,
+    protocol,
+    userAccount,
+    market,
+    position,
+    collateralVault,
+    lpPool,
+    lpVault,
+    insuranceFund,
+    insuranceVault,
+    feeVault,
+    priceUpdate: p.priceUpdate,
+    sizeDelta: p.sizeDelta,
     priceLimit: closePriceLimit(p.direction, p.price, p.slippageBps),
   });
 }

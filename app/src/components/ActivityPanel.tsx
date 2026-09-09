@@ -4,12 +4,13 @@ import type { Address } from "@solana/kit";
 import { PositionsPanel } from "@/components/PositionsPanel";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { SummaryPanel } from "@/components/SummaryPanel";
+import { AdlPanel } from "@/components/AdlPanel";
 import { useHistory } from "@/hooks/useHistory";
 import { EMPTY_TOTALS } from "@/lib/history";
 import type { LoadedMarket } from "@/lib/markets";
 import type { OpenPosition } from "@/lib/positions";
 
-type Tab = "positions" | "history" | "summary";
+type Tab = "positions" | "history" | "summary" | "adl";
 
 type Props = {
   positions: OpenPosition[];
@@ -56,6 +57,9 @@ export function ActivityPanel({
     { id: "positions", label: `Positions (${positions.length})` },
     { id: "history", label: "History" },
     { id: "summary", label: "Summary" },
+    // Not a control — there is nothing a trader can switch off. § 6.9 requires the venue to
+    // say ADL exists in plain language, and a tab is where that lives alongside the numbers.
+    { id: "adl", label: "ADL" },
   ];
 
   return (
@@ -111,13 +115,19 @@ export function ActivityPanel({
           loading={loading}
           loadError={error}
         />
-      ) : (
+      ) : tab === "summary" ? (
         <SummaryPanel
           totals={totals}
           positions={positions}
           truncated={truncated}
           loading={loading}
           loadError={error}
+        />
+      ) : (
+        <AdlPanel
+          positions={positions}
+          markets={markets}
+          active={tab === "adl"}
         />
       )}
     </div>

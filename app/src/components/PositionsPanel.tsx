@@ -11,6 +11,7 @@ import type { Address } from "@solana/kit";
 import type { LoadedMarket } from "@/lib/markets";
 import type { OpenPosition } from "@/lib/positions";
 import { CLOSE_POSITION_CU, buildClosePosition } from "@/lib/positions";
+import { ReducePanel } from "@/components/ReducePanel";
 import { TriggerPanel } from "@/components/TriggerPanel";
 import { useSend } from "@/hooks/useSend";
 import { useSigner } from "@/hooks/useSigner";
@@ -37,7 +38,17 @@ export function PositionsPanel({
   const signer = useSigner();
   const { send, busy, error, logs, reset } = useSend();
   const [closing, setClosing] = useState<string | undefined>(undefined);
-  const [expanded, setExpanded] = useState<string | undefined>(undefined);
+  // Which row is open, and which drawer it is showing. One at a time: two panels of controls
+  // under one row is a way to fat-finger a close while setting a stop.
+  const [expanded, setExpanded] = useState<
+    { readonly address: string; readonly mode: "sltp" | "reduce" } | undefined
+  >(undefined);
+
+  function toggle(address: string, mode: "sltp" | "reduce") {
+    setExpanded((e) =>
+      e?.address === address && e.mode === mode ? undefined : { address, mode },
+    );
+  }
 
   async function close(p: OpenPosition) {
     const price = prices[p.marketIndex];
@@ -180,14 +191,22 @@ export function PositionsPanel({
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-1.5">
                           <button
-                            onClick={() =>
-                              setExpanded(
-                                expanded === p.address ? undefined : p.address
-                              )
-                            }
+                            onClick={() => toggle(p.address, "sltp")}
                             className="rounded border border-line px-2.5 py-1 text-[11px] hover:border-brand"
                           >
-                            {expanded === p.address ? "Hide SL/TP" : "SL/TP"}
+                            {expanded?.address === p.address &&
+                            expanded.mode === "sltp"
+                              ? "Hide SL/TP"
+                              : "SL/TP"}
+                          </button>
+                          <button
+                            onClick={() => toggle(p.address, "reduce")}
+                            className="rounded border border-line px-2.5 py-1 text-[11px] hover:border-brand"
+                          >
+                            {expanded?.address === p.address &&
+                            expanded.mode === "reduce"
+                              ? "Hide reduce"
+                              : "Reduce"}
                           </button>
                           <button
                             onClick={() => void close(p)}
@@ -199,16 +218,29 @@ export function PositionsPanel({
                         </div>
                       </td>
                     </tr>
-                    {expanded === p.address ? (
+                    {expanded?.address === p.address ? (
                       <tr className="border-b border-line-soft/60">
                         <td colSpan={9} className="p-0">
-                          <TriggerPanel
-                            position={p}
-                            symbol={symbol}
-                            places={places}
-                            mark={mark}
-                            priceUpdate={priceAccounts[p.marketIndex]}
-                          />
+                          {expanded.mode === "sltp" ? (
+                            <TriggerPanel
+                              position={p}
+                              symbol={symbol}
+                              places={places}
+                              mark={mark}
+                              priceUpdate={priceAccounts[p.marketIndex]}
+                            />
+                          ) : (
+                            <ReducePanel
+                              position={p}
+                              symbol={symbol}
+                              mark={mark}
+                              priceUpdate={priceAccounts[p.marketIndex]}
+                              onDone={() => {
+                                setExpanded(undefined);
+                                onClosed();
+                              }}
+                            />
+                          )}
                         </td>
                       </tr>
                     ) : null}

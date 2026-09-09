@@ -14,6 +14,8 @@ export * from "./carry.js";
 export * from "./errors.js";
 export * from "./margin.js";
 export * from "./lp.js";
+export * from "./reduce.js";
+export * from "./adl.js";
 export * from "./contracts.js";
 export * from "./sizing.js";
 export * from "./pdas.js";
