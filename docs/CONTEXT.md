@@ -225,10 +225,23 @@ and the request → cooldown → settle withdrawal state machine. A **partners p
 `/partners`: the referral pool's real accrual from `solfx-core`, the tier ladder recomputed
 from `solfx-math`'s rules, and a trader's own referrer and generated fees.
 
-**Not built.** Named so a missing feature is not mistaken for a bug: partial-close UI (the
-program supports it; the ticket does not expose it), market search and favourites, ADL
-controls. IB **registration and claiming** are written in the SDK but not wired into the
-page — see below.
+**Phase 8's feature list is complete.** Partial closes (a Reduce drawer on each position row,
+routing 100% to `close_position` because `decrease_position` requires `size_delta < size_base`
+strictly), market search and favourites, and an ADL tab. What remains unwired is IB
+**registration and claiming**, which are written and tested in the SDK but wait on the
+referral programme being initialised — see below.
+
+**ADL is not a control and the page says so.** § 6.9 requires the venue to state in plain
+language, before a position is opened, that a trader's *profit* can be taken to cover someone
+else's loss. The risk disclosure did not mention it at all; it does now. The tab shows the
+insurance fund, whether a shortfall is outstanding, and each position ranked the way § 6.9
+ranks candidates — unrealised P&L against collateral, descending, with only positions in
+profit eligible at all.
+
+**The app has a test runner.** `vitest` in `app/`, wired into `npm run ci`. Note that
+`format:check` **was already failing on 21 files before any of this work** — verified against
+a pristine `HEAD` — so `npm run ci` is red at that step for reasons that predate Phase 8's
+final tranche.
 
 ### The referral programme is deployed and switched off
 
