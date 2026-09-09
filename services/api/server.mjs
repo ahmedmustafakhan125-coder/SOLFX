@@ -81,6 +81,10 @@ if (!RPC) console.error("[solfx-api] no SOLFX_RPC_URL — /rpc will return 502."
 const RPC_METHODS = new Set([
   "getAccountInfo", "getMultipleAccounts", "getProgramAccounts", "getBalance",
   "getLatestBlockhash", "isBlockhashValid", "getBlockHeight", "getSlot", "getEpochInfo",
+  // getBlockTime is the pool page's clock. A withdrawal cooldown compared against the
+  // browser's clock is a countdown that reaches zero before the program agrees it has, so
+  // the page asks the chain what time it is — and this list is what decides whether it may.
+  "getBlockTime",
   "getSignatureStatuses", "getSignaturesForAddress", "getTransaction",
   "sendTransaction", "simulateTransaction", "getFeeForMessage",
   "getMinimumBalanceForRentExemption", "getTokenAccountBalance", "getTokenAccountsByOwner",
