@@ -55,6 +55,13 @@ six seconds of headroom. One slow round trip and a trader gets `OracleStale` on 
 |---|---|
 | `--concurrency 6 --max-rps 5` | 0 clean passes, **193 × 429**, lag 87–124 s |
 | `--concurrency 4 --max-rps 4`, gateway burst 4→8 | 0 clean passes, **155 × 429**, lag 106 s |
+| poster → `api.devnet.solana.com` instead of Helius | **531 s for one pass, 3 of 6 posted**, three `not confirmed in 45s` |
+
+That last row is the one that closes off the cheap option. Public devnet serves *reads* fine —
+it is what the keeper has run on since 2026-09-09, measured at 19 calls in 0.6 s with zero
+429s — but it will not carry *transaction sends*: no stake-weighted QoS, so `post_update`
+confirmations simply time out. One pass took **fifteen times** the ~35 s the Helius path takes
+and lost half the feeds. The poster must stay on a keyed endpoint.
 
 Every one of those 429s came from **`http://127.0.0.1:8899/high` — the local rpc-gateway, not
 Helius.** The gateway is capped at `SOLFX_GATEWAY_RPS=9`, and six feeds × five transactions in
