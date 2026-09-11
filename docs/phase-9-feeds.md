@@ -60,6 +60,18 @@ window where disrupting the poster is acceptable — not one taken while the ven
 The keeper moved off Helius on 2026-09-09, so the poster now has that budget almost to itself,
 which is the headroom the experiment would draw on.
 
+## Decision, 2026-09-11: the venue stays at six pairs
+
+**Taken by the user, and it retires the "≥20 live markets" criterion.** A free Pyth tier plus
+the poster's throughput will not carry twenty feeds inside a 60-second gate, and 20 feeds is
+~100 transactions a pass in devnet SOL and RPC budget for no proportionate gain on a devnet
+demo. The six live pairs already span the variants that matter — direct USD-quoted (EUR/USD,
+XAU/USD, BTC/USD) and non-USD-quoted (USD/JPY, USD/CNH).
+
+What replaces it is the *point* of the original criterion rather than its number: § 12.5's
+extensibility test, run on the live deployment, proving a new market needs no redeploy and that
+pre-existing positions are untouched. See [`phase-9-prompt.md`](phase-9-prompt.md) Task 6.
+
 ## Two crypto markets are the cheap win
 
 **ETH/USD** and **SOL/USD** have Hermes feeds, are `FeedKind::Crypto`, and trade 24/7 — so
