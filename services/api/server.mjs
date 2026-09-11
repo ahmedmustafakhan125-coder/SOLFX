@@ -256,6 +256,57 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
+/**
+ * A per-IP budget on the three metered routes.
+ *
+ * `/rpc`, `/hermes` and `/pythpro` are unauthenticated by necessity — a browser cannot hold a
+ * secret — and each one spends someone's quota: `/rpc` a Helius key metered in credits,
+ * `/hermes` and `/pythpro` a Pyth key whose grants are the venue's entire price feed. The
+ * method allowlist on `/rpc` limits *what* a caller may ask for and says nothing about *how
+ * much*, so without this a single script can drain the month's credits in an afternoon and
+ * every market halts on staleness. That is not a hypothetical failure mode for this project:
+ * it is exactly what an expired Pyth grant did on 2026-09-11.
+ *
+ * A token bucket rather than a fixed window, so the terminal's bursty polling — several
+ * `getMultipleAccounts` at once, then idle — is not punished for arriving together. The
+ * numbers are set well above what one browser session needs (it polls every 8 s) and well
+ * below what a scraper wants.
+ */
+const RL_CAPACITY = Number(process.env.SOLFX_RL_BURST ?? 60);
+const RL_REFILL_PER_SEC = Number(process.env.SOLFX_RL_RPS ?? 6);
+const buckets = new Map();
+
+function rateLimited(req) {
+  // Behind Traefik, so the client is the first hop in X-Forwarded-For. Falls back to the
+  // socket address when the header is absent, which is the case for the loopback health probe.
+  const fwd = req.headers["x-forwarded-for"];
+  const ip = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim()
+    || req.socket.remoteAddress
+    || "unknown";
+
+  const now = Date.now();
+  let b = buckets.get(ip);
+  if (!b) {
+    b = { tokens: RL_CAPACITY, last: now };
+    buckets.set(ip, b);
+  }
+  b.tokens = Math.min(RL_CAPACITY, b.tokens + ((now - b.last) / 1000) * RL_REFILL_PER_SEC);
+  b.last = now;
+  if (b.tokens < 1) return true;
+  b.tokens -= 1;
+  return false;
+}
+
+// Bounded, so a flood of distinct source addresses cannot turn the limiter itself into the
+// memory leak that takes the service down. Buckets at full capacity are indistinguishable
+// from absent ones, so dropping them costs nothing.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, b] of buckets) {
+    if (b.tokens >= RL_CAPACITY && now - b.last > 300_000) buckets.delete(ip);
+  }
+}, 60_000).unref();
+
 const server = createServer((req, res) => {
   const { pathname, search } = new NodeURL(req.url ?? "/", "http://localhost");
 
@@ -274,6 +325,17 @@ const server = createServer((req, res) => {
     return void serveFile(res, join(PUBLIC_ROOT, "price-accounts.json")).catch(() =>
       serveStatic(req, res, pathname),
     );
+  }
+
+  const metered =
+    pathname === "/rpc" ||
+    pathname === "/hermes" || pathname.startsWith("/hermes/") ||
+    pathname === "/pythpro" || pathname.startsWith("/pythpro/");
+
+  if (metered && rateLimited(req)) {
+    res.writeHead(429, { "content-type": "application/json", "retry-after": "1" });
+    res.end(JSON.stringify({ error: "rate limited" }));
+    return;
   }
 
   if (pathname === "/rpc") return void rpcProxy(req, res);
