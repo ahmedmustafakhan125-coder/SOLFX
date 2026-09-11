@@ -301,6 +301,35 @@ So there is no free endpoint to fall back to when the trial expires on **11 Sep 
 happens to the key on that date is account state on pythdata.app and cannot be determined from
 any doc — check the dashboard before the date, not after.
 
+### What the expiry actually looked like — measured 2026-09-11
+
+The trial lapsed at **15:25:40 UTC on 11 Sep** (last clean pass 15:25:38), and within a minute
+every one of the nine markets was `Halted`: the feeds went stale, `crank_market_session` saw
+that and fail-closed. The protocol behaved correctly; the venue was simply shut.
+
+**It was not the key being revoked, and that distinction matters.** A bogus key returns
+`Not entitled: feed … (invalid API key)`. The expired trial key returned
+`Not entitled: feed … (no grant accepts this feed (asset type 'fx'|'metal'|'crypto',
+instrument type 'spot'))` — it still authenticated, but every *grant* covering the asset
+classes SolFX trades had lapsed. So the fix is a plan or grant on the account, not simply
+regenerating a key. All three asset classes went at once; there is no partial-service state to
+fall back on.
+
+Re-measured the same day, all without a key: `hermes.pyth.network` **401**,
+`hermes-beta.pyth.network` **401**, `pyth.dourolabs.app/hermes` **401**. The Pyth docs page
+"API Instances and Providers" still describes `hermes.pyth.network` as a public endpoint at
+10 requests / 10 seconds; **that page is out of date** and the measurement is what to trust.
+The MCP also lists node providers who serve Hermes — Triton, P2P, extrnode, Liquify — which is
+the avenue worth exploring if the account route ever fails.
+
+**Recovery is one command:** `./scripts/set-pyth-key.sh <key>`. It probes the key *before*
+touching anything (a bad key that gets written and rolled out destroys the evidence of what
+the old one was), backs up `.env`, restarts the poster, the keeper and the web container — the
+container needs `docker compose up -d`, not a signal, because `env_file` is re-read on up —
+and then waits for a **real clean pass** rather than reporting success because systemd says
+`active`. Recovery on 11 Sep took **~2 minutes to a clean pass** and about six more for the
+markets to walk `Halted → GapWindow → Active`.
+
 **Swapping the key is configuration, not code.** It lives in one place, `PYTH_API_KEY` in
 `.env`, and all three consumers read it from there: `price-poster` and `solfx-keeper` via
 clap's `env = "PYTH_API_KEY"`, and the browser via the Vite proxy, which injects the `Bearer`
