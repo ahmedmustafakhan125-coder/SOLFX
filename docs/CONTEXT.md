@@ -11,8 +11,9 @@ browser with Phantom.
 **The off-chain half runs 24/7 on the VPS.** Poster, keeper, gateway and web tier are all up
 and all `enable`d at boot as of 2026-09-09; six markets are `Active` and the keeper is
 cranking, liquidating and executing triggers. See *Deploying to a VPS* and *What unblocked
-it* below. Next: the test-suite honesty pass, then Phase 9. NOXFUNDING still starts only
-after all of that.
+it* below. **Phase 8's feature list is complete** and Phase 9 has started — its market ceiling
+is measured in [`phase-9-feeds.md`](phase-9-feeds.md) and it is **24 symbols, not 33**.
+NOXFUNDING still starts only after all of that.
 
 > **Session log:** [`CLAUDE-SESSION.md`](../CLAUDE-SESSION.md) at the repo root records what
 > changed on 2026-09-09 and when, including the things that are true but not yet fixed. Read it
