@@ -27,6 +27,13 @@ State as of 2026-09-11 20:00 UTC:
   the first thing to establish.
 - The Pyth key lapsed at 15:25 UTC and was replaced; the venue recovered at 19:47 UTC.
 
+**The MVP bar, set by the owner on 2026-09-11:** six pairs, their prices fresh inside the
+60-second gate, and *anyone can trade them without an error*. That is the standard everything
+below is measured against. Two things are explicitly **out of scope**: the indexer (transaction
+logs already back the history panel, and a database is another service to keep alive for a
+demo nobody will scroll) and IB registration/claiming (it matters on mainnet, not for this).
+NOXFUNDING comes later and will carry the impact.
+
 **A decision has been made that changes Phase 9's exit criteria: the venue stays at 6 pairs.**
 A free Pyth tier plus the poster's throughput will not carry 20 markets inside the 60-second
 staleness gate, so `ARCHITECTURE.md` § 15's "≥20 live markets" is being replaced. See
@@ -34,6 +41,36 @@ staleness gate, so `ARCHITECTURE.md` § 15's "≥20 live markets" is being repla
 feed at all, and every sponsored devnet feed measured 306 s stale against a 60 s gate.
 
 ---
+
+## Task 0 — the staleness margin, which is the MVP bar and is currently thin
+
+**Measured 2026-09-11 on the VPS:** with `--concurrency 2 --max-rps 2` the on-chain price age
+runs **median 50 s, max 54 s against the 60-second gate**. Zero rejections in 15 minutes, but
+six seconds of headroom. One slow round trip and a trader gets `OracleStale` on a button press
+— which is precisely the bar failing.
+
+**Two attempts to widen it failed, and the reason is recorded so nobody repeats them:**
+
+| Attempt | Result |
+|---|---|
+| `--concurrency 6 --max-rps 5` | 0 clean passes, **193 × 429**, lag 87–124 s |
+| `--concurrency 4 --max-rps 4`, gateway burst 4→8 | 0 clean passes, **155 × 429**, lag 106 s |
+
+Every one of those 429s came from **`http://127.0.0.1:8899/high` — the local rpc-gateway, not
+Helius.** The gateway is capped at `SOLFX_GATEWAY_RPS=9`, and six feeds × five transactions in
+one wave blows straight through it. Raising the burst alone did not help; the sustained 9/s is
+the wall. Reverted to 2/2, which is the measured-good configuration.
+
+So the lever is **not** poster tuning. Options, in order of honesty:
+
+1. **Raise the gateway's own ceiling** toward what the endpoint really allows, now that the
+   keeper is off Helius entirely (it moved to `api.devnet.solana.com` on 2026-09-09). The
+   gateway's 9/s was chosen when two processes shared it. Measure Helius's actual limit first.
+2. **A paid RPC tier**, which is what the poster's transaction sends are actually short of.
+3. **Accept 6 s of margin** and tell the demo audience nothing, which works until it doesn't.
+
+Whatever is chosen, the acceptance test is the same: run for an hour and assert **zero**
+`lag_secs >= 60` in the keeper's watchdog output.
 
 ## Task 1 — establish the baseline (do this first, alone)
 
@@ -162,7 +199,14 @@ row says "including a weekend gold trade", which is **permanently unattainable**
 Rewrite both exit criteria to what is being delivered, and say in the document *why* they
 changed, with the measurement behind it. A roadmap nobody can satisfy stops being a roadmap.
 
-## Task 8 — the two admin transactions that finish Phase 8's IB work
+## Task 8 — SKIPPED by decision: the IB admin transactions
+
+The owner has deferred this. `solfx-referral` stays deployed-and-off, `/partners` keeps
+reporting that honestly, and the SDK client stays tested-but-unwired. It matters when there is
+real money and real brokers; it does not move a devnet demo. **Do not do the work below unless
+that decision changes.**
+
+<details><summary>What it would take, when the time comes</summary>
 
 `solfx-referral` is deployed on devnet and holds **zero accounts**. The SDK client and the
 `/partners` page are written and tested; registration and claiming are unwired because there is
@@ -179,6 +223,8 @@ Note `fee_split_referral_bps` is **500** on devnet, not the 1000 § 8.3 assumes,
 from Bronze up is currently capped at the pool. `entitlement()` handles it; decide whether 500
 is the intended number.
 
+</details>
+
 ## Task 9 — replace the hand-written referral client with generated code
 
 `clients/js/src/referral/` is hand-written because `codama.json` names only the core IDL, and
@@ -194,9 +240,15 @@ cover the generated output.
 
 ## Order of work
 
-Task 1 first. Then start **Task 3's 24-hour run** as early as possible and do Tasks 2, 4, 5
-while it runs. Tasks 6 and 8 need the admin wallet and a live venue, so batch them. Task 7 is
-half an hour and should be done once 6 is known-good. Task 9 is independent.
+**Task 0 first — it is the MVP bar and everything else is decoration if a trade can fail.**
+Then Task 1. Then start **Task 3's 24-hour run** as early as possible and do Tasks 2, 4, 5
+while it runs. Task 6 needs the admin wallet and a live venue. Task 7 is half an hour once 6 is
+known-good. Task 9 is independent. **Task 8 is skipped by decision.**
+
+One scheduling fact that will otherwise waste a day: **FX and metals close Friday 21:00 UTC and
+reopen Sunday 21:00 UTC.** Five of the six pairs are legitimately `Halted` all weekend and only
+BTC/USD trades. If the demo lands on a weekend, list **ETH/USD** and **SOL/USD** first (Task 6)
+— they are crypto, 24/7, free, and they take the weekend-tradeable count from one to three.
 
 The last criterion — **30 days with zero fund-loss bugs** — is a calendar, and its clock cannot
 start until the rest is in place. Phase 9 is a four-week phase in `ARCHITECTURE.md`'s own
