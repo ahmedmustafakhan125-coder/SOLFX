@@ -20,7 +20,7 @@ Anchor, SPL or Pyth — not after.
 
 State as of 2026-09-11 20:00 UTC:
 
-- `main` has everything; Phase 8's feature list is complete. **11 commits are unpushed.**
+- `main` has everything and is **pushed to origin**; Phase 8's feature list is complete.
 - Devnet is live: program `2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi`, 9 markets listed,
   **6 Active** (EUR/USD, USD/JPY, USD/CNH, XAU/USD, XAG/USD, BTC/USD).
 - Tests: **198 SDK**, **15 app**, and a Rust suite the VPS could not run — its true count is
