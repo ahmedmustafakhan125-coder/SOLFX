@@ -33,7 +33,11 @@ function Tile({
   tone?: "long" | "short" | undefined;
 }) {
   const colour =
-    tone === "long" ? "text-long" : tone === "short" ? "text-short" : "text-ink";
+    tone === "long"
+      ? "text-long"
+      : tone === "short"
+        ? "text-short"
+        : "text-ink";
   return (
     <div className="rounded border border-line-soft bg-surface px-3 py-2.5">
       <div className="text-[10px] uppercase tracking-[0.1em] text-ink-dim">
@@ -47,7 +51,8 @@ function Tile({
   );
 }
 
-const signed = (v: bigint) => `${v >= 0n ? "+" : "−"}$${fmtUsd(v < 0n ? -v : v)}`;
+const signed = (v: bigint) =>
+  `${v >= 0n ? "+" : "−"}$${fmtUsd(v < 0n ? -v : v)}`;
 const tone = (v: bigint) => (v >= 0n ? ("long" as const) : ("short" as const));
 
 export function SummaryPanel({

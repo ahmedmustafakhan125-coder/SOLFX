@@ -62,11 +62,11 @@ export function useSolfx(pollMs = 8_000): State & { refresh: () => void } {
           } catch {
             return [m.feedIdHex, undefined] as const;
           }
-        }),
+        })
       );
       return Object.fromEntries(entries);
     },
-    [rpc],
+    [rpc]
   );
 
   const refresh = useCallback(() => {
@@ -87,14 +87,24 @@ export function useSolfx(pollMs = 8_000): State & { refresh: () => void } {
         const prices = await readPrices(markets);
         const map = mapRef.current;
         const priceAccounts = Object.fromEntries(
-          markets.map((m) => [m.feedIdHex, map?.forFeed(m.feedIdHex)]),
+          markets.map((m) => [m.feedIdHex, map?.forFeed(m.feedIdHex)])
         );
         if (!cancelled) {
-          setState({ markets, prices, priceAccounts, loading: false, error: undefined });
+          setState({
+            markets,
+            prices,
+            priceAccounts,
+            loading: false,
+            error: undefined,
+          });
         }
       } catch (e) {
         if (!cancelled) {
-          setState((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : String(e) }));
+          setState((s) => ({
+            ...s,
+            loading: false,
+            error: e instanceof Error ? e.message : String(e),
+          }));
         }
       }
     })();
@@ -112,7 +122,9 @@ export function useSolfx(pollMs = 8_000): State & { refresh: () => void } {
       void (async () => {
         setState((s) => {
           if (s.markets.length === 0) return s;
-          void readPrices(s.markets).then((prices) => setState((cur) => ({ ...cur, prices })));
+          void readPrices(s.markets).then((prices) =>
+            setState((cur) => ({ ...cur, prices }))
+          );
           return s;
         });
       })();

@@ -69,13 +69,20 @@ export function HistoryPanel({
         <table className="w-full min-w-[720px] text-xs">
           <thead className="text-[10px] uppercase tracking-[0.1em] text-ink-dim">
             <tr className="border-b border-line-soft">
-              {["Time", "Market", "Event", "Size", "Price", "Realised", "Fee", ""].map(
-                (h) => (
-                  <th key={h} className="px-3 py-2 text-left font-medium">
-                    {h}
-                  </th>
-                )
-              )}
+              {[
+                "Time",
+                "Market",
+                "Event",
+                "Size",
+                "Price",
+                "Realised",
+                "Fee",
+                "",
+              ].map((h) => (
+                <th key={h} className="px-3 py-2 text-left font-medium">
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>

@@ -23,10 +23,18 @@ const ME = {
   ] as { label: string; href: string }[],
 };
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="border-b border-line-soft py-3 last:border-0">
-      <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+        {label}
+      </div>
       <div className="mt-1 text-sm text-ink">{children}</div>
     </div>
   );
@@ -39,7 +47,9 @@ export function About() {
     <div className="min-h-screen bg-bg text-ink">
       <section className="border-b border-line-soft px-6 py-20 md:px-10">
         <div className="mx-auto max-w-4xl">
-          <div className="text-[10px] uppercase tracking-[0.2em] text-brand">About</div>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-brand">
+            About
+          </div>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight md:text-4xl">
             Who built this
           </h1>
@@ -50,7 +60,9 @@ export function About() {
         <div className="mx-auto grid max-w-4xl gap-10 md:grid-cols-[1fr_260px]">
           <div>
             <h2 className="text-xl font-bold">{ME.name}</h2>
-            {ME.role ? <p className="mt-1 text-sm text-brand-soft">{ME.role}</p> : null}
+            {ME.role ? (
+              <p className="mt-1 text-sm text-brand-soft">{ME.role}</p>
+            ) : null}
 
             {ME.bio.length > 0 ? (
               <div className="mt-6 space-y-4 text-sm leading-relaxed text-ink-muted">
@@ -60,45 +72,69 @@ export function About() {
               </div>
             ) : (
               <div className="mt-6 rounded-lg border border-warn/25 bg-warn/5 p-4 text-xs leading-relaxed text-warn">
-                This section is intentionally empty. Fill in <span className="tnum">ME</span> at
-                the top of <span className="tnum">src/pages/About.tsx</span> — role, location,
-                bio paragraphs and links. Nothing here was written on your behalf.
+                This section is intentionally empty. Fill in{" "}
+                <span className="tnum">ME</span> at the top of{" "}
+                <span className="tnum">src/pages/About.tsx</span> — role,
+                location, bio paragraphs and links. Nothing here was written on
+                your behalf.
               </div>
             )}
 
             <h3 className="mt-12 text-sm font-semibold">What SolFX is</h3>
             <div className="mt-3 space-y-4 text-sm leading-relaxed text-ink-muted">
               <p>
-                A non-custodial forex brokerage on Solana. Margin FX, metals and crypto,
-                settled in USDC, priced by Pyth, with the trading rules enforced by an on-chain
-                program rather than by a broker's back office.
+                A non-custodial forex brokerage on Solana. Margin FX, metals and
+                crypto, settled in USDC, priced by Pyth, with the trading rules
+                enforced by an on-chain program rather than by a broker's back
+                office.
               </p>
               <p>
-                It exists because retail FX is the one large market that on-chain trading has
-                mostly skipped. Perpetual DEXs compete over crypto; forex is still served by
-                brokers whose spreads, swap rates and execution you cannot inspect. Here the
-                swap rate is a field you can read before you open, and the rules that would
+                It exists because retail FX is the one large market that
+                on-chain trading has mostly skipped. Perpetual DEXs compete over
+                crypto; forex is still served by brokers whose spreads, swap
+                rates and execution you cannot inspect. Here the swap rate is a
+                field you can read before you open, and the rules that would
                 reject your order are the same ones anyone else can read.
               </p>
               <p>
-                Built from the arithmetic up: a dependency-free maths crate with property
-                tests, then the vault, then positions, risk, liquidations, an LP vault and an
-                introducing-broker programme — each with exit criteria rather than a deadline.
+                Built from the arithmetic up: a dependency-free maths crate with
+                property tests, then the vault, then positions, risk,
+                liquidations, an LP vault and an introducing-broker programme —
+                each with exit criteria rather than a deadline.
               </p>
             </div>
 
-            <h3 className="mt-12 text-sm font-semibold">Where it honestly stands</h3>
+            <h3 className="mt-12 text-sm font-semibold">
+              Where it honestly stands
+            </h3>
             <ul className="mt-3 space-y-2 text-sm leading-relaxed text-ink-muted">
-              <li>· Devnet only. Test money. Not production, and not investment advice.</li>
-              <li>· <strong className="text-ink">No external audit has been done.</strong></li>
-              <li>· Six markets, limited by oracle access rather than by the engine.</li>
-              <li>· 549 tests pass. That means the behaviours someone thought to test behave — nothing more.</li>
+              <li>
+                · Devnet only. Test money. Not production, and not investment
+                advice.
+              </li>
+              <li>
+                ·{" "}
+                <strong className="text-ink">
+                  No external audit has been done.
+                </strong>
+              </li>
+              <li>
+                · Six markets, limited by oracle access rather than by the
+                engine.
+              </li>
+              <li>
+                · 549 tests pass. That means the behaviours someone thought to
+                test behave — nothing more.
+              </li>
             </ul>
           </div>
 
           <aside className="space-y-1 rounded-lg border border-line-soft bg-surface p-5">
             <Field label="Contact">
-              <a className="underline hover:text-brand-soft" href={`mailto:${ME.email}`}>
+              <a
+                className="underline hover:text-brand-soft"
+                href={`mailto:${ME.email}`}
+              >
                 {ME.email}
               </a>
             </Field>
@@ -133,8 +169,12 @@ export function About() {
 
       <footer className="border-t border-line-soft px-6 py-10 md:px-10">
         <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4 text-xs text-ink-dim">
-          <Link to="/" className="hover:text-ink">← SolFX</Link>
-          <Link to="/trade" className="hover:text-ink">Open the terminal</Link>
+          <Link to="/" className="hover:text-ink">
+            ← SolFX
+          </Link>
+          <Link to="/trade" className="hover:text-ink">
+            Open the terminal
+          </Link>
         </div>
       </footer>
     </div>

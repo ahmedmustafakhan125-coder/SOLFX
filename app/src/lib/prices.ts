@@ -6,7 +6,11 @@
  * PDA. Deriving the sponsored address compiles and then reads an account nobody writes to.
  * `price-accounts.json` is the poster's own map, served as a static asset.
  */
-import { getPriceUpdateV2Decoder, PriceAccountMap, type PriceAccountEntry } from "@solfx/client";
+import {
+  getPriceUpdateV2Decoder,
+  PriceAccountMap,
+  type PriceAccountEntry,
+} from "@solfx/client";
 import type { Address, Rpc, SolanaRpcApi } from "@solana/kit";
 import { getBase64Encoder } from "@solana/kit";
 
@@ -46,9 +50,11 @@ export async function loadPriceMap(): Promise<PriceAccountMap> {
 
 export async function readPrice(
   rpc: Rpc<SolanaRpcApi>,
-  account: Address,
+  account: Address
 ): Promise<LivePrice | undefined> {
-  const { value } = await rpc.getAccountInfo(account, { encoding: "base64" }).send();
+  const { value } = await rpc
+    .getAccountInfo(account, { encoding: "base64" })
+    .send();
   if (!value) return undefined;
 
   const raw = new Uint8Array(getBase64Encoder().encode(value.data[0]));

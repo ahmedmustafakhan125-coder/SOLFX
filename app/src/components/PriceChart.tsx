@@ -7,7 +7,13 @@ import {
   type ISeriesApi,
 } from "lightweight-charts";
 
-import { fetchOhlc, toDisplay, TIMEFRAMES, type Ohlc, type Timeframe } from "@/lib/ohlc";
+import {
+  fetchOhlc,
+  toDisplay,
+  TIMEFRAMES,
+  type Ohlc,
+  type Timeframe,
+} from "@/lib/ohlc";
 import { PYTHPRO_URL } from "@/config";
 import type { LivePrice } from "@/lib/prices";
 import { priceplaces } from "@/lib/format";
@@ -62,7 +68,11 @@ export function PriceChart({ symbol, live, levels }: Props) {
         horzLines: { color: "rgba(76,69,70,0.35)" },
       },
       rightPriceScale: { borderColor: "#4c4546" },
-      timeScale: { borderColor: "#4c4546", timeVisible: true, secondsVisible: false },
+      timeScale: {
+        borderColor: "#4c4546",
+        timeVisible: true,
+        secondsVisible: false,
+      },
       crosshair: { mode: 1 },
       autoSize: true,
     });
@@ -94,14 +104,18 @@ export function PriceChart({ symbol, live, levels }: Props) {
     let cancelled = false;
     setState("loading");
     void (async () => {
-      const bars = await fetchOhlc(PYTHPRO_URL, symbol, tf).catch((): Ohlc[] => []);
+      const bars = await fetchOhlc(PYTHPRO_URL, symbol, tf).catch(
+        (): Ohlc[] => []
+      );
       if (cancelled) return;
       if (bars.length === 0) {
         setState("empty");
         return;
       }
       last.current = bars[bars.length - 1];
-      series.current?.setData(bars.map((b) => ({ ...b, time: b.time as never })));
+      series.current?.setData(
+        bars.map((b) => ({ ...b, time: b.time as never }))
+      );
       chart.current?.timeScale().fitContent();
       setState("ready");
     })();
@@ -129,7 +143,13 @@ export function PriceChart({ symbol, live, levels }: Props) {
             low: Math.min(prev.low, price),
             close: price,
           }
-        : { time: slot, open: prev?.close ?? price, high: price, low: price, close: price };
+        : {
+            time: slot,
+            open: prev?.close ?? price,
+            high: price,
+            low: price,
+            close: price,
+          };
 
     last.current = bar;
     series.current?.update({ ...bar, time: bar.time as never });
@@ -162,7 +182,7 @@ export function PriceChart({ symbol, live, levels }: Props) {
           lineStyle: level.kind === "liquidation" ? 2 : 0,
           axisLabelVisible: true,
           title: level.label,
-        }),
+        })
       );
     }
   }, [levels, state, tf, symbol]);

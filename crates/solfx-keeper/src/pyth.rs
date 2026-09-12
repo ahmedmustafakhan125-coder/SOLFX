@@ -337,11 +337,7 @@ impl Hermes {
                 "hermes refused {} feed(s) with 403 — the API key is not entitled to them, \
                  not a connectivity problem. Feeds: {}",
                 feed_ids.len(),
-                feed_ids
-                    .iter()
-                    .map(|id| feed_hex(id))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                feed_ids.iter().map(feed_hex).collect::<Vec<_>>().join(", ")
             );
         }
 

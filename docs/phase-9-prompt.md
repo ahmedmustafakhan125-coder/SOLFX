@@ -125,7 +125,7 @@ keeper's watchdog output.
 Nothing else is meaningful until these numbers are real rather than quoted.
 
 ```bash
-pgrep -a solana-test-validator   # must be empty before any cargo command
+ps aux | grep -q "[s]olana-test-validator"   # must find nothing before any cargo command
 anchor build
 cargo test --workspace 2>&1 | tail -30
 cargo fmt --all --check

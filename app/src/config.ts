@@ -13,7 +13,8 @@ export function rpcLabel(url: string): string {
     const host = new URL(url).hostname;
     if (host.includes("devnet")) return "devnet";
     if (host.includes("testnet")) return "testnet";
-    if (host.includes("127.0.0.1") || host.includes("localhost")) return "localnet";
+    if (host.includes("127.0.0.1") || host.includes("localhost"))
+      return "localnet";
     return host;
   } catch {
     return "rpc";
@@ -34,7 +35,9 @@ export function rpcLabel(url: string): string {
 export const HERMES_URL: string = import.meta.env.VITE_HERMES_URL ?? "/hermes";
 
 /** Unused when proxying; the proxy holds the token. Kept for a direct-fetch fallback. */
-export const HERMES_TOKEN: string | undefined = import.meta.env.VITE_HERMES_TOKEN;
+export const HERMES_TOKEN: string | undefined = import.meta.env
+  .VITE_HERMES_TOKEN;
 
 /** Pyth Pro History API, proxied — see the note in vite.config.ts. */
-export const PYTHPRO_URL: string = import.meta.env.VITE_PYTHPRO_URL ?? "/pythpro";
+export const PYTHPRO_URL: string =
+  import.meta.env.VITE_PYTHPRO_URL ?? "/pythpro";

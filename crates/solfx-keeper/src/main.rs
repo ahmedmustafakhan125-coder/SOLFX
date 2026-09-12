@@ -34,8 +34,13 @@ mod danger;
 // consumer uses every item — the poster resolves feeds but never reads a price account, the
 // keeper does the reverse — so "never used" is a property of which binary is compiling, not
 // dead code. The `#[path]` includes carry the same allow.
+//
+// Both need it, and each needs its *own* attribute: an outer attribute applies to the one
+// item that follows it. Inserting `price_map` between this block's allow and `mod pyth`
+// once moved the allow onto `price_map` and silently re-exposed three warnings in `pyth`.
 #[allow(dead_code)]
 mod price_map;
+#[allow(dead_code)]
 mod pyth;
 mod services;
 mod throttle;

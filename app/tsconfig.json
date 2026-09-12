@@ -2,11 +2,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": [
-      "ES2020",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -22,16 +18,9 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@solfx/client": [
-        "../clients/js/src/index.ts"
-      ],
-      "@/*": [
-        "./src/*"
-      ]
+      "@solfx/client": ["../clients/js/src/index.ts"],
+      "@/*": ["./src/*"]
     }
   },
-  "include": [
-    "src",
-    "../clients/js/src"
-  ]
+  "include": ["src", "../clients/js/src"]
 }

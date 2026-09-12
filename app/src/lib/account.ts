@@ -20,7 +20,13 @@ import {
   findAssociatedTokenPda,
   getCreateAssociatedTokenIdempotentInstructionAsync,
 } from "@solana-program/token";
-import type { Address, Instruction, Rpc, SolanaRpcApi, TransactionSigner } from "@solana/kit";
+import type {
+  Address,
+  Instruction,
+  Rpc,
+  SolanaRpcApi,
+  TransactionSigner,
+} from "@solana/kit";
 
 /** No referrer. The program binds this once at init and never reassigns it. */
 const NO_REFERRER = "11111111111111111111111111111111" as Address;
@@ -40,7 +46,7 @@ export type AccountStatus = {
 
 export async function readAccountStatus(
   rpc: Rpc<SolanaRpcApi>,
-  owner: Address,
+  owner: Address
 ): Promise<AccountStatus> {
   const [protocolPda] = await findProtocolPda();
   const protocol = await fetchProtocol(rpc, protocolPda);
@@ -101,7 +107,7 @@ function readU64LE(bytes: Uint8Array, offset: number): bigint {
 
 /** `initialize_user_account`, with the referrer left unset. */
 export async function buildInitUserAccount(
-  signer: TransactionSigner,
+  signer: TransactionSigner
 ): Promise<Instruction> {
   const [protocolPda] = await findProtocolPda();
   const [userAccount] = await findUserAccountPda({ authority: signer.address });
@@ -122,7 +128,7 @@ export async function buildDeposit(
   signer: TransactionSigner,
   usdcMint: Address,
   amount: bigint,
-  needsAta: boolean,
+  needsAta: boolean
 ): Promise<Instruction[]> {
   const [protocolPda] = await findProtocolPda();
   const [userAccount] = await findUserAccountPda({ authority: signer.address });
@@ -140,7 +146,7 @@ export async function buildDeposit(
         payer: signer,
         mint: usdcMint,
         owner: signer.address,
-      }),
+      })
     );
   }
   ixs.push(
@@ -152,7 +158,7 @@ export async function buildDeposit(
       collateralVault,
       userTokenAccount: ata,
       amount,
-    }),
+    })
   );
   return ixs;
 }
@@ -175,7 +181,7 @@ export async function buildDeposit(
 export async function buildWithdraw(
   signer: TransactionSigner,
   usdcMint: Address,
-  amount: bigint,
+  amount: bigint
 ): Promise<Instruction[]> {
   const [protocolPda] = await findProtocolPda();
   const [userAccount] = await findUserAccountPda({ authority: signer.address });

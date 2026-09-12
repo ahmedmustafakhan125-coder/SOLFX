@@ -77,7 +77,7 @@ export async function fetchOhlc(
   baseUrl: string,
   symbol: string,
   tf: Timeframe,
-  now = Math.floor(Date.now() / 1000),
+  now = Math.floor(Date.now() / 1000)
 ): Promise<Ohlc[]> {
   const url =
     `${baseUrl.replace(/\/$/, "")}/${CHANNEL}/history` +
@@ -97,8 +97,11 @@ export async function fetchOhlc(
     const low = d.l?.[i];
     const close = d.c?.[i];
     if (
-      time === undefined || open === undefined || high === undefined ||
-      low === undefined || close === undefined
+      time === undefined ||
+      open === undefined ||
+      high === undefined ||
+      low === undefined ||
+      close === undefined
     ) {
       continue;
     }

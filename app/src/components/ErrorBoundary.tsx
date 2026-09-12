@@ -29,21 +29,28 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="min-h-screen bg-bg p-6 text-ink md:p-10">
         <div className="mx-auto max-w-3xl">
-          <h1 className="text-lg font-bold text-short">The interface failed to render</h1>
+          <h1 className="text-lg font-bold text-short">
+            The interface failed to render
+          </h1>
           <p className="mt-2 text-xs text-ink-muted">
-            The error is below. Everything on chain is unaffected — this is a bug in the page,
-            not in the protocol.
+            The error is below. Everything on chain is unaffected — this is a
+            bug in the page, not in the protocol.
           </p>
 
           <div className="mt-5 rounded-lg border border-short/40 bg-short/5 p-4">
-            <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">Error</div>
+            <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+              Error
+            </div>
             <pre className="tnum mt-1 whitespace-pre-wrap break-words text-xs text-short">
               {error.name}: {error.message}
             </pre>
           </div>
 
           {error.stack ? (
-            <details open className="mt-3 rounded-lg border border-line-soft bg-surface p-4">
+            <details
+              open
+              className="mt-3 rounded-lg border border-line-soft bg-surface p-4"
+            >
               <summary className="cursor-pointer text-[10px] uppercase tracking-[0.16em] text-ink-dim">
                 Stack
               </summary>

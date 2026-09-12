@@ -20,7 +20,13 @@ import {
   findUserAccountPda,
   getOpenPositionInstruction,
 } from "@solfx/client";
-import type { Address, Instruction, Rpc, SolanaRpcApi, TransactionSigner } from "@solana/kit";
+import type {
+  Address,
+  Instruction,
+  Rpc,
+  SolanaRpcApi,
+  TransactionSigner,
+} from "@solana/kit";
 
 const BPS = 10_000n;
 
@@ -47,7 +53,11 @@ export type OpenParams = {
  * `validate_slippage` always compares, so passing 0 is not a way to opt out — it is a bound
  * of zero, which a long can never satisfy.
  */
-export function priceLimitFor(direction: Direction, price: bigint, slippageBps: number): bigint {
+export function priceLimitFor(
+  direction: Direction,
+  price: bigint,
+  slippageBps: number
+): bigint {
   const delta = (price * BigInt(slippageBps)) / BPS;
   return direction === Direction.Long ? price + delta : price - delta;
 }
@@ -63,21 +73,25 @@ export async function firstFreeNonce(
   rpc: Rpc<SolanaRpcApi>,
   userAccount: Address,
   marketIndex: number,
-  limit = 8,
+  limit = 8
 ): Promise<number | undefined> {
   const pdas = await Promise.all(
     Array.from({ length: limit }, (_, nonce) =>
-      findPositionPda({ userAccount, marketIndex, nonce }).then(([a]) => a),
-    ),
+      findPositionPda({ userAccount, marketIndex, nonce }).then(([a]) => a)
+    )
   );
-  const { value } = await rpc.getMultipleAccounts(pdas, { encoding: "base64" }).send();
+  const { value } = await rpc
+    .getMultipleAccounts(pdas, { encoding: "base64" })
+    .send();
   const free = value.findIndex((a) => a === null);
   return free === -1 ? undefined : free;
 }
 
 export async function buildOpenPosition(p: OpenParams): Promise<Instruction> {
   const [protocol] = await findProtocolPda();
-  const [userAccount] = await findUserAccountPda({ authority: p.signer.address });
+  const [userAccount] = await findUserAccountPda({
+    authority: p.signer.address,
+  });
   const [market] = await findMarketPda({ marketIndex: p.marketIndex });
   const [position] = await findPositionPda({
     userAccount,

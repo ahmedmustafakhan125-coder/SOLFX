@@ -190,7 +190,15 @@ export async function loadHistory(
 
   return {
     rows,
-    totals: { realised, fees, net: realised - fees, closes, wins, losses, volume },
+    totals: {
+      realised,
+      fees,
+      net: realised - fees,
+      closes,
+      wins,
+      losses,
+      volume,
+    },
     truncated: signatures.length >= limit,
   };
 }

@@ -1,8 +1,36 @@
 # SolFX — Complete Context and Build Status
 
-**Last updated:** 2026-09-07
-**Status:** Phases 1–7 complete. **Phase 8 (frontend + SDK) substantially built.**
-555 Rust tests + 128 SDK tests passing, clippy clean.
+**Last updated:** 2026-09-12
+**Status:** Phases 1–7 complete. **Phase 8 (frontend + SDK) substantially built.** Phase 9 in
+progress.
+
+**Test and lint baseline, measured 2026-09-12 on the local machine** (the VPS has ~2 GB free
+RAM and a `cargo build` OOM-killed itself there, so none of this could be verified from it):
+
+| Suite | Result |
+|---|---|
+| `cargo test --workspace` | **555 passed, 0 failed, 0 ignored** |
+| `cargo fmt --all --check` | clean |
+| `cargo clippy --workspace --all-targets` | **clean — 0 warnings** (7 fixed; see below) |
+| `npm --prefix clients/js test` | **198 passed** (11 files) |
+| `npm --prefix app run test` | **15 passed** (1 file) |
+| `npm --prefix app run ci` | **green** — was red at `format:check` |
+| `anchor build` | clean; `solfx_core.so` sha256 `eff0ceee…`, **byte-identical to devnet** |
+
+Three things the baseline corrected:
+
+- **Clippy was not clean**, though it exited 0: seven warnings in `solfx-keeper`. Four were
+  mine from the Phase 8 session, and one was a regression I had caused and then mislabelled as
+  pre-existing — inserting `mod price_map;` directly beneath the `#[allow(dead_code)]` that
+  belonged to `mod pyth;` moved the attribute onto the wrong module, silently re-exposing three
+  warnings. An outer attribute applies to the one item that follows it; both modules now carry
+  their own.
+- **`format:check` in `app/` failed on 33 files**, not the 21 the Phase 9 brief recorded — the
+  Phase 8 work added more. One `prettier --write` pass fixed it and `npm run ci` is green.
+- **`app/` had no usable `node_modules`** on this machine after the pull: `vitest` was missing,
+  and an interrupted install left `pathe.M-eThtNZ.mjs` as 12,786 NUL bytes. `npm ci` fixed it.
+  A truncated dependency file reads as a syntax error in someone else's package, which is a
+  long way from its cause.
 
 **Live on devnet.** Program `2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi`, 9 markets listed
 (6 active), on-chain IDL current at 38 instructions. Real trades open and close from the

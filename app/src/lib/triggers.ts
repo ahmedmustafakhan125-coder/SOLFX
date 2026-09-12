@@ -25,7 +25,13 @@ import {
   getPlaceTriggerOrderInstruction,
   getTriggerOrderDecoder,
 } from "@solfx/client";
-import type { Address, Instruction, Rpc, SolanaRpcApi, TransactionSigner } from "@solana/kit";
+import type {
+  Address,
+  Instruction,
+  Rpc,
+  SolanaRpcApi,
+  TransactionSigner,
+} from "@solana/kit";
 
 /** Placing one reads the oracle to check the side, so it costs more than a bare write. */
 export const PLACE_TRIGGER_CU = 90_000;
@@ -50,7 +56,7 @@ export function isPlaceable(
   kind: TriggerKind,
   direction: Direction,
   triggerPrice: bigint,
-  spot: bigint,
+  spot: bigint
 ): boolean {
   const firesWhenSpotRises =
     (kind === TriggerKind.TakeProfit && direction === Direction.Long) ||
@@ -59,7 +65,10 @@ export function isPlaceable(
 }
 
 /** Which side of the current price this trigger must sit on, for the UI to say so plainly. */
-export function requiredSide(kind: TriggerKind, direction: Direction): "above" | "below" {
+export function requiredSide(
+  kind: TriggerKind,
+  direction: Direction
+): "above" | "below" {
   const firesWhenSpotRises =
     (kind === TriggerKind.TakeProfit && direction === Direction.Long) ||
     (kind === TriggerKind.StopLoss && direction === Direction.Short);
@@ -84,14 +93,16 @@ export type RestingTrigger = {
 export async function readTriggers(
   rpc: Rpc<SolanaRpcApi>,
   position: Address,
-  limit = 8,
+  limit = 8
 ): Promise<RestingTrigger[]> {
   const pdas = await Promise.all(
     Array.from({ length: limit }, (_, orderId) =>
-      findTriggerOrderPda({ position, orderId }).then(([a]) => a),
-    ),
+      findTriggerOrderPda({ position, orderId }).then(([a]) => a)
+    )
   );
-  const { value } = await rpc.getMultipleAccounts(pdas, { encoding: "base64" }).send();
+  const { value } = await rpc
+    .getMultipleAccounts(pdas, { encoding: "base64" })
+    .send();
 
   const out: RestingTrigger[] = [];
   const decoder = getTriggerOrderDecoder();
@@ -116,15 +127,17 @@ export async function readTriggers(
 export async function firstFreeOrderId(
   rpc: Rpc<SolanaRpcApi>,
   position: Address,
-  limit = 8,
+  limit = 8
 ): Promise<number | undefined> {
   const scan = Math.min(limit, MAX_ORDER_ID);
   const pdas = await Promise.all(
     Array.from({ length: scan }, (_, orderId) =>
-      findTriggerOrderPda({ position, orderId }).then(([a]) => a),
-    ),
+      findTriggerOrderPda({ position, orderId }).then(([a]) => a)
+    )
   );
-  const { value } = await rpc.getMultipleAccounts(pdas, { encoding: "base64" }).send();
+  const { value } = await rpc
+    .getMultipleAccounts(pdas, { encoding: "base64" })
+    .send();
   const free = value.findIndex((a) => a === null);
   return free === -1 ? undefined : free;
 }
@@ -144,7 +157,9 @@ export type PlaceParams = {
 
 export async function buildPlaceTrigger(p: PlaceParams): Promise<Instruction> {
   const [protocol] = await findProtocolPda();
-  const [userAccount] = await findUserAccountPda({ authority: p.signer.address });
+  const [userAccount] = await findUserAccountPda({
+    authority: p.signer.address,
+  });
   const [market] = await findMarketPda({ marketIndex: p.marketIndex });
   const [triggerOrder] = await findTriggerOrderPda({
     position: p.position,
@@ -174,7 +189,7 @@ export async function buildPlaceTrigger(p: PlaceParams): Promise<Instruction> {
  */
 export function buildCancelTrigger(
   signer: TransactionSigner,
-  triggerOrder: Address,
+  triggerOrder: Address
 ): Instruction {
   return getCancelTriggerOrderInstruction({ authority: signer, triggerOrder });
 }

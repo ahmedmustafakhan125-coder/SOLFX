@@ -35,11 +35,12 @@ mod contracts;
 // The feed id → price account map, shared with the keeper rather than reimplemented. Both
 // have to agree about where a self-posted price lives; two loaders would drift and the
 // symptom would be a transaction rejected on chain, not a test failure.
+#[allow(dead_code)]
 #[path = "../price_map.rs"]
 mod price_map;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anchor_lang::{AccountDeserialize, InstructionData as _, ToAccountMetas as _};
 use anyhow::{anyhow, bail, Context as _, Result};
@@ -831,7 +832,7 @@ impl Deployment {
     }
 }
 
-fn load_price_accounts(path: &PathBuf) -> Result<HashMap<String, Pubkey>> {
+fn load_price_accounts(path: &Path) -> Result<HashMap<String, Pubkey>> {
     Ok(price_map::by_symbol(&price_map::load(path)?))
 }
 

@@ -55,7 +55,9 @@ export function feedHex(m: Market): string {
  * not hidden here: a client that silently drops accounts cannot explain why a market it once
  * showed has gone.
  */
-export async function loadMarkets(rpc: Rpc<SolanaRpcApi>): Promise<LoadedMarket[]> {
+export async function loadMarkets(
+  rpc: Rpc<SolanaRpcApi>
+): Promise<LoadedMarket[]> {
   const [protocolPda] = await findProtocolPda();
   const protocol = await fetchProtocol(rpc, protocolPda);
 

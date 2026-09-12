@@ -46,7 +46,7 @@ export function PositionsPanel({
 
   function toggle(address: string, mode: "sltp" | "reduce") {
     setExpanded((e) =>
-      e?.address === address && e.mode === mode ? undefined : { address, mode },
+      e?.address === address && e.mode === mode ? undefined : { address, mode }
     );
   }
 

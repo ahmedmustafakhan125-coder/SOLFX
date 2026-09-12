@@ -16,17 +16,26 @@ import type { Address, Rpc, SolanaRpcApi } from "@solana/kit";
 import { buildDeposit, readAccountStatus } from "../src/lib/account.js";
 
 async function main() {
-  const rpc = createSolanaRpc(process.env.SOLFX_RPC_URL!) as unknown as Rpc<SolanaRpcApi>;
+  const rpc = createSolanaRpc(
+    process.env.SOLFX_RPC_URL!
+  ) as unknown as Rpc<SolanaRpcApi>;
   const owner = "7ktphnZe9rER59HanbM6mDk9aDAbvc2pcjDcPWDvBdWs" as Address;
   const signer = createNoopSigner(owner);
 
   const status = await readAccountStatus(rpc, owner);
   const amount = 1_000_000n; // $1
-  const ixs = await buildDeposit(signer, status.usdcMint, amount, !status.hasAta);
+  const ixs = await buildDeposit(
+    signer,
+    status.usdcMint,
+    amount,
+    !status.hasAta
+  );
 
   console.log(`instructions: ${ixs.length}`);
   for (const ix of ixs) {
-    console.log(`  program ${ix.programAddress}  accounts=${ix.accounts?.length ?? 0}`);
+    console.log(
+      `  program ${ix.programAddress}  accounts=${ix.accounts?.length ?? 0}`
+    );
   }
 
   const { value: blockhash } = await rpc.getLatestBlockhash().send();
@@ -34,12 +43,16 @@ async function main() {
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(signer, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstructions(ixs, m),
+    (m) => appendTransactionMessageInstructions(ixs, m)
   );
   const wire = getBase64EncodedWireTransaction(compileTransaction(msg));
 
   const sim = await rpc
-    .simulateTransaction(wire, { encoding: "base64", sigVerify: false, replaceRecentBlockhash: true })
+    .simulateTransaction(wire, {
+      encoding: "base64",
+      sigVerify: false,
+      replaceRecentBlockhash: true,
+    })
     .send();
 
   console.log(`\nsimulation err : ${JSON.stringify(sim.value.err)}`);

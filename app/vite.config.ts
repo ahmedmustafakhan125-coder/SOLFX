@@ -14,7 +14,10 @@ const sdk = fileURLToPath(new URL("../clients/js/src", import.meta.url));
  */
 function hermesToken(): string {
   try {
-    const env = readFileSync(fileURLToPath(new URL("../.env", import.meta.url)), "utf8");
+    const env = readFileSync(
+      fileURLToPath(new URL("../.env", import.meta.url)),
+      "utf8"
+    );
     return /^PYTH_API_KEY=(.*)$/m.exec(env)?.[1]?.trim() ?? "";
   } catch {
     return "";
@@ -29,7 +32,10 @@ export default defineConfig({
       // compile step to keep in sync, and the generated client stays a single source of
       // truth for both this app and the Node scripts.
       { find: /^@solfx\/client$/, replacement: `${sdk}/index.ts` },
-      { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
+      {
+        find: "@",
+        replacement: fileURLToPath(new URL("./src", import.meta.url)),
+      },
     ],
   },
   optimizeDeps: {

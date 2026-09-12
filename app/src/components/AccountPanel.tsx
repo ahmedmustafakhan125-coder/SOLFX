@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { useWalletConnection } from "@solana/react-hooks";
 
-import { buildDeposit, buildInitUserAccount, buildWithdraw } from "@/lib/account";
+import {
+  buildDeposit,
+  buildInitUserAccount,
+  buildWithdraw,
+} from "@/lib/account";
 import { useAccount } from "@/hooks/useAccount";
 import { useSigner } from "@/hooks/useSigner";
 import { useSend } from "@/hooks/useSend";
@@ -14,7 +18,8 @@ function toQuote(text: string): bigint | undefined {
   const t = text.trim();
   if (!/^\d+(\.\d{0,6})?$/.test(t)) return undefined;
   const [whole = "0", frac = ""] = t.split(".");
-  const v = BigInt(whole) * QUOTE_PRECISION + BigInt(frac.padEnd(6, "0") || "0");
+  const v =
+    BigInt(whole) * QUOTE_PRECISION + BigInt(frac.padEnd(6, "0") || "0");
   return v > 0n ? v : undefined;
 }
 
@@ -39,7 +44,10 @@ export function AccountPanel() {
   // protocol's `free_collateral` field on the way out. Both are figures we read rather than
   // compute — the margin rule that decides a withdrawal belongs to the program, and a second
   // copy of it here would be an unaudited margin engine that disagrees by a rounding step.
-  const ceiling = mode === "deposit" ? (status?.walletUsdc ?? 0n) : (status?.freeCollateral ?? 0n);
+  const ceiling =
+    mode === "deposit"
+      ? (status?.walletUsdc ?? 0n)
+      : (status?.freeCollateral ?? 0n);
 
   async function onInit() {
     if (!signer) return;
@@ -61,8 +69,12 @@ export function AccountPanel() {
   return (
     <div className="space-y-3 border-b border-line-soft p-4">
       <div className="flex items-baseline justify-between">
-        <span className="text-[10px] uppercase tracking-[0.18em] text-ink-dim">Account</span>
-        {loading ? <span className="text-[10px] text-ink-dim">reading…</span> : null}
+        <span className="text-[10px] uppercase tracking-[0.18em] text-ink-dim">
+          Account
+        </span>
+        {loading ? (
+          <span className="text-[10px] text-ink-dim">reading…</span>
+        ) : null}
       </div>
 
       {error ? (
@@ -87,8 +99,8 @@ export function AccountPanel() {
           {!status.hasUserAccount ? (
             <>
               <p className="text-[11px] leading-relaxed text-ink-dim">
-                This wallet has no SolFX account yet. One transaction creates it; the
-                referrer is bound once at creation and never reassigned.
+                This wallet has no SolFX account yet. One transaction creates
+                it; the referrer is bound once at creation and never reassigned.
               </p>
               <button
                 onClick={() => void onInit()}
@@ -120,7 +132,9 @@ export function AccountPanel() {
 
               <label className="block">
                 <span className="mb-1 block text-[10px] uppercase tracking-[0.14em] text-ink-dim">
-                  {mode === "deposit" ? "Deposit collateral (USDC)" : "Withdraw collateral (USDC)"}
+                  {mode === "deposit"
+                    ? "Deposit collateral (USDC)"
+                    : "Withdraw collateral (USDC)"}
                 </span>
                 <input
                   value={amount}
@@ -143,14 +157,17 @@ export function AccountPanel() {
               ) : null}
               {mode === "withdraw" ? (
                 <p className="text-[11px] leading-relaxed text-ink-dim">
-                  Free collateral is what is not backing an open position. The program checks
-                  this again on chain and refuses anything that would leave a position
-                  under-margined — this figure is its own, not an estimate.
+                  Free collateral is what is not backing an open position. The
+                  program checks this again on chain and refuses anything that
+                  would leave a position under-margined — this figure is its
+                  own, not an estimate.
                 </p>
               ) : null}
               <button
                 onClick={() => void onSubmit()}
-                disabled={busy || !signer || parsed === undefined || parsed > ceiling}
+                disabled={
+                  busy || !signer || parsed === undefined || parsed > ceiling
+                }
                 className="w-full rounded-md bg-brand py-2 text-xs font-semibold text-white hover:bg-brand-dim disabled:opacity-50"
               >
                 {busy

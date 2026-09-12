@@ -26,7 +26,8 @@ function toPrice(text: string): bigint | undefined {
   const t = text.trim();
   if (!/^\d+(\.\d{0,9})?$/.test(t)) return undefined;
   const [whole = "0", frac = ""] = t.split(".");
-  const v = BigInt(whole) * PRICE_PRECISION + BigInt(frac.padEnd(9, "0") || "0");
+  const v =
+    BigInt(whole) * PRICE_PRECISION + BigInt(frac.padEnd(9, "0") || "0");
   return v > 0n ? v : undefined;
 }
 
@@ -39,7 +40,13 @@ type Props = {
   priceUpdate: Address | undefined;
 };
 
-export function TriggerPanel({ position, symbol, places, mark, priceUpdate }: Props) {
+export function TriggerPanel({
+  position,
+  symbol,
+  places,
+  mark,
+  priceUpdate,
+}: Props) {
   const rpc = useRpc();
   const signer = useSigner();
   const { send, busy, error, logs, reset } = useSend();
@@ -88,16 +95,18 @@ export function TriggerPanel({ position, symbol, places, mark, priceUpdate }: Pr
   async function cancel(t: RestingTrigger) {
     if (!signer) return;
     reset();
-    if (await send([buildCancelTrigger(signer, t.address)], CANCEL_TRIGGER_CU)) refresh();
+    if (await send([buildCancelTrigger(signer, t.address)], CANCEL_TRIGGER_CU))
+      refresh();
   }
 
   return (
     <div className="space-y-3 bg-surface-high/40 px-5 py-3">
       <p className="max-w-2xl text-[11px] leading-relaxed text-ink-dim">
-        A trigger fires when the <span className="text-ink">oracle</span> crosses your price,
-        then closes at the execution price — which includes the spread, and in a gap may be
-        well past the trigger. It is not a guaranteed fill. The order rests on chain, so
-        anyone can execute it and you can verify it exists without trusting us.
+        A trigger fires when the <span className="text-ink">oracle</span>{" "}
+        crosses your price, then closes at the execution price — which includes
+        the spread, and in a gap may be well past the trigger. It is not a
+        guaranteed fill. The order rests on chain, so anyone can execute it and
+        you can verify it exists without trusting us.
       </p>
 
       {resting.length > 0 ? (
@@ -111,7 +120,8 @@ export function TriggerPanel({ position, symbol, places, mark, priceUpdate }: Pr
                 {t.kind === TriggerKind.StopLoss ? "Stop loss" : "Take profit"}
               </span>
               <span className="tnum text-ink-dim">
-                at {fmtPrice(t.triggerPrice, places)} · {fmtBase(t.sizeBase)} units
+                at {fmtPrice(t.triggerPrice, places)} · {fmtBase(t.sizeBase)}{" "}
+                units
               </span>
               <button
                 onClick={() => void cancel(t)}
@@ -124,7 +134,9 @@ export function TriggerPanel({ position, symbol, places, mark, priceUpdate }: Pr
           ))}
         </ul>
       ) : (
-        <p className="text-[11px] text-ink-dim">No resting orders on this position.</p>
+        <p className="text-[11px] text-ink-dim">
+          No resting orders on this position.
+        </p>
       )}
 
       <div className="flex flex-wrap items-end gap-2">
@@ -141,7 +153,9 @@ export function TriggerPanel({ position, symbol, places, mark, priceUpdate }: Pr
               onClick={() => setKind(k)}
               className={
                 "rounded px-2.5 py-1 text-[11px] font-medium transition-colors " +
-                (kind === k ? "bg-brand text-white" : "text-ink-dim hover:text-ink")
+                (kind === k
+                  ? "bg-brand text-white"
+                  : "text-ink-dim hover:text-ink")
               }
             >
               {label}
@@ -164,7 +178,9 @@ export function TriggerPanel({ position, symbol, places, mark, priceUpdate }: Pr
 
         <button
           onClick={() => void place()}
-          disabled={busy || !signer || parsed === undefined || wrongSide || !priceUpdate}
+          disabled={
+            busy || !signer || parsed === undefined || wrongSide || !priceUpdate
+          }
           className="rounded bg-brand px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-brand-dim disabled:opacity-40"
         >
           {busy ? "Confirming…" : "Place"}
@@ -174,9 +190,10 @@ export function TriggerPanel({ position, symbol, places, mark, priceUpdate }: Pr
       {wrongSide ? (
         <p className="text-[11px] text-warn">
           A {kind === TriggerKind.StopLoss ? "stop loss" : "take profit"} on a{" "}
-          {position.data.direction === Direction.Long ? "long" : "short"} must sit {side} the
-          current price. Placed on the other side it is already met, so it would fire on the
-          next keeper pass — the program rejects it as <span className="tnum">TriggerAlreadyMet</span>.
+          {position.data.direction === Direction.Long ? "long" : "short"} must
+          sit {side} the current price. Placed on the other side it is already
+          met, so it would fire on the next keeper pass — the program rejects it
+          as <span className="tnum">TriggerAlreadyMet</span>.
         </p>
       ) : null}
 

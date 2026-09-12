@@ -12,7 +12,10 @@ function parts(value: bigint, scale: bigint, places: number): string {
   const v = neg ? -value : value;
   const whole = v / scale;
   const frac = v % scale;
-  const digits = frac.toString().padStart(scale.toString().length - 1, "0").slice(0, places);
+  const digits = frac
+    .toString()
+    .padStart(scale.toString().length - 1, "0")
+    .slice(0, places);
   const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${neg ? "-" : ""}${grouped}${places > 0 ? `.${digits}` : ""}`;
 }
@@ -40,7 +43,12 @@ export function fmtBps(bps: number): string {
 export function priceplaces(symbol: string): number {
   const s = symbol.toUpperCase();
   if (s.includes("JPY")) return 3;
-  if (s.startsWith("BTC") || s.startsWith("ETH") || s.startsWith("XAU") || s.startsWith("XAG")) {
+  if (
+    s.startsWith("BTC") ||
+    s.startsWith("ETH") ||
+    s.startsWith("XAU") ||
+    s.startsWith("XAG")
+  ) {
     return 2;
   }
   return 5;
