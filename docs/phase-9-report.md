@@ -107,8 +107,37 @@ Two things still unproven, and both must be before it ships:
 1. **Our own five-instruction path**, end to end on localnet. The shape is documented; this
    particular sequence against this program is not yet demonstrated.
 2. Whether more than one `post_update` fits in a single transaction, which would cut the floor
-   further. Each adds a signature (the price update account signs) plus its merkle proof, so
-   this is a packet-size question with a measurable answer.
+   further. **Answered on the VPS, 2026-09-12 18:00 UTC — and the answer is "by twelve bytes,
+   no".**
+
+   One Hermes request for the six feeds returned one 2,271-byte `PNAU` blob: **one 292-byte
+   VAA carrying six updates**, each with **85 B of message and a 12-hash proof — 326 B of
+   calldata per feed**. Computing the transaction from the receiver's own account list:
+
+   | posts per tx | size | |
+   |---|---:|---|
+   | 1 | 801 B | fits |
+   | **2** | **1,244 B** | **12 B over the 1,232 limit** |
+   | 3 | 1,687 B | over |
+
+   So the floor is **10 sends, not 7**, unless the transaction shrinks. Twelve bytes is inside
+   reach of an **address lookup table**: five of the seven accounts are identical across all
+   six posts (`encoded_vaa`, `config`, `treasury`, `system_program`, program id), and an ALT
+   replaces each 32-byte key with a 1-byte index — about 155 B saved, enough for two posts and
+   possibly three. `.claude/rules/solana.md` § 6 already names ALTs as the escape hatch for
+   exactly this. **This is arithmetic with stated assumptions, not a measurement**; at a 1 %
+   margin it must be confirmed by building the transaction and reading `serialize().len()`
+   before anyone plans around it.
+
+   **10 sends is already the 3× win. Take it first; the ALT is a second, separate 30 %.**
+
+3. **A correction to the "publish_time spread: 0 s" figure above.** Re-measured on Saturday it
+   was **75,689 s — about 21 hours**, which is the time since Friday's 21:00 UTC FX close. Both
+   readings are right for their conditions: on a weekday all six publish together, at the
+   weekend the five session-bound feeds carry Friday's last print while BTC/USD is current. It
+   changes nothing about the batching — each `post_update` writes its own feed's
+   `publish_time`, so a stale one still halts its own market and no other — but "0 s" should
+   not be read as a property of the batch.
 
 ### Alternatives, if the fix above is not taken
 

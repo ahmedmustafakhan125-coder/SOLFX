@@ -1535,8 +1535,27 @@ The v0 four-phase plan covers roughly the first 40% of the work. Revised, with *
 | **5. LP vault** | Add/remove liquidity, LP token, cooldown, fee distribution | LP accounting exact under adversarial sequences; I2, I8 hold | 2 wks |
 | **6. IB programme** | `solfx-referral` – immutable binding, per-trade accrual, permissionless claim | Rebates accrue and claim correctly; every rebate emits a verifiable event; tier boundaries tested | 2 wks |
 | **7. Keepers** | Liquidator, trigger executor, crankers, monitoring – **7-day operation** | Sub-2s liquidations under load; survives an instance being killed; verified firing during a live weekend | 3 wks |
-| **8. Frontend + SDK** | Broker terminal (§ 10.2), TypeScript SDK, indexer, price relayer | End-to-end browser trade on devnet **including a weekend gold trade** | 5 wks |
-| **9. Expansion + hardening** | List Tiers 2–3 (~15 markets, config only), fuzzing, scenario replays | Trident 24h clean; all scenarios pass; >90% coverage; ≥20 live markets; **§ 12.5 extensibility test passes**; 30 days zero fund-loss bugs | 4 wks |
+| **8. Frontend + SDK** | Broker terminal (§ 10.2), TypeScript SDK, price relayer | End-to-end browser trade on devnet, on a session-bound pair **and** a 24/7 pair | 5 wks |
+| **9. Expansion + hardening** | Fuzzing, scenario replays, extensibility proof | Fuzzer 24 h clean **on the money paths, scope stated**; all scenarios pass; >90 % coverage **on `solfx-math` and `instructions/`**; **§ 12.5 extensibility test passes**; 30 days zero fund-loss bugs | 4 wks |
+
+> **Both exit criteria above were amended on 2026-09-12, and the originals are recorded here
+> because a roadmap that quietly rewrites its own targets is worthless.**
+>
+> - Phase 8 said *"including a weekend gold trade"*. **No such trade can ever happen.** Q1b
+>   established that Pyth publishes no 24/7 metals feed in the public catalogue, and
+>   `initialize_market` rejects `FeedKind::ContinuousIndex` outright — the variant that would
+>   carry one. The criterion was unsatisfiable from the day it was written. It is replaced by
+>   what it was reaching for: proof that the terminal works across *both* session regimes.
+>   **"Indexer" is also dropped** — trade history is served from transaction logs, and a
+>   database is deferred to mainnet rather than pretended into a devnet demo.
+> - Phase 9 said *"≥20 live markets"* and *"Trident 24h clean"*. Only **24 of the 33** planned
+>   symbols have a Hermes feed at all ([`phase-9-feeds.md`](phase-9-feeds.md)), and the poster
+>   is bounded by Helius's free-tier **1 `sendTransaction`/second**, which is what actually
+>   caps the feed count ([`phase-9-report.md`](phase-9-report.md)). Twenty markets is a
+>   purchase, not an engineering step, so the criterion is replaced by § 12.5's extensibility
+>   test — which is what "≥20 markets" was evidence *for*. Trident is replaced by `anchor fuzz`
+>   (Crucible), which Anchor 1.1.2 ships, and the coverage figure is now scoped to the two
+>   crates where the money arithmetic lives rather than averaged across glue code.
 
 **→ Capstone complete at Phase 9: ~31 weeks (~7.5 months full-time).** Part-time alongside study: 14–18 months.
 
