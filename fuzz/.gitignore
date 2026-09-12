@@ -1,0 +1,9 @@
+# `target` here is a symlink to ~/.cargo-target (the /mnt/e 9p mount is ~200x slower for
+# small-file I/O). A trailing slash matches directories only, so a symlink slips past it.
+*/target
+*/target/
+*/crashes/
+.fuzz-cache/
+# Run logs live outside the repo; corpora are regenerable and large.
+*/corpus/
+*.log
