@@ -63,21 +63,62 @@ it is what the keeper has run on since 2026-09-09, measured at 19 calls in 0.6 s
 confirmations simply time out. One pass took **fifteen times** the ~35 s the Helius path takes
 and lost half the feeds. The poster must stay on a keyed endpoint.
 
-Every one of those 429s came from **`http://127.0.0.1:8899/high` — the local rpc-gateway, not
-Helius.** The gateway is capped at `SOLFX_GATEWAY_RPS=9`, and six feeds × five transactions in
-one wave blows straight through it. Raising the burst alone did not help; the sustained 9/s is
-the wall. Reverted to 2/2, which is the measured-good configuration.
+### Who actually refused — corrected 2026-09-12
 
-So the lever is **not** poster tuning. Options, in order of honesty:
+**An earlier draft of this brief blamed the local rpc-gateway. That was wrong**, and the
+mistake is worth keeping because the evidence looked conclusive and was not: the errors read
+`429 ... for url (http://127.0.0.1:8899/high)`, which names the gateway. But
+`services/rpc-gateway/gateway.mjs:176` does `res.writeHead(upstreamRes.status, …)` — it relays
+the upstream status **verbatim**, so a Helius 429 arrives wearing the gateway's address. The
+URL in that error can never identify who refused.
 
-1. **Raise the gateway's own ceiling** toward what the endpoint really allows, now that the
-   keeper is off Helius entirely (it moved to `api.devnet.solana.com` on 2026-09-09). The
-   gateway's 9/s was chosen when two processes shared it. Measure Helius's actual limit first.
-2. **A paid RPC tier**, which is what the poster's transaction sends are actually short of.
-3. **Accept 6 s of margin** and tell the demo audience nothing, which works until it doesn't.
+The gateway's own counters settle it. During both failed experiments:
 
-Whatever is chosen, the acceptance test is the same: run for an hour and assert **zero**
-`lag_secs >= 60` in the keeper's watchdog output.
+```
+shed=0 upstream429=163
+shed=0 upstream429=156
+shed=0 upstream429=181
+```
+
+**`shed=0` throughout — the gateway refused nothing. Every 429 was Helius.** Check it yourself
+with `journalctl -u solfx-rpc-gateway --since -1h | grep -o 'shed=[0-9]* upstream429=[0-9]*'`.
+
+### The real constraint, and why no tuning was ever going to fix it
+
+**Helius Free caps `sendTransaction` at 1/second, separately from its 10 req/s general limit.**
+That single number explains all three measurements rather than being fitted to them: each
+in-flight feed emits ~0.33 sends/s, so concurrency 2 sits at ~0.66/s and passes, while 4
+(~1.33/s) and 6 (~2/s) sit over the cap and fail — exactly as observed.
+
+It also explains the thin margin. The VAA measured **292 bytes** from the poster's own on-chain
+transactions, so one feed costs **5 sends** and a six-feed pass costs **30** — a hard
+**30-second floor** at 1 send/s. A median on-chain age of 50 s against a 60 s gate is what that
+floor looks like from outside. Raising the gateway's ceiling cannot help, because the gateway
+was never the thing saying no.
+
+### The fix: one VAA per pass, not one per feed
+
+One Hermes request for all six feeds returns **one 292-byte VAA carrying all six updates** with
+identical publish times. Run `init_encoded_vaa`, `write_encoded_vaa`, `verify_encoded_vaa_v1`
+and `close_encoded_vaa` **once per pass** (4 sends) and `post_update` **once per feed**
+(6 sends): **30 sends becomes 10.** A 3× cut in the only scarce resource, free, no provider
+change.
+
+**This is documented, not inferred** — confirmed 2026-09-12 against the receiver's own IDL:
+
+- `post_update`'s `encodedVaa` account is **`isMut: false`**, i.e. read-only. It cannot consume,
+  close or mutate the VAA, so several `post_update` calls may share one verified `EncodedVaa`.
+- Pyth's cross-chain documentation describes the payload as "the signed Merkle tree root, along
+  with the Merkle proofs of **each included price update**" — one root, per-feed proofs.
+- Helium's production `tuktuk-pyth-service` posts against a shared `encodedVaa` with a per-feed
+  `merklePriceUpdate { message, proof }`, and Pyth's own SDK exposes `addPostPriceUpdates`
+  plus `getPriceUpdateAccount(priceFeedId)`, which is this pattern packaged.
+
+Still prove it on localnet before shipping — the IDL says it is permitted, not that our
+five-instruction path composes correctly around it.
+
+**Acceptance test, unchanged:** run for an hour and assert **zero** `lag_secs >= 60` in the
+keeper's watchdog output.
 
 ## Task 1 — establish the baseline (do this first, alone)
 
