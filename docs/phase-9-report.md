@@ -30,14 +30,13 @@ only one the poster ever sees. The gateway's own high-priority queue is 4,096 de
 almost nothing, which makes gateway-side shedding the less likely of the two explanations
 before any further evidence.
 
-**One line of evidence settles it on the VPS**, and it should be checked before anything is
-changed — the gateway already logs the two apart:
+**Settled by the gateway's own counters**, which log the two apart. Measured on the VPS and
+recorded in commit `e100232`: **`shed=0`, `upstream429=156–181` across both failed
+experiments.** Every refusal was Helius, and none was the gateway.
 
 ```bash
 journalctl -u solfx-rpc-gateway --since -1h | grep -o 'shed=[0-9]* upstream429=[0-9]*'
 ```
-
-`upstream429 > 0, shed = 0` means Helius. `shed > 0` means the gateway.
 
 ### The actual constraint
 
@@ -97,23 +96,27 @@ This also retires a stale comment in the poster: it says "a 13-signature VAA is 
 does not fit in one instruction alongside its own overhead". At 292 bytes it does, which is why
 the five-transaction-per-feed structure is larger than today's VAA requires.
 
-Two things this rests on that are **not yet proven** and must be before it ships:
+**The sharing is documented, not inferred** (commit `e100232`): `post_update` takes
+`encodedVaa` as `isMut: false`, so several calls can share one verified VAA; Pyth describes the
+accumulator as one signed Merkle root with per-update proofs; and Helium's production crank
+does exactly this. I had recorded it as unproven because the Solana MCP returned no statement
+of it — the documentation existed, my search for it did not find it.
 
-1. That several `post_update` instructions may reference one verified `encoded_vaa` account.
-   The receiver's shape strongly implies it — `post_update` takes the encoded VAA as an
-   account and the merkle update as data, and the accumulator is designed around one root per
-   slot — but the Solana MCP had no documentation stating it, and the JS SDK's builder was not
-   available to read. **Prove it on localnet or with `simulateTransaction` before deploying.**
+Two things still unproven, and both must be before it ships:
+
+1. **Our own five-instruction path**, end to end on localnet. The shape is documented; this
+   particular sequence against this program is not yet demonstrated.
 2. Whether more than one `post_update` fits in a single transaction, which would cut the floor
    further. Each adds a signature (the price update account signs) plus its merkle proof, so
    this is a packet-size question with a measurable answer.
 
 ### Alternatives, if the fix above is not taken
 
-- **Route the poster's sends off Helius.** The keeper already moved to
-  `api.devnet.solana.com` on 2026-09-09 with zero 429s measured. The Solana MCP had **no**
-  data on the public endpoint's per-method limits, so this needs measuring rather than
-  assuming.
+- ~~**Route the poster's sends off Helius.**~~ **Measured and closed** (commit `6424fa8`):
+  **531 s for one six-feed pass** against ~35 s on the Helius path, with **3 of 6 feeds lost to
+  "not confirmed in 45s"**. Public devnet serves *reads* fine — the keeper has run on it since
+  2026-09-09 — but it has no stake-weighted QoS, so `post_update` confirmations time out. The
+  free option is gone.
 - **Helius Developer, $49/month**, which takes `sendTransaction` from 1/s to 5/s.
 - Chainstack's free tier is 25 RPS general, but its `sendTransaction` limit is unknown and is
   the only number that matters here.
