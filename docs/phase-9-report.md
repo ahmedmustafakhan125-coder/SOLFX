@@ -208,3 +208,87 @@ binary, and the harness drives one market through the trader and LP paths. Admin
 trigger and session-crank instructions are not in the action set, so a clean 24 hours is
 evidence about the money paths and not about the program as a whole. Task 4's per-crate figures
 are what will say where the real gaps are.
+
+---
+
+## Task 2 — the keeper's stale-book guard
+
+**Status: complete, and deployed to the VPS.** Commit `38c845a`.
+
+`book_is_fresh` stands the keeper down whenever the book is older than `max_book_age_secs`,
+and only the **slow** loop resets that age — `refresh_prices` updates marks without touching
+it. So `refresh_secs >= max_book_age_secs` means the book is stale for part of every cycle by
+arithmetic, on a healthy machine with a healthy RPC. Worse than the gap is its regularity: the
+crank tick and the refresh are both whole seconds, so once a tick lands inside the stale window
+it lands there every cycle rather than drifting out.
+
+Two changes:
+
+- **The defaults were incoherent** — `refresh_secs = 30` against `max_book_age_secs = 20`, so a
+  keeper started with *no flags at all* was broken. Now **15 against 45**, the pair the VPS has
+  run since 2026-09-09: survives one missed refresh, not two.
+- **`Config::validate` refuses an incoherent pair outright**, naming both numbers and two ways
+  out. Same reasoning `main` already applies to a missing protocol account — a keeper that
+  silently repairs its configuration is a keeper running settings its operator does not know
+  about. It can now only fire on values someone passed deliberately.
+
+Five tests; the load-bearing one is `the_defaults_are_coherent`, because the defaults are what
+shipped broken. Verified by running the binary rather than only the tests:
+
+```
+$ solfx-keeper --refresh-secs 30 --max-book-age-secs 20
+Error: --refresh-secs 30 is not shorter than --max-book-age-secs 20, so the book would be
+stale for part of every cycle and the keeper would stand down without ever saying why. Give
+the tolerance room for at least one missed refresh: --max-book-age-secs 60 or higher, or
+--refresh-secs 19 or lower.                                                        exit 1
+```
+
+`clippy -p solfx-keeper --all-targets` clean — the test module needed the crate's existing
+`#[allow(clippy::expect_used, …)]` block, since the workspace denies `expect_used` and
+`expect_err` counts.
+
+---
+
+## Task 9 — replace the hand-written referral client
+
+**Status: blocked on the VPS. Nothing was half-done, because a partial change here breaks
+`npm run generate` for everyone.**
+
+What was settled from here:
+
+- **Neither program has an IDL account on chain.** Re-checked 2026-09-13 at the canonical
+  Anchor address (`sha256(base ‖ "anchor:idl" ‖ program_id)`): `solfx_referral` →
+  `CCXwvvvx…f4SzR`, `solfx_core` → `H94jNXdH…Xb1nho`, **both absent**. So `anchor idl fetch`
+  has nothing to return, and `CONTEXT.md`'s "IDL current at 38 instructions" describes the
+  local `target/idl/` file rather than anything published. Publishing it is a separate
+  decision — `scripts/publish-idl.sh` exists.
+- The hand-written client is **still green**: 198 SDK tests, discriminators re-derived.
+
+What blocks it here: **no `anchor` CLI on the VPS and no `target/idl/`**, so the referral IDL
+cannot be produced.
+
+**The trap to avoid when you do it locally.** `codama.json` names a single `idl`, and its
+renderer args carry `deleteFolderBeforeRendering: true` pointed at
+`clients/js/src/generated`. Adding the referral program to that same config, or rendering it
+into that same folder, **deletes the core client**. It needs its own config and its own output
+directory:
+
+```jsonc
+// codama.referral.json
+{
+  "idl": "target/idl/solfx_referral.json",
+  "before": [],
+  "scripts": { "js": { "from": "@codama/renderers-js",
+    "args": ["clients/js/src/generated-referral",
+             { "deleteFolderBeforeRendering": true, "formatCode": true }] } }
+}
+```
+
+```jsonc
+// package.json — a second invocation, not a merged one
+"generate": "codama run js && codama run js -c codama.referral.json && npm --prefix clients/js run generate:events"
+```
+
+Then delete `clients/js/src/referral/` **in the same commit**, and move its discriminator
+re-derivation test onto the generated output — that test is the only thing that has been
+guarding those constants, and it should outlive the module it was written for.
