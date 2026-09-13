@@ -22,13 +22,23 @@ import { priceplaces } from "@/lib/format";
 export type ChartLevel = {
   readonly price: bigint;
   readonly label: string;
-  readonly kind: "long" | "short" | "liquidation";
+  readonly kind: "long" | "short" | "liquidation" | "take-profit" | "stop-loss";
+};
+
+const LEVEL_COLOUR: Record<ChartLevel["kind"], string> = {
+  long: "#3fb950",
+  short: "#f85149",
+  liquidation: "#e0a33e",
+  // A take-profit reads as the good outcome and a stop-loss as the bad one, matching the
+  // long/short greens and reds rather than introducing two more hues to learn.
+  "take-profit": "#2dd4bf",
+  "stop-loss": "#fb7185",
 };
 
 type Props = {
   symbol: string;
   live?: LivePrice | undefined;
-  /** Entry and liquidation levels for open positions on this market. */
+  /** Entry, liquidation and resting-order levels for open positions on this market. */
   levels?: readonly ChartLevel[];
 };
 
@@ -172,14 +182,12 @@ export function PriceChart({ symbol, live, levels }: Props) {
       lines.current.push(
         series_.createPriceLine({
           price: toDisplay(level.price),
-          color:
-            level.kind === "liquidation"
-              ? "#e0a33e"
-              : level.kind === "long"
-                ? "#3fb950"
-                : "#f85149",
+          color: LEVEL_COLOUR[level.kind],
           lineWidth: 1,
-          lineStyle: level.kind === "liquidation" ? 2 : 0,
+          // Dashed for anything that has not happened yet — a liquidation price and a
+          // resting order are both hypothetical, while an entry is a fact. Shape carries
+          // that distinction so it does not rest on colour alone.
+          lineStyle: level.kind === "long" || level.kind === "short" ? 0 : 2,
           axisLabelVisible: true,
           title: level.label,
         })

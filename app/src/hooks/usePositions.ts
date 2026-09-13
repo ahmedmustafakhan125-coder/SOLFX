@@ -9,9 +9,23 @@ import {
 } from "@/lib/positions";
 import { useRpc } from "@/hooks/useSolfx";
 
+/**
+ * `pollMs` exists because not every close is one the browser made.
+ *
+ * A take-profit, a stop-loss and a liquidation are all executed by the keeper. Nothing in
+ * this tab initiates them, so `onClosed`/`onOpened` never fire for them and, without a poll,
+ * the row for a position the keeper closed minutes ago stays on screen until the wallet or
+ * the market set happens to change. That was read as "the take-profit did not work" when the
+ * take-profit had in fact fired on chain — the worst kind of display bug, because it makes a
+ * working venue look broken.
+ *
+ * Ten seconds against one `getMultipleAccounts` is cheap next to the eight-second price poll
+ * that already runs.
+ */
 export function usePositions(
   marketIndexes: readonly number[],
-  prices: Record<number, bigint | undefined>
+  prices: Record<number, bigint | undefined>,
+  pollMs = 10_000
 ) {
   const rpc = useRpc();
   const { wallet } = useWalletConnection();
@@ -64,5 +78,12 @@ export function usePositions(
   );
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+
+  useEffect(() => {
+    if (!owner || marketIndexes.length === 0) return;
+    const id = setInterval(refresh, pollMs);
+    return () => clearInterval(id);
+  }, [owner, marketIndexes.length, pollMs, refresh]);
+
   return { positions: marked, loading, error, refresh };
 }

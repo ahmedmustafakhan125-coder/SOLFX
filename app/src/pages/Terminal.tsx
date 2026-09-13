@@ -8,7 +8,13 @@ import { MarketPanel } from "@/components/MarketPanel";
 import { AccountPanel } from "@/components/AccountPanel";
 import { ActivityPanel } from "@/components/ActivityPanel";
 import { usePositions } from "@/hooks/usePositions";
-import { Direction, liquidationPrice, maintenanceMargin } from "@solfx/client";
+import { useTriggers } from "@/hooks/useTriggers";
+import {
+  Direction,
+  TriggerKind,
+  liquidationPrice,
+  maintenanceMargin,
+} from "@solfx/client";
 import { fmtBase } from "@/lib/format";
 import { OrderTicket } from "@/components/OrderTicket";
 import { useSolfx } from "@/hooks/useSolfx";
@@ -80,6 +86,9 @@ export function Terminal() {
   // Where each open position on this market was entered, and where it liquidates. Drawn as
   // price lines so a trader can see their entry against the candles rather than having to
   // read it off the table below — the answer to "where did I get filled".
+  // Resting orders for the positions on screen, so the chart can draw them.
+  const { triggers } = useTriggers(positions);
+
   const chartLevels: ChartLevel[] = market
     ? positions
         .filter((p) => p.marketIndex === market.index)
@@ -105,6 +114,17 @@ export function Terminal() {
           });
           if (liq !== undefined) {
             out.push({ price: liq, kind: "liquidation", label: "Liquidation" });
+          }
+          for (const t of triggers) {
+            if (t.position !== p.address) continue;
+            const tp = t.kind === TriggerKind.TakeProfit;
+            out.push({
+              price: t.triggerPrice,
+              kind: tp ? "take-profit" : "stop-loss",
+              // The size is on the label because a trigger may be partial, and a line
+              // labelled only "Take profit" implies it closes the whole position.
+              label: `${tp ? "TP" : "SL"} ${fmtBase(t.sizeBase)}`,
+            });
           }
           return out;
         })
