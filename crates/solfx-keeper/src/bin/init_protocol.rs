@@ -75,6 +75,7 @@ const RENT_SYSVAR: Pubkey = solana_pubkey::pubkey!("SysvarRent111111111111111111
 const ONE_USDC: u64 = 1_000_000;
 
 /// A market to list, and the risk class it belongs to.
+#[derive(Clone, Copy)]
 struct MarketSpec {
     symbol: &'static str,
     tier: Tier,
@@ -322,6 +323,14 @@ struct Args {
     /// List all 33 markets rather than the 5-market starter set.
     #[arg(long)]
     all: bool,
+    /// List only these symbols, comma separated — `--markets ETH/USD,SOL/USD`.
+    ///
+    /// Drawn from the same 33-market table as `--all`, so a symbol that is not in that table
+    /// is refused rather than guessed at. This is how a market is added to a venue that is
+    /// already live: the market set is *data*, so extending it needs no program change, and
+    /// naming the two you want avoids listing 27 others whose feeds a free plan cannot read.
+    #[arg(long, value_delimiter = ',')]
+    markets: Vec<String>,
     /// Test USDC minted to the admin.
     #[arg(long, default_value_t = 10_000_000)]
     mint_amount: u64,
@@ -356,11 +365,65 @@ fn main() -> Result<()> {
         .block_on(run(args))
 }
 
+/// Resolve `--markets` against both market tables, preserving the order the caller asked for.
+///
+/// Both, because neither is a superset of the other: `USD/CNH` is in [`STARTER`] and not in
+/// [`ALL`]. Searching only one silently refuses a symbol this tool can demonstrably list.
+///
+/// An unknown symbol is an error, not a skip. A typo that silently listed nothing would look
+/// exactly like a successful run, and the whole point of this tool printing a table is that a
+/// human can see what it is about to do.
+fn select_markets(requested: &[String]) -> Result<Vec<MarketSpec>> {
+    let known = || ALL.iter().chain(STARTER.iter());
+    let mut out = Vec::with_capacity(requested.len());
+    for want in requested {
+        let want = want.trim();
+        match known().find(|m| m.symbol.eq_ignore_ascii_case(want)) {
+            Some(spec) => out.push(*spec),
+            None => {
+                let mut names: Vec<&str> = known().map(|m| m.symbol).collect();
+                names.sort_unstable();
+                names.dedup();
+                bail!(
+                    "unknown market {want:?}. The {} listable symbols are:\n  {}",
+                    names.len(),
+                    names.join(", ")
+                )
+            }
+        }
+    }
+    // Two spellings of one symbol would try to list it twice at two indices.
+    for (i, a) in out.iter().enumerate() {
+        if out
+            .iter()
+            .skip(i.saturating_add(1))
+            .any(|b| b.symbol == a.symbol)
+        {
+            bail!("market {:?} was requested more than once", a.symbol);
+        }
+    }
+    Ok(out)
+}
+
 async fn run(args: Args) -> Result<()> {
     let admin = load_keypair(&args.keypair)?;
     let rpc = RpcClient::new_with_commitment(args.rpc_url.clone(), CommitmentConfig::confirmed());
 
-    let markets: &[MarketSpec] = if args.all { ALL } else { STARTER };
+    if args.all && !args.markets.is_empty() {
+        bail!("--all and --markets are mutually exclusive: pass one or the other");
+    }
+    // Held outside the `if` so the borrow in `markets` outlives it.
+    let requested: Vec<MarketSpec>;
+    let markets: &[MarketSpec] = if args.markets.is_empty() {
+        if args.all {
+            ALL
+        } else {
+            STARTER
+        }
+    } else {
+        requested = select_markets(&args.markets)?;
+        &requested
+    };
 
     println!("init-protocol");
     println!("  rpc      {}", args.rpc_url);

@@ -235,11 +235,69 @@ statement about the session calendar, not about the protocol.
 
 ## Task 6 — the extensibility test
 
-**Status: the blocker is gone, the task is not done. Superseded by the 07:42 UTC reading
-below** — BTC/USD is `Active` again, which confirmed the diagnosis in this section rather than
-contradicting it. The remaining obstacle is the weekend, not the poster.
+**Status: the config half is DONE and proven. ETH/USD and SOL/USD are listed, activated, and
+priced, with the program bytes byte-identical either side.** The live-position half is still
+owed, and the listing exposed a real operational defect — see *What listing them proved* below.
 
-### Re-measured 2026-09-13 07:42 UTC, after Task 0 was proven
+### Listed 2026-09-13 08:30 UTC — two markets, zero program change
+
+| | |
+|---|---|
+| ETH/USD | index **9**, feed `ff61491a…fd0ace` |
+| SOL/USD | index **10**, feed `ef0d8b6f…80b56d` |
+| Program SHA-256 before | `5df771bf773d029dc3cbb641492234218d69fa519ae55ef3e7d483f7ecd78f6b` |
+| Program SHA-256 after | `5df771bf773d029dc3cbb641492234218d69fa519ae55ef3e7d483f7ecd78f6b` |
+| Program size | 1,107,816 bytes, unchanged |
+
+Both feed ids were resolved from Hermes and cross-checked against Pyth's own sponsored-feed
+table via the Solana MCP; both are entitled on the current plan (ETH $2,511.51, SOL $100.50 at
+12 s). `solana program dump` either side of the listing gives the **same hash**, which is the
+§12.5 claim stated as a measurement: *a market is added by configuration, and the financial core
+is not touched.*
+
+The poster picked both up from `deployment.json` on restart and reports **8 posted, 0 failed**,
+all eight at `VerificationLevel::Full` with matching feed ids. **One VAA still serves all eight**
+(`8fehnHDjHCRFdeXNAC7EYLtnJzH7pjKQK3C9K3MyKGXW`, 8 of 8 `post_update` transactions), so Task 0's
+saving does not decay as markets are added — a pass is `3 + n + 1` sends, not `5n`.
+
+### What listing them proved — the map, again
+
+**Within minutes both new markets were `Halted`, with 37-second-fresh prices on chain.** So were
+BTC/USD and every other market. This is not a new bug; it is [`solana.md` §5's address
+trap](../.claude/rules/solana.md) for the third time:
+
+- This machine's poster writes **this machine's** price accounts, and they are fresh.
+- The VPS keeper resolves feeds through **the VPS's** `price-accounts.json`, which has six
+  entries and no ETH/USD or SOL/USD at all.
+- A keeper that cannot find a live price sets `feed_live` false, and `crank_market_session`
+  halts the market. Correctly.
+
+So a market is only tradeable when **one** poster and **one** keeper share **one** map. Adding
+a market to the chain is therefore two thirds of the job; the remaining third is operational,
+and it is the part that fails silently. **What the VPS needs, in this order:**
+
+1. Regenerate its `deployment.json` for eight markets — the verification pass (no `--activate`)
+   is enough, and signs nothing. Note `deployment.json` is gitignored, so `git pull` will
+   **not** deliver the new market list.
+2. Restart the poster, so it creates the two new price accounts and rewrites
+   `price-accounts.json` with eight entries.
+3. **Then** restart the keeper, so it loads that eight-entry map. In this order, or the keeper
+   reads a six-entry map and halts the two new markets exactly as it does now.
+
+### Two traps in the tooling, found by using it
+
+- **A verification pass rewrites `deployment.json` with only the requested set.** Running
+  `--markets ETH/USD,SOL/USD` would have cut the file from six markets to two, and the poster
+  and keeper both read it — so the venue would have silently shrunk. Request the **whole**
+  intended set, not just the additions. The command used here names all eight.
+- **`USD/CNH` is in `STARTER` and not in `ALL`.** Neither table is a superset, so a resolver
+  that searches one refuses a symbol the tool can demonstrably list. `select_markets` searches
+  both, and an unknown symbol is an error rather than a skip: a typo that listed nothing would
+  read as a successful run.
+
+### The earlier reading, and why it still matters
+
+#### Re-measured 2026-09-13 07:42 UTC, after Task 0 was proven
 
 | | |
 |---|---|
