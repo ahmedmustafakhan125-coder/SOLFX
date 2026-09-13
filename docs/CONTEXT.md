@@ -1,6 +1,6 @@
 # SolFX — Complete Context and Build Status
 
-**Last updated:** 2026-09-12
+**Last updated:** 2026-09-13
 **Status:** Phases 1–7 complete. **Phase 8 (frontend + SDK) substantially built.** Phase 9 in
 progress.
 
@@ -51,6 +51,72 @@ NOXFUNDING still starts only after all of that.
 > requires a key (measured, see *Pyth access*), so there is no free endpoint to fall back to.
 > The key and the endpoint are both configuration, not code, so swapping either is a one-line
 > change plus a restart.
+
+---
+
+## ACTION REQUIRED ON THE VPS — 2026-09-13 08:30 UTC
+
+**The devnet venue went from 6 markets to 8 today, and the VPS does not know it.** Until the
+three steps below are run there, ETH/USD and SOL/USD will sit `Halted` forever no matter how
+well the poster runs, because the keeper cannot resolve a feed it has no map entry for.
+
+`deployment.json` and `price-accounts.json` are **gitignored**, so `git pull` does not deliver
+the new market list. They have to be regenerated on the box.
+
+**Order matters. The keeper must be restarted last, or it loads a six-entry map and halts the
+two new markets exactly as it does now.**
+
+```bash
+cd . && git pull
+set -a && . ./.env && set +a
+
+# 1. Regenerate deployment.json for eight markets. Signs nothing without --activate,
+#    so it does not need the admin key — but it DOES rewrite deployment.json, and it
+#    writes only the set you name. Name all eight.
+./target/debug/init-protocol --rpc-url "$SOLFX_RPC_URL" \
+  --markets EUR/USD,USD/JPY,USD/CNH,XAU/USD,XAG/USD,BTC/USD,ETH/USD,SOL/USD \
+  --usdc-mint 6tpCA7vTb3xgwcoUaPdWLAsMqkpmxi2fNzS12iaMDfws
+
+# 2. Poster first — it creates the two new price accounts and rewrites price-accounts.json.
+sudo systemctl restart solfx-price-poster
+journalctl -u solfx-price-poster -f   # wait for "8 posted, 0 failed", then Ctrl-C
+
+# 3. Keeper last, so it loads the eight-entry map.
+sudo systemctl restart solfx-keeper
+```
+
+Then confirm, and expect **only the three crypto markets to be `Active` before Sunday 21:00
+UTC** — FX and metals are correctly shut at the weekend:
+
+```bash
+./target/debug/admin list | grep -E '^\s+\['
+```
+
+### Do not run two posters
+
+Each pass is `3 + n + 1` sends against Helius's **1 per second** `sendTransaction` cap. A second
+poster doubles that and roughly quadruples the pass time — measured here, 12.5 s became 44 s,
+and it reads exactly like a slow network. Check before diagnosing anything as slow:
+
+```bash
+ps -eo pid,etime,cmd | grep '[d]ebug/price-poster'
+```
+
+Kill by **pid**. `pkill -f "$POSTER"` matches the shell running it and kills that instead.
+
+### What was proven here today, so it need not be re-derived
+
+| | |
+|---|---|
+| Task 0 — one shared VAA | **proven on devnet.** 8 of 8 `post_update` txs name one `encoded_vaa`; ~12.5 s per pass; 0 of 74 passes rate-limited |
+| Task 6 — config-only listing | **proven.** Program SHA-256 identical either side of the listing: `5df771bf773d029d…`, 1,107,816 bytes |
+| ETH/USD | index **9**, feed `ff61491a…fd0ace` |
+| SOL/USD | index **10**, feed `ef0d8b6f…80b56d` |
+| Weekend FX staleness | **not a bug.** Pyth carries the last price forward, so FX `publish_time` sits at Friday 20:59:59 while `posted_slot` keeps advancing. `publish_time` is never evidence about the poster |
+| Task 0's acceptance test | **cannot pass before Sunday 21:00 UTC** — five of six feeds are legitimately stale at the weekend. Run it after the FX open, or scope it to the continuous markets |
+
+Full evidence, with the commands that produced each number, is in
+[`phase-9-report.md`](phase-9-report.md) under Tasks 0 and 6.
 
 ---
 
