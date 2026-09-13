@@ -18,15 +18,15 @@ in this file under that task's heading.
 | 1 | establish the baseline | **done** |
 | 2 | keeper's stale-book guard | **done**, deployed to the VPS |
 | 3 | fuzzing to a 24-hour clean run | **running** — 0 crashes so far, needs to reach 24 h |
-| 4 | coverage > 90 % | **not started** — no coverage tooling in the repo yet |
+| 4 | coverage > 90 % | **done** — `instructions/` at **97.14 %**; 27 unexercised refusal arms found |
 | 5 | the two scenario replays | **done** — COVID and EM devaluation, 9 scenarios total |
 | 6 | § 12.5 extensibility | **part done** — config half proven; browser trade and the carried position still owed |
 | 7 | amend the roadmap | **done** — `e64e32c` |
 | 8 | IB admin transactions | **skipped by decision**, recorded in the brief |
 | 9 | generated referral client | **blocked** on the VPS |
 
-**What is actually left: Task 4 in full, the rest of Task 6, Task 3 reaching 24 hours, and
-Task 9's unblocking.**
+**What is actually left: the rest of Task 6, Task 3 reaching 24 hours, and Task 9's
+unblocking.**
 
 Three things gate the remainder and none of them is code:
 
@@ -432,6 +432,212 @@ parallel task.
 
 ---
 
+
+---
+
+## Task 4 — coverage
+
+**Status: done. `programs/solfx-core/src/instructions/` measures 97.14 % line coverage, over
+the § 15 bar of 90 %.** Artifacts in [`coverage/`](coverage/). The percentage is the least
+interesting part; the 27 unexercised refusal arms below are the deliverable.
+
+### The numbers
+
+Collected 2026-09-14 by `anchor coverage` — DWARF build, 240 LiteSVM tests with litesvm
+`register-tracing`, 11,360 trace files, executed PCs mapped back to source lines.
+
+| Scope | Lines | Hit | Cover |
+|---|---:|---:|---:|
+| **`src/instructions/`** — the § 15 target | 1,645 | 1,598 | **97.14 %** |
+| `src/` as a whole | 1,960 | 1,890 | 96.43 % |
+| everything in the LCOV, dependencies included | 3,107 | 2,788 | 89.73 % |
+
+`solfx_core.so` resolved 52,803 of 56,495 executed PCs to source. Per-file figures are in
+[`coverage/solfx-core-sbf.txt`](coverage/solfx-core-sbf.txt); the LCOV is beside it.
+
+Only two files fall below 90 %, and both for the same reason — an instruction no test calls:
+
+| File | Cover | Why |
+|---|---:|---|
+| `instructions/admin/protocol_admin.rs` | 82.76 % | `update_fee_splits` and `set_guardian` are never invoked |
+| `instructions/keeper/session.rs` | 86.96 % | weekend/pre-close status arms and the week-wrap helpers |
+
+**`solfx_referral` is unmeasured, not uncovered.** It contributed 10,188 executed PCs and
+**0 resolved to source**, because only `solfx_core` was built with DWARF. Its coverage is
+unknown and should not be read as zero.
+
+### Finding 1 — two of the 38 instructions are never invoked at all
+
+Measured from the dispatch bodies in `lib.rs`: 36 of 38 have a non-zero hit count, and these
+two have none.
+
+| Instruction | | What is untested as a result |
+|---|---|---|
+| `update_fee_splits` | `lib.rs:129` | the whole handler, including `require!(split.lp > split.treasury)` and `FeeSplitBps::validate` |
+| `set_guardian` | `lib.rs:143` | the whole handler, including the `new_guardian != Pubkey::default()` guard |
+
+`set_guardian` is the one worth attention. The guardian is the account that can halt the
+protocol; the only check on it is that it is not the default pubkey, and nothing exercises
+that check or the assignment. A protocol whose emergency-stop *owner* is set by untested code
+is a worse gap than the percentage suggests.
+
+### Finding 2 — 27 refusal arms are never entered
+
+An unexercised `require!` is an untested refusal, and § 3 of the manual suite exists because
+a venue that accepts everything is not a venue. Grouped by what they protect:
+
+**Vault and pool solvency (5).** Every one is a "we are about to pay out more than we hold"
+guard, and none has ever been made to fire:
+
+| Where | Refusal |
+|---|---|
+| `admin/protocol_admin.rs:158` | `fee_vault.amount >= amount` → `InsufficientPoolLiquidity` |
+| `admin/protocol_admin.rs:260` | `fee_vault.amount >= amount` → `InsufficientPoolLiquidity` |
+| `lp.rs:394` | `lp_vault.amount >= payout + performance_fee` → `InsufficientPoolLiquidity` |
+| `trader/mod.rs:141` | `lp_vault_balance >= amount` → `InsufficientPoolLiquidity` |
+| `lp.rs:344` | `provider_lp_account.amount >= shares` → `InsufficientLpShares` |
+
+**Position-state preconditions (4).** `size_base > 0` → `PositionNotEmpty`, at
+`trader/adjust_collateral.rs:21`, `:63` and `trader/increase_position.rs:39`; and
+`shares <= pool.lp_token_supply` → `InsufficientLpShares` at `lp.rs:350`.
+
+**Sizing and leverage (4).** `trader/open_position.rs:148` (`min_position_size`/
+`max_position_size` → `PositionSizeOutOfBounds`), `trader/increase_position.rs:76`
+(`max_position_size`), and `LeverageTooHigh` at `trader/increase_position.rs:107` and
+`trader/adjust_collateral.rs:115`. Worth noting because `PositionSizeOutOfBounds` and
+`SlippageExceeded` are two of the five real failures this project already hit — the bounds
+are enforced in production and unexercised in tests.
+
+**Reduction size (2).** `ReductionExceedsSize` at `trader/close_position.rs:174` and `:270`.
+
+**Market status (4).** `allows_liquidation()` → `MarketNotActive` at `keeper/liquidate.rs:140`
+and `keeper/adl.rs:130`; `status != Initialized` at `keeper/funding.rs:53`; and
+`!matches!(status, Initialized | Delisted)` at `keeper/session.rs:71`. So **the refusal to
+liquidate in a market that forbids liquidation is untested on both the liquidation and the ADL
+path** — and the tests do cover a halted market refusing *triggers*, which makes the omission
+look narrower than it is.
+
+**Collateral mint (2).** `collateral_mint.key() == protocol.usdc_mint` → `WrongCollateralMint`
+at `user.rs:133` and `:189`. `InvalidCollateralMintDecimals` is exercised; the mint-identity
+check next to it is not.
+
+**Market parameter validation (4), in `state/market.rs`.** `liquidation_max_conf_bps >=
+max_conf_bps` (429), `max_deviation_bps > 0` (433), `max_oi_long > 0 && max_oi_short > 0`
+(442), and the session-bounds check at 633. These are the guards that stop a market being
+listed with a nonsensical risk envelope, and `initialize_market` itself is at 100 %.
+
+**Admin (2).** The two inside the never-invoked handlers of Finding 1.
+
+### Finding 3 — the four `TriggerKind::is_met` combinations: three fire, one does not
+
+**LCOV cannot answer this question**, and that is worth stating rather than working around: in
+`state/trigger_order.rs` the only lines with coverage data are the `match` at L34 and
+`is_placeable` at L52. The four arms carry **no line entries at all** — the compiler collapsed
+them — so line coverage cannot distinguish them. Answered instead from the tests:
+
+| Kind × direction | Fired in a test? | Evidence |
+|---|---|---|
+| TakeProfit × Long | **yes** | `anyone_can_fire_a_met_trigger_and_is_paid_a_tip`, also `a_partial_trigger_scales_out_of_the_position` |
+| StopLoss × Long | **yes** | `a_stop_loss_on_a_long_fires_when_the_price_falls` |
+| StopLoss × Short | **yes** | `a_stop_loss_on_a_short_fires_when_the_price_rises` |
+| **TakeProfit × Short** | **no** | `a_short_takes_profit_below_and_stops_above` contains **zero** `execute_trigger` calls — it is a placement test |
+
+So a short's take-profit is exercised only through `is_placeable` at placement, and **never
+through firing**. That is the gap the function's own doc comment predicts: *"a stop-loss wired
+backwards would close winning positions and hold losing ones, and would look like a market-
+conditions complaint rather than a bug."* There is also **no direct unit test of `is_met`** —
+its only non-test caller is `crates/solfx-keeper/src/services.rs:269`. Four explicit arms
+guarding against a sign error, and no test calls the function.
+
+### Finding 4 — the liquidation boundary is covered, and correctly
+
+This one is not a gap. `margin::is_liquidatable` is `equity < maintenance_margin`, a strict
+comparison, so equity exactly equal to the requirement is deliberately *not* liquidatable
+(threat T7, liquidation griefing). `crates/solfx-math/src/margin.rs:293` tests exactly that,
+deterministically rather than by property:
+
+```rust
+fn liquidation_boundary_is_strict() {
+    let mm = 1_000 * USD;
+    assert!(!is_liquidatable(1_000_000_000, mm));  // equal  -> not liquidatable
+    assert!(is_liquidatable(999_999_999, mm));     // 1 below -> liquidatable
+    assert!(!is_liquidatable(1_000_000_001, mm));  // 1 above -> not
+}
+```
+
+Both neighbours of the boundary are asserted, which is what makes it a boundary test rather
+than a point test. Two property tests in `crates/solfx-math/tests/properties.rs` bracket the
+same edge from the price side.
+
+### Finding 5 — uncovered lines that are not refusals
+
+Worth listing because they are error paths, not guards, and a percentage hides them:
+
+- **`risk.rs:190-212`** — 9 lines: the funding-settlement branch where a position cannot pay
+  what it owes and the shortfall is capped against `market.funding_balance`. Partial funding
+  payment is untested.
+- **`close_position.rs:366-403`** — 7 lines: the **bad-debt path**. `total_bad_debt`
+  accumulation and the `BadDebtIncurred` event are never reached, so nothing tests what
+  happens when a close leaves negative equity the vault must absorb.
+- **`errors.rs:200-206`** — 6 of the `MathError` → `SolfxError` conversions never fire:
+  `DivideByZero`, `InvalidPrice`, `ConfidenceTooWide`, `NotionalTooSmall`, `InvalidParameter`,
+  `PriceFromFuture`.
+- **`session.rs:180-313`** — the `WeekendMode` arm, the pre-close reduce-only window, and the
+  two week-wrap helpers. Consistent with the tests running mid-session.
+- **`oracle.rs:302`** — `validate_deviation` against `max_deviation_bps`. The deviation
+  breaker has a scenario test (`gbp_flash_crash...`), so this line being cold suggests the
+  scenario reaches the breaker by another route; worth a look.
+
+### Recommended order, if tests are written later
+
+Not done in this session — the brief asked for the measurement and the gap analysis, not new
+tests.
+
+1. `set_guardian` and `update_fee_splits` — two whole instructions, one of them owning the
+   emergency stop.
+2. The **bad-debt path** in `close_position.rs`. It is the only uncovered code that moves
+   money the protocol cannot recover, and invariant I1 has never been asserted across it.
+3. **TakeProfit × Short firing**, plus a direct unit test of `is_met` over all four arms.
+4. The five vault-solvency refusals.
+5. `allows_liquidation()` on both the liquidate and ADL paths.
+
+### How it was run, and two corrections to the brief's diagnosis
+
+The brief's `Permission denied (os error 13)` **did not reproduce**, and both of its suspected
+causes are disproven by direct test:
+
+- **`programs/solfx-core/target` does not exist**, so nothing was landing on the 9p mount via
+  the crate directory. `anchor coverage --skip-run` run *from* that directory creates no
+  crate-local `target` either — Anchor resolves the workspace root regardless of cwd.
+- **`chmod`/EACCES on directory creation is not the cause**: `mkdir -p
+  programs/solfx-core/target/coverage/traces` on the 9p mount **succeeds**, mode `drwxrwxrwx`.
+- No root-owned files existed under `target/coverage`, so no earlier `sudo` run was involved.
+
+What did surface is a **different** failure, and it is a real trap: **`anchor coverage` from
+the workspace root fails in the build phase**, not after the tests —
+
+```
+error: target is not supported, for more information see: https://docs.rs/getrandom/#unsupported-targets
+Error: `cargo build-sbf --tools-version v1.52` failed with status exit status: 1
+```
+
+`getrandom 0.2.17` is a *normal* dependency of `solfx-core` via `pyth-solana-receiver-sdk →
+pythnet-sdk → pyth-sdk → borsh 0.9.3 → hashbrown → ahash`. Plain `anchor build` handles it;
+building from the workspace root for SBF does not. **Run coverage from
+`programs/solfx-core`.** That this run reported `solfx_referral — 0 resolved to source` is the
+same fact seen from the other end: only the one crate is built with DWARF.
+
+The command that works:
+
+```bash
+cd ./programs/solfx-core
+anchor coverage --trace-dir "$HOME/solfx-cov/traces" --output "$HOME/solfx-cov/sbf.lcov"
+```
+
+`lcov` is not installed on this box; the summary was produced by parsing the LCOV directly, so
+`docs/coverage/solfx-core-sbf.txt` is line coverage only — SBF traces give executed program
+counters, so there are no region or branch columns as in the two `cargo llvm-cov` reports
+beside it.
 
 ## Task 1 — the baseline
 

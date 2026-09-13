@@ -1,0 +1,45 @@
+solfx-core — SBF source coverage from `anchor coverage` (LCOV line coverage)
+Collected 2026-09-14 from 240 LiteSVM tests with litesvm register-tracing.
+Line coverage only: SBF traces give executed program counters, so there are no
+region or branch columns as in the cargo-llvm-cov reports beside this file.
+
+Filename                                                         Lines     Hit  Missed    Cover
+-----------------------------------------------------------------------------------------------
+src/errors.rs                                                        9       3       6   33.33%
+src/events.rs                                                       34      34       0  100.00%
+src/instructions/admin/initialize_market.rs                         89      89       0  100.00%
+src/instructions/admin/initialize_protocol.rs                       78      78       0  100.00%
+src/instructions/admin/protocol_admin.rs                            87      72      15   82.76%
+src/instructions/admin/set_market_oracle.rs                         13      13       0  100.00%
+src/instructions/admin/update_market.rs                             63      63       0  100.00%
+src/instructions/guardian.rs                                        31      31       0  100.00%
+src/instructions/keeper/adl.rs                                      76      75       1   98.68%
+src/instructions/keeper/funding.rs                                  41      40       1   97.56%
+src/instructions/keeper/liquidate.rs                               178     177       1   99.44%
+src/instructions/keeper/price.rs                                    33      33       0  100.00%
+src/instructions/keeper/session.rs                                  69      60       9   86.96%
+src/instructions/lp.rs                                             160     157       3   98.12%
+src/instructions/trader/adjust_collateral.rs                        44      41       3   93.18%
+src/instructions/trader/close_position.rs                          181     174       7   96.13%
+src/instructions/trader/flows.rs                                    21      21       0  100.00%
+src/instructions/trader/increase_position.rs                        82      79       3   96.34%
+src/instructions/trader/mod.rs                                      53      52       1   98.11%
+src/instructions/trader/open_position.rs                           143     142       1   99.30%
+src/instructions/trader/trigger.rs                                 129     129       0  100.00%
+src/instructions/user.rs                                            74      72       2   97.30%
+src/lib.rs                                                          40      38       2   95.00%
+src/oracle.rs                                                       47      46       1   97.87%
+src/risk.rs                                                         57      48       9   84.21%
+src/state/lp_pool.rs                                                 3       3       0  100.00%
+src/state/market.rs                                                 90      86       4   95.56%
+src/state/position.rs                                                2       2       0  100.00%
+src/state/protocol.rs                                               16      16       0  100.00%
+src/state/trigger_order.rs                                           4       4       0  100.00%
+src/state/user_account.rs                                           13      12       1   92.31%
+-----------------------------------------------------------------------------------------------
+TOTAL src/                                                        1960    1890      70   96.43%
+TOTAL src/instructions/  (the §15 target)                         1645    1598      47   97.14%
+
+Not measured here:
+  solfx_referral — 10,188 executed PCs, 0 resolved to source. Only solfx_core was
+  built with DWARF, so referral has no line table and is unmeasured, not uncovered.

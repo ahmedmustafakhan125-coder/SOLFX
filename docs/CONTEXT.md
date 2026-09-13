@@ -9,13 +9,32 @@ RAM and a `cargo build` OOM-killed itself there, so none of this could be verifi
 
 | Suite | Result |
 |---|---|
-| `cargo test --workspace` | **555 passed, 0 failed, 0 ignored** — of which `solfx-core` is **240**, re-run 2026-09-13 |
+| `cargo test --workspace` | **562 passed, 0 failed, 0 ignored** — of which `solfx-core` is **240**, re-run 2026-09-14 |
 | `cargo fmt --all --check` | clean |
 | `cargo clippy --workspace --all-targets` | **clean — 0 warnings** (7 fixed; see below) |
 | `npm --prefix clients/js test` | **211 passed** (12 files) — 13 added with `pricing.ts` |
 | `npm --prefix app run test` | **22 passed** (2 files) — 7 added with `floating.ts` |
 | `npm --prefix app run ci` | **green** — was red at `format:check` |
 | `anchor build` | clean; `solfx_core.so` sha256 `eff0ceee…`, **byte-identical to devnet** |
+| `anchor coverage` (SBF, `solfx-core`) | **`src/instructions/` 97.14 %** line coverage (1,598/1,645); `src/` 96.43 %. Run from `programs/solfx-core`, **not** the workspace root |
+| `cargo llvm-cov` `solfx-math` | 95.67 % regions / 98.67 % lines / 99.61 % functions |
+| `cargo llvm-cov` `solfx-keeper` | 18.60 % regions / 16.51 % lines / 23.15 % functions |
+
+**Coverage, measured 2026-09-14 — artifacts in [`coverage/`](coverage/).** The § 15 bar is
+90 % and `programs/solfx-core/src/instructions/` clears it at **97.14 %**. The number is not
+the point: the run found **27 refusal arms no test ever enters**, **two of the 38 instructions
+never invoked at all** (`set_guardian`, `update_fee_splits`), an untested **bad-debt path** in
+`close_position`, and that **a short's take-profit never fires** in any test. Full gap analysis
+under Task 4 in [`phase-9-report.md`](phase-9-report.md).
+
+Two things to know before re-running it:
+
+- **Run it from `programs/solfx-core`, not the workspace root.** From the root, `cargo
+  build-sbf` fails on `getrandom 0.2.17` ("target is not supported"), which arrives as a normal
+  dependency through `pyth-solana-receiver-sdk → pythnet-sdk → pyth-sdk → borsh 0.9.3 →
+  hashbrown → ahash`. Plain `anchor build` is unaffected.
+- **`solfx_referral` is unmeasured, not uncovered** — 10,188 executed PCs, 0 resolved to
+  source, because only `solfx_core` is built with DWARF.
 
 Three things the baseline corrected:
 
