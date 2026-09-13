@@ -23,10 +23,19 @@ in this file under that task's heading.
 | 6 | § 12.5 extensibility | **part done** — config half proven; browser trade and the carried position still owed |
 | 7 | amend the roadmap | **done** — `e64e32c` |
 | 8 | IB admin transactions | **skipped by decision**, recorded in the brief |
-| 9 | generated referral client | **blocked** on the VPS |
+| 9 | generated referral client | **skipped by decision**, 2026-09-13 — see below |
 
-**What is actually left: the rest of Task 6, Task 3 reaching 24 hours, and Task 9's
-unblocking.**
+**What is actually left: the rest of Task 6, and Task 3 reaching 24 hours.**
+
+### Task 9, skipped
+
+Dropped by the user's decision on 2026-09-13, alongside Task 8. The hand-written referral
+client in `clients/js/src/referral/` stays, and so does the thing that makes that tolerable:
+`clients/js/src/__tests__/referral.test.ts` re-derives every discriminator from
+`sha256("global:<name>")` and `sha256("account:<Name>")` and asserts each instruction's
+account order. Generated code cannot drift from the program; hand-written code can, and that
+test is the only thing standing between a rename and a devnet failure. It must not be
+deleted or weakened while the hand-written client remains.
 
 Three things gate the remainder and none of them is code:
 
