@@ -441,3 +441,53 @@ directory:
 Then delete `clients/js/src/referral/` **in the same commit**, and move its discriminator
 re-derivation test onto the generated output — that test is the only thing that has been
 guarding those constants, and it should outlive the module it was written for.
+
+---
+
+## Task 3 (scenarios) — complete
+
+**Status: both replays written and passing.** Commit `fa29808`. Nine scenarios now, up from
+seven. Full workspace: **562 passed, 0 failed**, clippy clean.
+
+`cargo-build-sbf` is installed on the VPS even though `anchor` is not, so the `.so` for both
+programs can be built there and the LiteSVM suites actually **run** rather than being written
+blind. Worth knowing — it changes what the VPS can verify.
+
+### COVID, March 2020 — sustained wide confidence
+
+Not a second CHF depeg. That replay tests one dislocation; this tests **persistence**. Twelve
+ticks over three weeks, EUR/USD swinging 1.064–1.150 with ~40 bps of confidence throughout —
+every price real, none of them certain. The failure mode is the opposite one: not "did the
+breaker fire" but "did the venue spend three weeks refusing everything".
+
+Asserts: new risk refused on **every** tick; the existing position untouched by the refusal;
+and — the one that matters — the venue **recovers by itself** when confidence narrows, with no
+admin action.
+
+**Two things nearly made it a test that proved nothing**, and both are worth recording:
+
+1. It originally asserted only that the opens *failed*. On tick 1 they were failing with
+   `OracleDeviationTooLarge`, not the confidence gate the test is named after. It now asserts
+   the specific error code on every tick.
+2. At the stock `max_deviation_bps = 300` the deviation breaker fires before confidence can
+   ever bind, so the market is configured at 1,500 with the reason written next to it. The
+   deviation breaker already has its own replay in the GBP flash crash.
+
+### EM devaluation, 2013 taper tantrum
+
+Answers § 12.4's actual question: *whether 10–20x survives a managed-float break.* USD/INR
+walks 55 → 68.8 as a **staircase, not a gap** — that is what a devaluation is, and it means
+liquidations land rather than all arriving after the fact.
+
+Asserts conservation across the conversion (PnL lands in rupees, so an error there is a units
+error), that insurance is drawn before LP capital, and that **bad debt was actually produced** —
+a 25% move against EM leverage that produced none would mean the scenario was too gentle.
+
+Three honest failures on the way, all in the test rather than the protocol, which is the
+pattern this project keeps finding:
+
+| Failure | What it was |
+|---|---|
+| `MissingQuoteConversionPriceUpdate` | USD/INR is not USD-quoted; every instruction pricing it needs a conversion account (C-3). The protocol refusing to guess. |
+| I1 off by exactly 2,000 USDC | `open_ix` + `send` does not register a position the way `open` does, so the invariant sweep read an untracked one as collateral that left the vault and went nowhere. |
+| A patch that changed nothing | The replacement did not match because `cargo fmt` had already reflowed the call it was matching, and the script did not assert on the match. |
