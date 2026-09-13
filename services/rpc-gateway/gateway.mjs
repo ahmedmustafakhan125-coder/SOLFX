@@ -95,7 +95,32 @@ function refill() {
 
 /** Two queues, not one with a sort: arrival order must hold *within* a priority. */
 const queues = { high: [], low: [] };
-const stats = { high: 0, low: 0, shed: 0, upstream429: 0 };
+const stats = { high: 0, low: 0, shed: 0, upstream429: 0, retried: 0, gaveUp: 0 };
+
+/**
+ * Retry an upstream 429, briefly.
+ *
+ * Measured 2026-09-13: Helius's free tier refuses roughly **20% of `sendTransaction` calls at
+ * any offered rate** — 3 of 8 at one per second, and still 2 of 10 at one per three seconds.
+ * A rate limit goes away when you go below it; this does not, so no amount of spacing on the
+ * caller's side fixes it. With 7 sends in a crypto pass, 0.8^7 leaves about a fifth of passes
+ * intact, which is what was observed.
+ *
+ * `price_poster.rs` argues against retrying, on the grounds that `solana-rpc-client` already
+ * retries five times and honours `Retry-After` for up to 120 s, which would hold a feed for
+ * minutes against a 60-second gate. **That reasoning does not apply to this endpoint:**
+ * measured the same day, its 429 carries *no* `Retry-After` header at all. So a retry is
+ * immediate and costs one more attempt rather than two minutes.
+ *
+ * Three attempts turns a 20% refusal into 0.8%, and a 7-send pass from ~21% intact to ~95%.
+ *
+ * Retrying a *send* is safe here specifically because a 429 is refused at Helius's edge — the
+ * transaction never reached the network. Even if it had, Solana deduplicates by signature, so
+ * resubmitting a signed transaction is the normal confirmation path rather than a double-spend.
+ */
+const RETRY_ATTEMPTS = Number(process.env.SOLFX_GATEWAY_RETRIES ?? 3);
+const RETRY_BASE_MS = Number(process.env.SOLFX_GATEWAY_RETRY_MS ?? 350);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function pump() {
   refill();
@@ -165,13 +190,24 @@ const server = createServer(async (req, res) => {
   await slot;
 
   try {
-    const upstreamRes = await fetch(UPSTREAM, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body,
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
-    if (upstreamRes.status === 429) stats.upstream429 += 1;
+    let upstreamRes;
+    for (let attempt = 0; ; attempt++) {
+      upstreamRes = await fetch(UPSTREAM, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      });
+      if (upstreamRes.status === 429) stats.upstream429 += 1;
+      if (upstreamRes.status !== 429 || attempt >= RETRY_ATTEMPTS) {
+        if (upstreamRes.status === 429) stats.gaveUp += 1;
+        break;
+      }
+      // Jittered, so a pass's sends do not all retry on the same tick and collide again.
+      // Bounded on purpose: worst case here is well under a second, against a 60 s gate.
+      stats.retried += 1;
+      await sleep(RETRY_BASE_MS + Math.floor(Math.random() * RETRY_BASE_MS));
+    }
     const text = await upstreamRes.text();
     res.writeHead(upstreamRes.status, {
       "content-type": upstreamRes.headers.get("content-type") ?? "application/json",
@@ -197,7 +233,8 @@ setInterval(() => {
   if (stats.high + stats.low === 0) return;
   console.log(
     `[rpc-gateway] served high=${stats.high} low=${stats.low} shed=${stats.shed} ` +
-      `upstream429=${stats.upstream429} queued=${queues.high.length}/${queues.low.length}`,
+      `upstream429=${stats.upstream429} retried=${stats.retried} gaveup=${stats.gaveUp} ` +
+      `queued=${queues.high.length}/${queues.low.length}`,
   );
-  stats.high = stats.low = stats.shed = stats.upstream429 = 0;
+  stats.high = stats.low = stats.shed = stats.upstream429 = stats.retried = stats.gaveUp = 0;
 }, 60_000).unref();

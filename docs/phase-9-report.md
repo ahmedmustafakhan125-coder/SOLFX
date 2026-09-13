@@ -685,3 +685,58 @@ shut. That is not a reduction in ambition — Pyth carries a closed market's las
 so republishing EUR/USD at the weekend spends a rationed send to write a number that cannot
 have changed, while the markets that *are* open go stale for want of the same send.
 **Switch the unit back to `deployment.json` after the Sunday 21:00 UTC FX open.**
+
+---
+
+## Task 0 — SOLVED, and the diagnosis above was wrong twice
+
+**Status: BTC/USD passes the acceptance test. 0 breaches of the 60 s gate in 20 samples over
+four minutes — min 15 s, median 27 s, max 39 s**, read from the price account's own
+`publish_time` against chain time, which is exactly what the program gates on.
+
+### The two wrong conclusions, and what corrected each
+
+**"The free tier cannot do this — it is a purchase, not a patch."** Wrong. The owner recalled
+six feeds running clean, and the logs bear it out exactly:
+
+| | Passes |
+|---|---|
+| 11 Sep, six feeds | **51 of 51 clean** |
+| 13 Sep, same six feeds, same flags | **36 of 49 total failures** |
+
+Same configuration, same feed count. **The variable was the Helius key**, replaced that morning
+after the previous one hit `max usage reached`. Feed count was never the cause, and neither was
+any poster setting. Worth checking whether Helius meters credits per *account* rather than per
+key — a new key on an exhausted account inherits the exhaustion.
+
+**"Retrying a 429 is the wrong fix."** `price_poster.rs` argues this on the grounds that
+`solana-rpc-client` honours `Retry-After` for up to 120 s, which would hold a feed for minutes.
+**Measured: this endpoint sends no `Retry-After` header at all.** The premise is false here, so
+a retry is immediate and costs one attempt.
+
+### The fix, and the detail that made it work
+
+Retry lives in the gateway (`services/rpc-gateway/gateway.mjs`), not the poster — the gateway
+already proxies every call and can absorb a refusal without the poster knowing.
+
+**The spacing is the whole thing.** A first attempt at 350–700 ms of backoff barely helped: 12
+of 21 requests still gave up, because four retries that fast all land inside the same limiter
+window and are refused together. Sends offered **3 seconds** apart are accepted 70–80% of the
+time. At 1.5–3 s spacing and four attempts:
+
+| | Before | After |
+|---|---|---|
+| Passes clean | 5 of 9 | **8 of 8** |
+| Gateway `gaveup` per minute | 12 | **0–1** |
+| BTC age vs the 60 s gate | median 77 s, max 94 s | **median 27 s, max 39 s** |
+
+### Where the venue stands
+
+`deployment.weekend.json` — **BTC/USD only** — is what the poster runs while FX and metals are
+shut. `deployment.weekday.json` holds the six that ran 51/51 on 11 Sep. ETH/USD and SOL/USD
+remain listed on chain but unposted, by the owner's decision to return to the known-good set;
+they will read `Halted` until that changes.
+
+**Untested: the six-feed weekday set with patient retries.** It is 10 sends a pass against
+BTC's 5, and it has not run since the retry fix. Test it after the Sunday 21:00 UTC FX open
+before relying on it.
