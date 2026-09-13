@@ -96,6 +96,12 @@ export function PositionsPanel({
                   "Size",
                   "Entry",
                   "Mark",
+                  // Was missing, and every cell from here right was rendering one column
+                  // out of place: the liquidation price sat under "Collateral", collateral
+                  // under "Unrealised", and unrealised under the empty actions heading.
+                  // Nine cells are rendered per row and the expanded row already says
+                  // colSpan={9} — the header was the odd one out.
+                  "Liq.",
                   "Collateral",
                   "Unrealised",
                   "",
