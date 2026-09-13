@@ -42,6 +42,8 @@ import type {
   TransactionSigner,
 } from "@solana/kit";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 /** An outstanding withdrawal, or `null` when the LP has none. */
 export type PendingWithdrawal = {
   readonly shares: bigint;
@@ -89,8 +91,8 @@ export async function readPoolStatus(
   const [protocolPda] = await findProtocolPda();
   const [lpPoolPda] = await findLpPoolPda();
   const [protocol, lpPool] = await Promise.all([
-    fetchProtocol(rpc, protocolPda),
-    fetchLpPool(rpc, lpPoolPda),
+    fetchProtocol(rpc, protocolPda, { commitment: READ_COMMITMENT }),
+    fetchLpPool(rpc, lpPoolPda, { commitment: READ_COMMITMENT }),
   ]);
 
   const usdcMint = protocol.data.usdcMint;
@@ -150,6 +152,7 @@ export async function readPoolStatus(
   // throw on a missing account — "you have never provided liquidity" is not an error.
   const { value: accounts } = await rpc
     .getMultipleAccounts([lpAta, usdcAta, withdrawRequest], {
+      commitment: READ_COMMITMENT,
       encoding: "base64",
     })
     .send();

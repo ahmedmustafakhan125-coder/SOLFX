@@ -33,6 +33,8 @@ import type {
   TransactionSigner,
 } from "@solana/kit";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 /** Placing one reads the oracle to check the side, so it costs more than a bare write. */
 export const PLACE_TRIGGER_CU = 90_000;
 export const CANCEL_TRIGGER_CU = 30_000;
@@ -101,7 +103,10 @@ export async function readTriggers(
     )
   );
   const { value } = await rpc
-    .getMultipleAccounts(pdas, { encoding: "base64" })
+    .getMultipleAccounts(pdas, {
+      commitment: READ_COMMITMENT,
+      encoding: "base64",
+    })
     .send();
 
   const out: RestingTrigger[] = [];
@@ -136,7 +141,10 @@ export async function firstFreeOrderId(
     )
   );
   const { value } = await rpc
-    .getMultipleAccounts(pdas, { encoding: "base64" })
+    .getMultipleAccounts(pdas, {
+      commitment: READ_COMMITMENT,
+      encoding: "base64",
+    })
     .send();
   const free = value.findIndex((a) => a === null);
   return free === -1 ? undefined : free;

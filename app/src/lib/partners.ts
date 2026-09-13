@@ -22,6 +22,8 @@ import {
 } from "@solfx/client";
 import type { Address, Rpc, SolanaRpcApi } from "@solana/kit";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 /** `Pubkey::default()` — what `referral_authority` holds while payouts are disabled. */
 const DEFAULT_PUBKEY = "11111111111111111111111111111111" as Address;
 
@@ -69,7 +71,9 @@ export async function readPartnersStatus(
 ): Promise<PartnersStatus> {
   const [protocolPda] = await findProtocolPda();
   const [configPda] = await referral.findReferralConfigPda();
-  const protocol = await fetchProtocol(rpc, protocolPda);
+  const protocol = await fetchProtocol(rpc, protocolPda, {
+    commitment: READ_COMMITMENT,
+  });
 
   const authority =
     protocol.data.referralAuthority === DEFAULT_PUBKEY
@@ -94,7 +98,10 @@ export async function readPartnersStatus(
   }
 
   const { value: accounts } = await rpc
-    .getMultipleAccounts(keys, { encoding: "base64" })
+    .getMultipleAccounts(keys, {
+      commitment: READ_COMMITMENT,
+      encoding: "base64",
+    })
     .send();
 
   const configRaw = accounts[0];

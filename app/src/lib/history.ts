@@ -27,6 +27,8 @@ import {
 import type { Address, Rpc, Signature, SolanaRpcApi } from "@solana/kit";
 import { findUserAccountPda } from "@solfx/client";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 const NOTIONAL_DIVISOR = 1_000_000_000_000n;
 
 /** One thing that happened to a position, in the order it happened. */
@@ -92,7 +94,10 @@ export async function loadHistory(
   const [userAccount] = await findUserAccountPda({ authority: owner });
 
   const signatures = await rpc
-    .getSignaturesForAddress(userAccount, { limit })
+    .getSignaturesForAddress(userAccount, {
+      commitment: READ_COMMITMENT,
+      limit,
+    })
     .send();
 
   const rows: HistoryRow[] = [];
@@ -104,6 +109,7 @@ export async function loadHistory(
 
     const tx = await rpc
       .getTransaction(entry.signature as Signature, {
+        commitment: READ_COMMITMENT,
         maxSupportedTransactionVersion: 0,
         encoding: "json",
       })
