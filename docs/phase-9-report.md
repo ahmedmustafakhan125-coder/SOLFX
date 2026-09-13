@@ -7,8 +7,9 @@ restatements: where a number appears here, the command that produced it appears 
 
 ## Task 0 — the staleness margin
 
-**Status: diagnosed, and the brief's diagnosis was wrong. Fix designed and measured; not yet
-applied, because its acceptance test runs on the VPS.**
+**Status: DONE and proven on devnet, 2026-09-13 07:45-07:55 UTC.** One shared VAA served all
+six feeds, confirmed from the on-chain transactions rather than from the poster's own log. The
+proof, the cadence and the one trap that made this look broken are in *Proven on devnet* below.
 
 ### What the brief concluded, and why it cannot be right
 
@@ -155,11 +156,113 @@ Two things still unproven, and both must be before it ships:
 
 ---
 
+### Proven on devnet — 2026-09-13 07:45-07:55 UTC
+
+The acceptance question was never "does the poster report success" — it reported `6 posted, 0
+failed` while writing one VAA per feed too. It is **whether the six `post_update` transactions
+name the same `encoded_vaa` account**. That is a fact about the transactions, so it was read
+back off the chain, not off the log.
+
+For each of the six signatures in one pass, `getTransaction` -> the receiver's instruction ->
+account index 1 (`encodedVaa`) and index 4 (`priceUpdateAccount`). The account order is
+documented, via the Solana MCP: `postUpdate` is `payer, encodedVaa, config, treasury,
+priceUpdateAccount, systemProgram, writeAuthority`, and **`encodedVaa` is `isMut: false,
+isSigner: false`** — which is what permits the sharing.
+
+```
+symbol     encoded_vaa (acct #1)                          price_update (acct #4)
+EUR/USD    5T4sFqVe2VbPWEqo3cJL6A8Zod81me3EeZjJvAK7AVFi   1rqo3w8a8X8MkHMavtzxJARwXYUtms2FpYvNEq3MwZ2
+USD/JPY    5T4sFqVe2VbPWEqo3cJL6A8Zod81me3EeZjJvAK7AVFi   6REBHVRdJMuVd7D4mUvY285fyrhXeY3iUkkemVmzbFbf
+USD/CNH    5T4sFqVe2VbPWEqo3cJL6A8Zod81me3EeZjJvAK7AVFi   DspGeiiYowHYcQ4xvEjPBUZxqrTQbzaDdhbgwsR9JzvM
+XAU/USD    5T4sFqVe2VbPWEqo3cJL6A8Zod81me3EeZjJvAK7AVFi   FmV4Do3cEDCEvPrddLRjsgYTfGGhEo5baPv3wxbhZ2mY
+XAG/USD    5T4sFqVe2VbPWEqo3cJL6A8Zod81me3EeZjJvAK7AVFi   6KfZXHqMQFS1R4ywAijeekNtrTAkPYkaVcbwezKi9wrt
+BTC/USD    5T4sFqVe2VbPWEqo3cJL6A8Zod81me3EeZjJvAK7AVFi   HptpDroAu5BZuWWr8uEKhrhHD6FjQb2JK5yokXyQCzGS
+
+distinct encoded_vaa accounts across 6 post_update txs: 1
+```
+
+**One VAA, six feeds, six distinct and correct price accounts.** The predicted 30 -> 10 sends
+per pass is what the cadence then shows:
+
+| | measured |
+|---|---|
+| passes | 8 in 100 s — **~12.5 s per pass** |
+| feeds per pass | 6 posted, 0 failed, every pass |
+| 429s | **0** across 32 passes |
+| headroom against the 60 s gate | **4.8x** |
+
+12.5 s against a 10 s floor at 1 send/second means the pass is now **rate-limit bound, not
+code bound** — there is nothing left to win here without changing the send count, which is what
+the ALT note above is about. The old 30-send version had a 30 s floor, and its median age of
+50 s against a 60 s gate is the same measurement seen from the other side.
+
+### The trap: two posters look exactly like a slow poster
+
+The first devnet run of this measurement read **~44 s per pass**, and the honest first
+hypothesis was contention with the VPS poster on the shared Helius key. It was not. **Two
+poster processes were running on this machine**, one an orphan of a launch whose log redirect
+had failed — the launch reported a pid, so it looked like it had not started when it had.
+
+Both posted to the same six accounts, doubling the send rate against a 1/s limit. Killing the
+orphan took the cadence from ~44 s to ~12.5 s with no code change. Check before measuring:
+
+```bash
+ps -eo pid,etime,cmd | grep '[d]ebug/price-poster'
+```
+
+Note also that `pkill -f "$POSTER"` **kills the shell running it**, because the pattern matches
+that shell's own command line — the trap `run-devnet-stack.sh` already documents. Kill by pid.
+
+### Weekend prices are carried forward, and that is documented
+
+At 07:53 UTC on a Sunday the five FX/metals feeds all read `publish_time = Fri 2026-09-11
+20:59:59 UTC` — one second before the documented Friday 21:00 close — while BTC/USD read 36 s.
+That reads exactly like a broken relayer, and is not one. Two independent checks:
+
+- **`posted_slot` advances on all six accounts** (+206 to +272 slots over 40 s), so the poster
+  is writing every account every pass. `publish_time` is the price tick's own timestamp;
+  `posted_slot` is when it was posted. Only the latter is evidence about the poster.
+- **Pyth documents the behaviour.** From the Pyth Pro FAQ, via the Solana MCP: *"Starting March
+  23, 2026, when markets are closed and a fresh aggregate cannot be produced, Pyth Pro will
+  carry forward the most recent available price rather than omitting it."*
+
+So a closed market yields a successful post of a stale price, the 60 s gate rejects it, and the
+market stays `Halted`. Every layer is behaving correctly. **The consequence for testing: at the
+weekend only BTC/USD is exercisable**, and any FX or metals result before Sunday 21:00 UTC is a
+statement about the session calendar, not about the protocol.
+
+---
+
 ## Task 6 — the extensibility test
 
-**Status: blocked. The venue is closed, and not only because it is Sunday.**
+**Status: the blocker is gone, the task is not done. Superseded by the 07:42 UTC reading
+below** — BTC/USD is `Active` again, which confirmed the diagnosis in this section rather than
+contradicting it. The remaining obstacle is the weekend, not the poster.
 
-Measured 2026-09-13 07:25 UTC against `api.devnet.solana.com`:
+### Re-measured 2026-09-13 07:42 UTC, after Task 0 was proven
+
+| | |
+|---|---|
+| BTC/USD #5 (continuous) | **`Active`** |
+| The other eight | `Halted` — five of them correctly, FX and metals reopen Sunday 21:00 UTC |
+
+So `feed_live` went true for the continuous market the moment a working poster published to it.
+**That is the prediction in this section coming true**, and it settles the causal chain: the
+poster was the cause, the keeper was never at fault, and no program change was involved.
+
+What is still owed, and when it can be done:
+
+- **Listing ETH/USD and SOL/USD is doable now** — both are continuous, so neither depends on
+  the session calendar. They need the admin wallet, which only this machine holds.
+- **The carried position and the browser trade must use BTC/USD** until Sunday 21:00 UTC. It is
+  the only exercisable market at the weekend, for the documented reason in Task 0.
+- **Task 0's own acceptance test — "one hour with zero `lag_secs >= 60`" — cannot pass before
+  Sunday 21:00 UTC**, and this is a defect in the criterion rather than in the poster. Five of
+  the six feeds are legitimately stale at the weekend, so the watchdog will report them stale
+  no matter how well the poster runs. Either run it after the FX open, or scope it to the
+  continuous markets and say so.
+
+### The original diagnosis, 2026-09-13 07:25 UTC, against `api.devnet.solana.com`
 
 | | |
 |---|---|
@@ -199,6 +302,7 @@ poster has to be working first**, which makes Task 0 a prerequisite for Task 6 r
 parallel task.
 
 ---
+
 
 ## Task 1 — the baseline
 
