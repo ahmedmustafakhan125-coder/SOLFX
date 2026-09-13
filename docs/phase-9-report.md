@@ -155,6 +155,51 @@ Two things still unproven, and both must be before it ships:
 
 ---
 
+## Task 6 — the extensibility test
+
+**Status: blocked. The venue is closed, and not only because it is Sunday.**
+
+Measured 2026-09-13 07:25 UTC against `api.devnet.solana.com`:
+
+| | |
+|---|---|
+| All nine markets | **`Halted`** |
+| Keeper | **alive** — market accounts written seconds before the check, `CrankMarketSession` succeeding |
+| BTC/USD #5 (`FeedKind::Crypto`, continuous) | **`Halted`**, which no calendar can explain |
+
+`crank_market_session` leaves `Halted` only when **both** conditions hold
+([session.rs:157](../programs/solfx-core/src/instructions/keeper/session.rs#L157)):
+
+```rust
+if current == MarketStatus::Halted && !(feed_live && calendar_open) {
+    return MarketStatus::Halted;
+}
+```
+
+For the five FX and metals markets on a Sunday morning, `calendar_open` is correctly false —
+they reopen Sunday 21:00 UTC. But **BTC/USD is continuous**, so `calendar_open` is true and
+`feed_live` must therefore be false. `crank_market_session` takes no price account (verified
+from the accounts in its transaction), so `feed_live` comes from market state that
+`crank_market_price` refreshes, and that instruction does need a fresh price. A continuous
+market held `Halted` by a healthy keeper therefore points at the **poster**, and only the
+VPS's own logs can confirm which.
+
+**What I could not measure from here, and why it matters:** the local `price-accounts.json`
+points at accounts last written **2026-09-04 15:41 UTC** — nine days ago, abandoned. So the
+"all six feeds are 747,814 s stale" figure those accounts produce describes *my stale map*,
+not the venue. The VPS has its own map, and the poster and keeper there must be reading the
+same one. I nearly reported that number as the venue's; it would have been true about the
+wrong accounts.
+
+**Consequence for Task 6.** It requires a live position carried throughout and a browser trade,
+and on a Sunday the only market that could provide either is BTC/USD — which is `Halted`.
+Listing ETH/USD and SOL/USD now would also add two markets nothing publishes, reproducing the
+"three markets can never price" condition already recorded in `CLAUDE-SESSION.md`. **The
+poster has to be working first**, which makes Task 0 a prerequisite for Task 6 rather than a
+parallel task.
+
+---
+
 ## Task 1 — the baseline
 
 **Status: complete.** Recorded in [`CONTEXT.md`](CONTEXT.md); commit `docs: the real test and
