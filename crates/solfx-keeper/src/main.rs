@@ -57,6 +57,11 @@ async fn main() -> Result<()> {
     let cfg = Config::parse();
     init_tracing();
 
+    // Before anything reaches the network. A configuration whose book is stale by
+    // construction produces a keeper that logs, stands down, and cranks nothing, while
+    // systemd and the health probe both call it healthy — see `Config::validate`.
+    cfg.validate()?;
+
     let payer = cfg.load_keypair()?;
     let chain = chain::Chain::new(&cfg, payer);
     tracing::info!(

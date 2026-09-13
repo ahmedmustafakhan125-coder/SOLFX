@@ -48,7 +48,10 @@ pub struct Config {
     /// This is the **slow** loop. It exists so a keeper that has been running for a week and
     /// has drifted, or one that just started, converges on the truth; it is not how
     /// liquidations are found in time. See `scan_interval`.
-    #[arg(long, default_value_t = 30, env = "SOLFX_REFRESH_SECS")]
+    /// Must be **shorter than `max_book_age_secs`**, with room for a missed refresh —
+    /// `Config::validate` refuses otherwise. The old default pair was 30 against a 20-second
+    /// tolerance, which made the book stale by construction for a third of every cycle.
+    #[arg(long, default_value_t = 15, env = "SOLFX_REFRESH_SECS")]
     pub refresh_secs: u64,
 
     /// How often to re-price the mirrored book against the latest oracle accounts.
@@ -77,7 +80,11 @@ pub struct Config {
 
     /// Refuse to act on a book older than this. A keeper that cannot reach its RPC must go
     /// quiet, not keep firing decisions based on a snapshot from ten minutes ago.
-    #[arg(long, default_value_t = 20, env = "SOLFX_MAX_BOOK_AGE_SECS")]
+    ///
+    /// Defaults to three times `refresh_secs`, so one missed refresh is survivable and two
+    /// are not. See `Config::validate` for why the relationship is enforced rather than
+    /// merely documented.
+    #[arg(long, default_value_t = 45, env = "SOLFX_MAX_BOOK_AGE_SECS")]
     pub max_book_age_secs: u64,
 
     /// Log every evaluation rather than only actions. Very loud; for a single position under
@@ -155,6 +162,46 @@ impl Config {
         CommitmentConfig::processed()
     }
 
+    /// Refuse a configuration whose book is stale by construction.
+    ///
+    /// # The failure this exists to prevent
+    ///
+    /// `book_is_fresh` stands the keeper down for a pass whenever the book is older than
+    /// `max_book_age_secs`, and only the **slow** loop refreshes it — `refresh_prices` updates
+    /// marks without resetting the age. So if `refresh_secs >= max_book_age_secs` the book is
+    /// stale for part of every single cycle, by arithmetic, on a healthy machine with a
+    /// healthy RPC.
+    ///
+    /// Worse than the gap is its regularity. The crank tick is a whole number of seconds and
+    /// so is the refresh, so once a tick lands inside the stale window it lands there on every
+    /// subsequent cycle rather than drifting out of it. Measured on the VPS with the old
+    /// defaults, 2026-09-09: **165 "book is stale; standing down this pass" in ten minutes and
+    /// zero cranks in eight**, while systemd reported `active (running)` and the health probe
+    /// reported healthy.
+    ///
+    /// # Why this refuses rather than correcting itself
+    ///
+    /// The same reason `main` refuses when the protocol account is missing: a keeper that
+    /// silently repairs a nonsensical configuration is a keeper running settings its operator
+    /// does not know about. The defaults are coherent, so this can only fire on values someone
+    /// passed deliberately — and they are the only person who can decide which of the two they
+    /// meant.
+    pub fn validate(&self) -> Result<()> {
+        if self.refresh_secs >= self.max_book_age_secs {
+            anyhow::bail!(
+                "--refresh-secs {} is not shorter than --max-book-age-secs {}, so the book \
+                 would be stale for part of every cycle and the keeper would stand down \
+                 without ever saying why. Give the tolerance room for at least one missed \
+                 refresh: --max-book-age-secs {} or higher, or --refresh-secs {} or lower.",
+                self.refresh_secs,
+                self.max_book_age_secs,
+                self.refresh_secs.saturating_mul(2),
+                self.max_book_age_secs.saturating_sub(1),
+            );
+        }
+        Ok(())
+    }
+
     pub fn load_keypair(&self) -> Result<Keypair> {
         let raw = std::fs::read_to_string(&self.keypair)
             .with_context(|| format!("reading keypair {}", self.keypair.display()))?;
@@ -162,5 +209,87 @@ impl Config {
             .with_context(|| format!("parsing keypair {}", self.keypair.display()))?;
         Keypair::try_from(bytes.as_slice())
             .map_err(|e| anyhow::anyhow!("invalid keypair {}: {e}", self.keypair.display()))
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::integer_division,
+    clippy::expect_used,
+    clippy::panic
+)]
+mod tests {
+    use super::*;
+
+    /// The minimum a `Config` needs to parse. Everything else has a default, which is the
+    /// point of the first test.
+    fn parse(extra: &[&str]) -> Config {
+        let mut argv = vec!["solfx-keeper"];
+        argv.extend_from_slice(extra);
+        Config::parse_from(argv)
+    }
+
+    /// The regression that matters. The shipped defaults were `refresh_secs = 30` against
+    /// `max_book_age_secs = 20`, so a keeper started with no flags at all was stale for a
+    /// third of every cycle and stood down without explaining itself.
+    #[test]
+    fn the_defaults_are_coherent() {
+        let cfg = parse(&[]);
+        assert!(
+            cfg.validate().is_ok(),
+            "a keeper started with no flags must be able to run: refresh={} max_age={}",
+            cfg.refresh_secs,
+            cfg.max_book_age_secs
+        );
+        assert!(
+            cfg.refresh_secs < cfg.max_book_age_secs,
+            "the tolerance must exceed the refresh interval"
+        );
+    }
+
+    /// One missed refresh must be survivable, or a single slow RPC round trip stands the
+    /// keeper down. Two in a row should not be.
+    #[test]
+    fn the_defaults_survive_one_missed_refresh() {
+        let cfg = parse(&[]);
+        assert!(cfg.refresh_secs.saturating_mul(2) < cfg.max_book_age_secs);
+    }
+
+    #[test]
+    fn equal_values_are_refused() {
+        // The exact boundary: at equality the book reaches the tolerance the instant before
+        // the refresh that would have reset it, so the race is lost every cycle.
+        let cfg = parse(&["--refresh-secs", "30", "--max-book-age-secs", "30"]);
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn the_old_shipped_defaults_are_refused() {
+        let cfg = parse(&["--refresh-secs", "30", "--max-book-age-secs", "20"]);
+        let err = cfg.validate().expect_err("30/20 must not be accepted");
+        let msg = err.to_string();
+        // The message has to name both numbers and a way out; an operator reading a crash
+        // loop at 3am should not have to read the source to find the fix.
+        assert!(msg.contains("30") && msg.contains("20"), "{msg}");
+        assert!(msg.contains("--max-book-age-secs"), "{msg}");
+    }
+
+    #[test]
+    fn a_shorter_refresh_than_the_tolerance_is_accepted() {
+        // What the VPS deployment actually runs.
+        assert!(
+            parse(&["--refresh-secs", "15", "--max-book-age-secs", "45"])
+                .validate()
+                .is_ok()
+        );
+        // And the tightest legal pair.
+        assert!(
+            parse(&["--refresh-secs", "19", "--max-book-age-secs", "20"])
+                .validate()
+                .is_ok()
+        );
     }
 }
