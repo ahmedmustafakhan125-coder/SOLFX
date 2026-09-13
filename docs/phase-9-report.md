@@ -227,6 +227,46 @@ code bound** — there is nothing left to win here without changing the send cou
 the ALT note above is about. The old 30-send version had a 30 s floor, and its median age of
 50 s against a 60 s gate is the same measurement seen from the other side.
 
+### Reliability over 6 h 22 m, and the cost of sharing
+
+The 1,644-pass run at eight feeds is the first long look at the fixed poster:
+
+| | |
+|---|---|
+| fully clean | **1,622 / 1,644 — 98.66 %** |
+| partial loss (1-2 feeds) | 3 |
+| **whole-pass loss (0 of 8 posted)** | **19 — 1.16 %** |
+| longest consecutive whole-pass loss | **5** |
+| cause of all 22 | **Helius 429, every one.** No other error appeared |
+
+**Sharing one VAA concentrates failure, and that is the trade-off.** A 429 on
+`init_encoded_vaa` or `verify_encoded_vaa_v1` loses **all eight feeds**, where the old
+one-VAA-per-feed design would have lost one. 19 of the 22 failures are that shape.
+
+Measured against the gate, with timestamps rather than arithmetic — a single failure:
+
+```
+2026-09-13T14:22:38Z pass complete: 8 posted, 0 failed
+2026-09-13T14:22:45Z pass complete: 0 posted, 8 failed
+2026-09-13T14:22:58Z pass complete: 8 posted, 0 failed
+```
+
+**~20 s between fresh prices for one failure.** A failing pass is cheap — it aborts at the VAA
+step after 1-3 sends and then sleeps `interval_secs`, so it costs ~7 s rather than a clean
+pass's ~12.5 s. So the observed worst case, 5 consecutive, is roughly `5 x 7 + 13 = 48 s`
+against a **60 s gate**: inside it, but with only about one pass of margin. **Six consecutive
+would breach.**
+
+*Correction to an earlier draft of this section:* the first estimate multiplied 5 failures by a
+clean pass's 12.5 s and reported a 62 s breach. That was wrong — it priced failures at the cost
+of successes. The loop aborts early on a VAA failure, which is why timestamps were added to the
+poster's log rather than the number being left as arithmetic.
+
+**The fix this points at, not yet done:** retry the three VAA sends. A 429 there would then
+cost a delay instead of eight feeds, which would turn every one of these 19 whole-pass losses
+into a partial one. That is the highest-value remaining change to the poster, and it is
+independent of the address-lookup-table work above.
+
 ### The trap: two posters look exactly like a slow poster
 
 The first devnet run of this measurement read **~44 s per pass**, and the honest first
