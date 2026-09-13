@@ -67,4 +67,7 @@ price-accounts.*.json
 # Written by init-protocol; regenerate rather than commit — it names cluster-specific
 # accounts and is meaningless against a different ledger.
 deployment.json
+# Any scoped variant of it — e.g. deployment.crypto.json, the weekend feed set. Generated
+# from what is on chain, so it is regenerated rather than committed, exactly like its parent.
+deployment.*.json
 .stack-logs/
