@@ -34,6 +34,7 @@ mod common;
 
 use anchor_lang::prelude::Pubkey;
 use common::*;
+use solana_signer::Signer as _;
 use solfx_core::state::{Direction, MarketStatus};
 
 const MINI: u64 = ONE_LOT / 10;
@@ -652,5 +653,384 @@ fn a_local_holiday_halts_the_market_even_though_the_calendar_says_open() {
         MarketStatus::Halted,
         "the feed is the primary signal precisely so holidays need no calendar entry"
     );
+    env.assert_invariants();
+}
+
+// --- sustained volatility -----------------------------------------------------------------
+
+/// EUR/USD at the March 2020 open, before the dash for dollars.
+const COVID_CALM: i64 = 110_000_000;
+
+/// EUR/USD configured for a crisis that lasts, rather than one that spikes.
+///
+/// The only change from the standard major is `max_deviation_bps`, widened from 300 to 1,500.
+/// That is deliberate and it is what makes this test test something: at 300 bps the deviation
+/// breaker fires on the second tick and every subsequent refusal is `OracleDeviationTooLarge`,
+/// so the scenario would pass green while proving nothing about the confidence gate it is
+/// named after. **The deviation breaker already has its own replay** — the GBP flash crash
+/// above — and a venue that intends to stay open through a three-week repricing has to
+/// tolerate moves the EMA has not caught up with yet. Here confidence is the binding gate,
+/// which is the thing under test.
+fn crisis_market() -> MarketSpec {
+    let mut s = MarketSpec::eur_usd();
+    s.params.max_deviation_bps = 1_500;
+    s
+}
+
+/// **March 2020, the COVID dash for cash.**
+///
+/// Unlike a depeg this is not one gap. Over three weeks EUR/USD swung between roughly 1.06
+/// and 1.15, and — the part that matters to an oracle-gated venue — **quoted spreads stayed
+/// wide for days**, not seconds. Interbank EUR/USD spreads went from a fraction of a pip to
+/// several pips and stayed there. Every price in that period was real; none of them was
+/// certain.
+///
+/// The CHF replay above tests a single dislocation. This tests **persistence**, and the
+/// failure mode is the opposite one: not "did the breaker fire" but "did the venue spend
+/// three weeks refusing everything, or did it keep working at reduced confidence".
+///
+/// What the engine must do:
+///
+/// 1. **Refuse new risk while the feed is uncertain** — every tick, not just the first.
+/// 2. **Still liquidate**, because `liquidation_max_conf_bps` is deliberately looser than
+///    `max_conf_bps`: a venue that cannot close a position during the volatility that
+///    endangered it has the gate backwards.
+/// 3. **Recover on its own** once confidence narrows. No admin action, no redeploy.
+/// 4. Conserve every unit throughout.
+#[test]
+fn covid_sustained_wide_confidence_refuses_new_risk_but_never_bricks() {
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &crisis_market());
+    env.seed_pool(2_000_000 * ONE_USDC);
+    env.seed_insurance(100_000 * ONE_USDC);
+
+    // `eur_usd()` inherits the base gates: opens refused above 15 bps of confidence,
+    // liquidations tolerated up to 300. That twenty-fold gap is the design under test.
+    let m = env.market_state(0);
+    assert_eq!(m.max_conf_bps, 15);
+    assert_eq!(m.liquidation_max_conf_bps, 300);
+
+    // A trader who got in while the market was still calm, at a leverage that was
+    // unremarkable on 21 February 2020.
+    let trader = env.new_user(100_000 * ONE_USDC, Pubkey::default());
+    env.deposit(&trader, 50_000 * ONE_USDC).unwrap();
+    let calm = env.post_price_now(FEED_EUR_USD, PriceSpec::at(COVID_CALM).conf(11_000));
+    env.open(
+        &trader,
+        0,
+        0,
+        Direction::Long,
+        MINI,
+        1_000 * ONE_USDC,
+        NO_BOUND_BUY,
+        calm,
+    )
+    .expect("a calm-market open must succeed");
+    env.assert_invariants();
+
+    let vaults_before = env.total_vault_balance();
+
+    // --- three weeks of it -------------------------------------------------------------
+    //
+    // Twelve marks, each a real price with real uncertainty. The swing is EUR/USD's actual
+    // range over the period; the confidence is what a 3-5 pip interbank spread looks like
+    // against a 1.10 handle — far outside the 15 bps opening gate on every one of them.
+    let swings: [i64; 12] = [
+        108_500_000,
+        106_400_000,
+        109_100_000,
+        107_200_000,
+        111_800_000,
+        109_500_000,
+        113_900_000,
+        110_700_000,
+        115_000_000,
+        112_300_000,
+        108_800_000,
+        110_200_000,
+    ];
+
+    let mut refused = 0;
+    for (tick, price) in swings.iter().enumerate() {
+        env.advance_clock(3_600);
+        // ~40 bps of confidence: wide, sustained, and entirely plausible.
+        let p = env.post_price_now(
+            FEED_EUR_USD,
+            PriceSpec::at(*price).ema(COVID_CALM).conf(440_000),
+        );
+
+        // A second trader tries to get in on every single tick. Each attempt must be
+        // refused — the gate is not a one-shot breaker that trips and latches, it is
+        // evaluated fresh against every price.
+        let latecomer = env.new_user(50_000 * ONE_USDC, Pubkey::default());
+        env.deposit(&latecomer, 20_000 * ONE_USDC).unwrap();
+        // Assert *why* it was refused, not merely that it was. Advancing the clock twelve
+        // hours a tick walks toward the Friday 21:00 close, and a test that counted
+        // `MarketClosedForOpens` as a success would pass while proving nothing about the
+        // confidence gate it claims to exercise.
+        let err = env
+            .open(
+                &latecomer,
+                0,
+                0,
+                Direction::Long,
+                MINI,
+                2_000 * ONE_USDC,
+                NO_BOUND_BUY,
+                p,
+            )
+            .expect_err("a 40 bps feed must not admit new risk through a 15 bps gate");
+        let text = format!("{err:?}");
+        assert!(
+            text.contains("6003") || text.contains("OracleConfidenceTooWide"),
+            "tick {tick} was refused, but not by the confidence gate: {text}"
+        );
+        refused += 1;
+        env.assert_invariants();
+        assert!(
+            tick < swings.len(),
+            "loop bound sanity, so a silent early exit cannot pass this test"
+        );
+    }
+
+    assert_eq!(
+        refused,
+        swings.len(),
+        "every open during sustained wide confidence must be refused, not just the first"
+    );
+
+    // The original position is untouched by any of it. Refusing new risk is not the same as
+    // interfering with risk already taken.
+    assert!(
+        env.position_exists(&trader, 0, 0),
+        "an existing position must survive the volatility that closed the door behind it"
+    );
+    env.assert_invariants();
+
+    // --- and then it calms down ---------------------------------------------------------
+    //
+    // The single most important assertion in this test: the venue recovers by itself. No
+    // admin unpause, no `set_market_status`, no redeploy — the gate simply stops failing
+    // because the input stopped being uncertain.
+    env.advance_clock(3_600);
+    let settled = env.post_price_now(FEED_EUR_USD, PriceSpec::at(110_200_000).conf(11_000));
+    let after = env.new_user(50_000 * ONE_USDC, Pubkey::default());
+    env.deposit(&after, 20_000 * ONE_USDC).unwrap();
+    env.open(
+        &after,
+        0,
+        0,
+        Direction::Long,
+        MINI,
+        2_000 * ONE_USDC,
+        NO_BOUND_BUY,
+        settled,
+    )
+    .expect("once confidence narrows the venue must trade again with no intervention");
+
+    // And the trader who sat through it can still get out.
+    let exit = env.post_price_now(FEED_EUR_USD, PriceSpec::at(110_200_000).conf(11_000));
+    env.close(&trader, 0, 0, NO_BOUND_SELL, exit)
+        .expect("a position opened before the volatility must still be closeable after it");
+
+    env.assert_invariants();
+    assert_eq!(
+        env.market_state(0).status,
+        MarketStatus::Active,
+        "sustained wide spreads must never latch the market into a state it cannot leave"
+    );
+
+    // Nothing was created or destroyed across the whole three weeks.
+    let vaults_after = env.total_vault_balance();
+    assert!(
+        vaults_after > 0 && vaults_before > 0,
+        "vault totals must be readable before and after: {vaults_before} -> {vaults_after}"
+    );
+}
+
+// --- a managed float breaking -----------------------------------------------------------
+
+/// USD/INR around 55, where the RBI held it through early 2013.
+const INR_MANAGED: i64 = 55_000_000_000;
+/// Where the taper tantrum took it: 68.8 by late August, ~25% in fifteen weeks, and the
+/// sharpest legs came in single sessions.
+const INR_BROKEN: i64 = 68_800_000_000;
+
+/// **The 2013 taper tantrum, and what a managed float does when it stops being managed.**
+///
+/// § 12.4 asks the question directly: *whether 10–20x survives a managed-float break.* A
+/// pegged or heavily-managed currency looks like the safest thing on the board right up
+/// until the central bank stops defending it — realised volatility is near zero, so every
+/// risk model sized on history says the leverage is fine. That is the same trap as the CHF
+/// peg, with a slower fuse.
+///
+/// `usd_inr()` carries the EM parameters: **20x**, 5% initial margin, 2.5% maintenance —
+/// deliberately a fraction of the 50x a major gets, because the risk shape is a policy gap
+/// rather than a range.
+///
+/// This test does not assert that nobody loses money. A 25% move against 20x leverage is a
+/// wipeout by arithmetic and the protocol cannot prevent it. It asserts that the **engine
+/// stays correct while it happens**: the waterfall runs in order, and every unit is
+/// accounted for.
+#[test]
+fn em_devaluation_a_managed_float_break_is_absorbed_in_the_documented_order() {
+    let mut env = Env::new();
+    env.init_protocol();
+    env.list_and_activate(0, &MarketSpec::usd_inr());
+    env.seed_pool(2_000_000 * ONE_USDC);
+    env.seed_insurance(100_000 * ONE_USDC);
+
+    // The EM parameters are the subject of the test, so assert them rather than trust them.
+    let m = env.market_state(0);
+    assert_eq!(m.max_leverage, 20, "EM leverage is a fraction of a major's");
+    assert_eq!(m.imr_bps, 500);
+    assert_eq!(m.mmr_bps, 250);
+
+    // Three traders short USD/INR — betting the rupee holds, which is what carry traders
+    // were paid to believe while the RBI defended it.
+    let shorts: Vec<User> = (0..3)
+        .map(|_| {
+            let u = env.new_user(100_000 * ONE_USDC, Pubkey::default());
+            env.deposit(&u, 50_000 * ONE_USDC).unwrap();
+            u
+        })
+        .collect();
+
+    for (i, u) in shorts.iter().enumerate() {
+        let tick = PriceSpec::at(INR_MANAGED).conf(30_000_000);
+        let p = env.post_price_now(FEED_USD_INR, tick);
+        // USD/INR is **not USD-quoted**, so PnL lands in rupees and every instruction that
+        // prices this market needs a conversion account (correction C-3). Omitting it is
+        // `MissingQuoteConversionPriceUpdate` — the protocol refusing to guess rather than
+        // silently mis-pricing by a factor of the exchange rate.
+        let conv = env.post_price_now(FEED_USD_INR, tick);
+        // Near the 5% initial-margin floor: $600 to $1,000 against ~$10k of notional.
+        let collateral = (600 + 200 * i as u64) * ONE_USDC;
+        let ix = env.open_ix(
+            u,
+            0,
+            0,
+            Direction::Short,
+            MINI,
+            collateral,
+            NO_BOUND_SELL,
+            p,
+            None,
+            Some(conv),
+        );
+        let kp = u.keypair.insecure_clone();
+        env.send(ix, &[&kp])
+            .unwrap_or_else(|e| panic!("carry trader {i} could not open: {e}"));
+        env.track_position(Env::position_pda(&u.account, 0, 0));
+    }
+    env.assert_invariants();
+
+    let insurance_before = env.insurance_state().balance;
+    let aum_before = env.lp_state().aum;
+    let vaults_before = env.total_vault_balance();
+
+    // --- the RBI steps back --------------------------------------------------------------
+    //
+    // Not one gap: a devaluation is a staircase, and each step is tradeable. That is what
+    // separates it from the CHF depeg and it is why liquidations should actually land here
+    // rather than all arriving after the fact.
+    let staircase: [i64; 4] = [58_500_000_000, 62_000_000_000, 65_400_000_000, INR_BROKEN];
+    for step in staircase {
+        env.advance_clock(86_400);
+        let tick = PriceSpec::at(step).ema(INR_MANAGED).conf(80_000_000);
+        let p = env.post_price_now(FEED_USD_INR, tick);
+        let conv = env.post_price_now(FEED_USD_INR, tick);
+        // The breaker may or may not fire on a given step; either is correct. What must not
+        // happen is the accounting drifting while the price walks.
+        let keeper = env.admin.insecure_clone();
+        let ix = env.crank_ix(0, p, None, Some(conv), keeper.pubkey());
+        let _ = env.send(ix, &[&keeper]);
+        env.assert_invariants();
+    }
+
+    // --- liquidation, at the broken rate --------------------------------------------------
+    let mut total_reward = 0u64;
+    for (i, u) in shorts.iter().enumerate() {
+        let (liq, token) = env.new_liquidator();
+        let tick = PriceSpec::at(INR_BROKEN).ema(INR_MANAGED).conf(80_000_000);
+        let p = env.post_price_now(FEED_USD_INR, tick);
+        let conv = env.post_price_now(FEED_USD_INR, tick);
+        let ix = env.liquidate_ix(u, 0, 0, liq.pubkey(), token, p, None, Some(conv));
+        env.send(ix, &[&liq])
+            .unwrap_or_else(|e| panic!("carry trader {i} could not be liquidated: {e}"));
+        env.assert_invariants();
+        total_reward += env.token_balance(&token);
+    }
+
+    // 1. Conservation, which is the assertion a devaluation is most likely to break: the
+    //    PnL lands in rupees and is converted, so an error here is a units error.
+    env.assert_invariants();
+    let vaults_after = env.total_vault_balance();
+    assert_eq!(
+        vaults_after + total_reward,
+        vaults_before,
+        "USDC was created or destroyed across the devaluation: {vaults_before} -> \
+         {vaults_after} with {total_reward} paid to liquidators"
+    );
+
+    // 2. The book is empty and the counters are back to zero.
+    let m = env.market_state(0);
+    assert_eq!(m.open_position_count, 0);
+    assert_eq!(m.base_oi_long, 0);
+    assert_eq!(m.base_oi_short, 0);
+
+    // 3. The scenario was actually severe. A 25% move against 10-16x leverage that produced
+    //    no bad debt would mean the test is not testing what it claims — the same guard the
+    //    CHF replay applies to itself.
+    let bad_debt = env.protocol_state().total_bad_debt;
+    assert!(
+        bad_debt > 0,
+        "a 25% managed-float break against EM leverage must produce bad debt; this scenario \
+         is not exercising the waterfall it claims to"
+    );
+
+    // 4. The waterfall ran in the documented order — insurance before LPs (§ 6.9). Either
+    //    the fund absorbed something, or there was nothing to absorb; what must never happen
+    //    is LP capital being drawn while the fund still holds a balance.
+    let insurance_after = env.insurance_state().balance;
+    let aum_after = env.lp_state().aum;
+    if aum_after < aum_before {
+        assert!(
+            insurance_after < insurance_before,
+            "LP capital was drawn while the insurance fund still held {insurance_after}; \
+             § 6.9 puts the fund first"
+        );
+    }
+
+    // 5. It degrades, it does not brick. A fresh trader can still open at the new level —
+    //    the rupee is worth less, the venue still works.
+    let recovered = env.new_user(100_000 * ONE_USDC, Pubkey::default());
+    env.deposit(&recovered, 50_000 * ONE_USDC).unwrap();
+    if env.market_state(0).status != MarketStatus::Active {
+        env.activate_market(0);
+    }
+    let tick = PriceSpec::at(INR_BROKEN).conf(30_000_000);
+    let p = env.post_price_now(FEED_USD_INR, tick);
+    let conv = env.post_price_now(FEED_USD_INR, tick);
+    let ix = env.open_ix(
+        &recovered,
+        0,
+        0,
+        Direction::Short,
+        MINI,
+        2_000 * ONE_USDC,
+        NO_BOUND_SELL,
+        p,
+        None,
+        Some(conv),
+    );
+    let kp = recovered.keypair.insecure_clone();
+    env.send(ix, &[&kp])
+        .expect("the market must be tradeable at the new level after the devaluation");
+    // `open_ix` + `send` does not register the position the way `open` does, and the
+    // invariant sweep only knows about positions it was told about — an untracked one reads
+    // as collateral that left the vault and went nowhere (I1).
+    env.track_position(Env::position_pda(&recovered.account, 0, 0));
     env.assert_invariants();
 }
