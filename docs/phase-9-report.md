@@ -549,3 +549,65 @@ pattern this project keeps finding:
 | `MissingQuoteConversionPriceUpdate` | USD/INR is not USD-quoted; every instruction pricing it needs a conversion account (C-3). The protocol refusing to guess. |
 | I1 off by exactly 2,000 USDC | `open_ix` + `send` does not register a position the way `open` does, so the invariant sweep read an untracked one as collateral that left the vault and went nowhere. |
 | A patch that changed nothing | The replacement did not match because `cargo fmt` had already reflowed the call it was matching, and the script did not assert on the match. |
+
+---
+
+## Task 0 — the acceptance test, run on the VPS 2026-09-13, and it does not pass
+
+**Status: the batched poster is deployed and correct. The gate is not held, and no poster
+setting can hold it, because the limit is not a rate.**
+
+### What was deployed
+
+The venue is at **11 markets on chain**, 8 in `deployment.json` after regenerating it here
+(`init-protocol --markets …` needs `--keypair $SOLFX_OPERATOR_KEYPAIR`; it defaults to
+`~/.config/solana/id.json`, which does not exist on the VPS). ETH/USD is index 9, SOL/USD is
+index 10, and the batched code is confirmed live — the log carries `shared VAA:
+init_encoded_vaa`, which only the new path emits.
+
+### The measurement that ends the tuning
+
+Helius's free tier does **not** refuse at a rate. It refuses **~20% of `sendTransaction`
+calls at any offered rate.** Probed directly, poster stopped, nothing else running:
+
+| Offered rate | Result |
+|---|---|
+| 1 send/s | **3 of 8 refused** — `{"code":-32429,"message":"rate limited"}` |
+| 0.33 send/s (one per 3 s) | **2 of 10 refused** |
+
+A rate limit disappears when you go below it. This does not. Three seconds between sends is
+far under any plausible cap, and one in five is still refused.
+
+That arithmetic decides everything else. A crypto-only pass is `3 + 3 + 1 = 7` sends, so
+`0.8⁷ ≈ 21%` of passes survive intact — and the four-clean-of-eleven measured is exactly that.
+**The batched design makes it worse in this specific failure mode**, and that is worth stating
+plainly: the three shared-VAA setup sends are a single point of failure for the whole pass, so
+~49% of passes die before a single price is written. Batching is still right for a rate limit;
+it is a liability against a probabilistic one.
+
+### What was tried, and what each attempt cost
+
+| Attempt | Result |
+|---|---|
+| `--concurrency 2`, `--interval 2` (as deployed) | 0 of 8 posted, indefinitely |
+| `--interval 12` | first pass 8/8, then degraded — fast retry after a failure re-exceeds the budget |
+| `--concurrency 1` (serialise the sends) | 429s 21 → 7, still ragged |
+| Gateway-enforced 1/s send bucket | **worse.** Sends queued long enough that blockhashes aged and confirmations timed out — the same class of bug as the original blockhash-per-pass. Reverted. |
+| `--max-rps 1` | **one uncontended pass: 8 posted, 0 failed in 33.3 s.** The only setting that spaces *sends*, because the poster's limiter counts all calls and cannot tell a send from a read |
+| `--max-rps 1` running continuously | ragged again — a clean pass is 33 s, so back-to-back passes re-enter the refusal band |
+| Crypto only (`deployment.crypto.json`), `--max-rps 1 --concurrency 1 --interval 12` | **BTC, ETH and SOL all `Active`** — but 12 of 15 watchdog readings still over the 60 s gate |
+
+### Where it stands
+
+The three open markets are `Active` and trading is possible most of the time. It is **not**
+reliable: a trade attempted in the wrong window still returns `OracleStale`, so the MVP bar —
+*anyone can trade without an error* — is not met.
+
+**This is a purchase, not a patch.** Helius Developer at $49/month takes `sendTransaction` from
+the free pool to 5/s. Everything else has been tried and measured.
+
+**Weekend note:** the poster is scoped to `deployment.crypto.json` while FX and metals are
+shut. That is not a reduction in ambition — Pyth carries a closed market's last price forward,
+so republishing EUR/USD at the weekend spends a rationed send to write a number that cannot
+have changed, while the markets that *are* open go stale for want of the same send.
+**Switch the unit back to `deployment.json` after the Sunday 21:00 UTC FX open.**
