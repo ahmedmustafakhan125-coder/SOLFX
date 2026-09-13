@@ -25,6 +25,7 @@ export function useTriggers(
   positions: readonly {
     readonly address: Address;
     readonly marketIndex: number;
+    readonly openedAt: bigint;
   }[],
   pollMs = 10_000
 ) {
@@ -48,11 +49,19 @@ export function useTriggers(
         const found = await Promise.all(
           positions.map(async (p) => {
             const rows = await readTriggers(rpc, p.address);
-            return rows.map((t) => ({
-              ...t,
-              position: p.address,
-              marketIndex: p.marketIndex,
-            }));
+            return (
+              rows
+                // Orders that predate the position at this address belong to a previous
+                // occupant of the same PDA — see `loadStaleTriggers`. Drawing one would put
+                // a take-profit line on the wrong side of the entry, which is worse than
+                // drawing nothing.
+                .filter((t) => t.createdAt >= p.openedAt)
+                .map((t) => ({
+                  ...t,
+                  position: p.address,
+                  marketIndex: p.marketIndex,
+                }))
+            );
           })
         );
         if (!cancelled) setTriggers(found.flat());

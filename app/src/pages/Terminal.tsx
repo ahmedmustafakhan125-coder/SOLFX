@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Header } from "@/components/Header";
 import { RiskDisclosure } from "@/components/RiskDisclosure";
@@ -7,6 +7,8 @@ import { MarketList } from "@/components/MarketList";
 import { MarketPanel } from "@/components/MarketPanel";
 import { AccountPanel } from "@/components/AccountPanel";
 import { ActivityPanel } from "@/components/ActivityPanel";
+import { StaleOrders } from "@/components/StaleOrders";
+import { useAccount } from "@/hooks/useAccount";
 import { usePositions } from "@/hooks/usePositions";
 import { useTriggers } from "@/hooks/useTriggers";
 import {
@@ -87,7 +89,26 @@ export function Terminal() {
   // price lines so a trader can see their entry against the candles rather than having to
   // read it off the table below — the answer to "where did I get filled".
   // Resting orders for the positions on screen, so the chart can draw them.
-  const { triggers } = useTriggers(positions);
+  const { owner } = useAccount();
+
+  // Re-classify the leftovers whenever a position opens or closes: a close is exactly the
+  // event that turns a live order into an orphan.
+  const [staleToken, setStaleToken] = useState(0);
+  const bumpStale = useCallback(() => setStaleToken((n) => n + 1), []);
+  useEffect(() => setStaleToken((n) => n + 1), [positions.length]);
+
+  const { triggers } = useTriggers(
+    useMemo(
+      () =>
+        positions.map((p) => ({
+          address: p.address,
+          marketIndex: p.marketIndex,
+          // `openedAt` is what separates this position from a previous one at the same PDA.
+          openedAt: p.data.openedAt,
+        })),
+      [positions]
+    )
+  );
 
   const chartLevels: ChartLevel[] = market
     ? positions
@@ -165,6 +186,12 @@ export function Terminal() {
                   symbol={market.symbol}
                   live={prices[market.feedIdHex]}
                   levels={chartLevels}
+                />
+                <StaleOrders
+                  owner={owner}
+                  markets={markets}
+                  refreshToken={staleToken}
+                  onCancelled={bumpStale}
                 />
                 <ActivityPanel
                   positions={positions}

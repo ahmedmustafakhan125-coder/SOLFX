@@ -61,6 +61,8 @@ for (const { address, p } of rows) {
   // are printed too rather than hidden, and a diff on them is read, not treated as failure.
   for (const [k, v] of Object.entries(p)) {
     if (k === "discriminator" || k === "reserved") continue;
-    console.log(`  ${k.padEnd(22)} ${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
+    console.log(
+      `  ${k.padEnd(22)} ${typeof v === "object" ? JSON.stringify(v) : String(v)}`
+    );
   }
 }
