@@ -9,11 +9,11 @@ RAM and a `cargo build` OOM-killed itself there, so none of this could be verifi
 
 | Suite | Result |
 |---|---|
-| `cargo test --workspace` | **555 passed, 0 failed, 0 ignored** |
+| `cargo test --workspace` | **555 passed, 0 failed, 0 ignored** — of which `solfx-core` is **240**, re-run 2026-09-13 |
 | `cargo fmt --all --check` | clean |
 | `cargo clippy --workspace --all-targets` | **clean — 0 warnings** (7 fixed; see below) |
-| `npm --prefix clients/js test` | **198 passed** (11 files) |
-| `npm --prefix app run test` | **15 passed** (1 file) |
+| `npm --prefix clients/js test` | **211 passed** (12 files) — 13 added with `pricing.ts` |
+| `npm --prefix app run test` | **22 passed** (2 files) — 7 added with `floating.ts` |
 | `npm --prefix app run ci` | **green** — was red at `format:check` |
 | `anchor build` | clean; `solfx_core.so` sha256 `eff0ceee…`, **byte-identical to devnet** |
 
