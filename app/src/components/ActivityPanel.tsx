@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Address } from "@solana/kit";
+
+import { FloatingPanel } from "@/components/FloatingPanel";
+import { clampRect, defaultRect, type Rect } from "@/lib/floating";
 
 import { PositionsPanel } from "@/components/PositionsPanel";
 import { HistoryPanel } from "@/components/HistoryPanel";
@@ -11,6 +14,45 @@ import type { LoadedMarket } from "@/lib/markets";
 import type { OpenPosition } from "@/lib/positions";
 
 type Tab = "positions" | "history" | "summary" | "adl";
+
+/**
+ * Where the panel was left, if it was floated.
+ *
+ * A per-viewer convenience with nothing at stake, so it lives in `localStorage` and every
+ * access is wrapped — the same reasoning as `favourites.ts`. A browser that refuses storage
+ * gets the docked default, which is the layout everyone had before this existed.
+ */
+const LAYOUT_KEY = "solfx.activity-layout.v1";
+
+type Layout = { readonly floating: boolean; readonly rect?: Rect };
+
+function loadLayout(): Layout {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (!raw) return { floating: false };
+    const p: unknown = JSON.parse(raw);
+    if (typeof p !== "object" || p === null) return { floating: false };
+    const o = p as Record<string, unknown>;
+    const r = o["rect"] as Record<string, unknown> | undefined;
+    const nums = ["x", "y", "w", "h"].every(
+      (k) => typeof r?.[k] === "number" && Number.isFinite(r[k])
+    );
+    return {
+      floating: o["floating"] === true,
+      ...(nums ? { rect: clampRect(r as unknown as Rect) } : {}),
+    };
+  } catch {
+    return { floating: false };
+  }
+}
+
+function saveLayout(l: Layout): void {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(l));
+  } catch {
+    // The panel simply comes back docked next time.
+  }
+}
 
 type Props = {
   positions: OpenPosition[];
@@ -39,6 +81,17 @@ export function ActivityPanel({
 }: Props) {
   const [tab, setTab] = useState<Tab>("positions");
 
+  // Floating state is read once, lazily — `loadLayout` touches `localStorage` and clamps
+  // against the viewport, neither of which belongs in a render.
+  const [layout, setLayout] = useState<Layout>(loadLayout);
+  const setFloating = useCallback((floating: boolean) => {
+    setLayout((l) => ({ ...l, floating, rect: l.rect ?? defaultRect() }));
+  }, []);
+  const setRect = useCallback((rect: Rect) => {
+    setLayout((l) => ({ ...l, rect }));
+  }, []);
+  useEffect(() => saveLayout(layout), [layout]);
+
   // History is fetched the first time it is asked for and then kept. Latched rather than
   // passed `tab !== "positions"` directly, because that flips back to false on every return
   // to the positions tab and would re-read the whole log each time a trader switched back.
@@ -62,8 +115,8 @@ export function ActivityPanel({
     { id: "adl", label: "ADL" },
   ];
 
-  return (
-    <div className="border-t border-line-soft">
+  const body = (
+    <>
       <div className="flex items-center justify-between gap-3 px-5">
         <div className="flex">
           {tabs.map((t) => (
@@ -82,20 +135,31 @@ export function ActivityPanel({
             </button>
           ))}
         </div>
-        {tab === "positions" ? (
-          <span className="hidden text-[10px] text-ink-dim sm:block">
-            unrealised is marked at the oracle mid; a close fills after the
-            spread
-          </span>
-        ) : (
-          <button
-            onClick={refresh}
-            disabled={loading}
-            className="rounded border border-line px-2.5 py-1 text-[11px] hover:border-brand disabled:opacity-40"
-          >
-            {loading ? "Reading…" : "Refresh"}
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {tab === "positions" ? (
+            <span className="hidden text-[10px] text-ink-dim lg:block">
+              unrealised is marked at the oracle mid; a close fills after the
+              spread
+            </span>
+          ) : (
+            <button
+              onClick={refresh}
+              disabled={loading}
+              className="rounded border border-line px-2.5 py-1 text-[11px] hover:border-brand disabled:opacity-40"
+            >
+              {loading ? "Reading…" : "Refresh"}
+            </button>
+          )}
+          {layout.floating ? null : (
+            <button
+              onClick={() => setFloating(true)}
+              title="Float this panel so it can be moved and resized"
+              className="rounded border border-line px-2.5 py-1 text-[11px] text-ink-muted hover:border-brand hover:text-ink"
+            >
+              Pop out
+            </button>
+          )}
+        </div>
       </div>
 
       {tab === "positions" ? (
@@ -130,6 +194,35 @@ export function ActivityPanel({
           active={tab === "adl"}
         />
       )}
-    </div>
+    </>
+  );
+
+  if (!layout.floating) {
+    return <div className="border-t border-line-soft">{body}</div>;
+  }
+
+  // Docked, the panel is a row in a column layout; floated, it leaves a hole. The strip
+  // keeps the chart from jumping the full height of the table and, more importantly, is the
+  // only way back for someone who has dragged the window somewhere they cannot see.
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3 border-t border-line-soft px-5 py-2 text-[11px] text-ink-dim">
+        <span>Positions and activity are in a floating window.</span>
+        <button
+          onClick={() => setFloating(false)}
+          className="rounded border border-line px-2.5 py-1 text-ink-muted hover:border-brand hover:text-ink"
+        >
+          Bring it back
+        </button>
+      </div>
+      <FloatingPanel
+        title={`Activity — ${positions.length} open`}
+        rect={layout.rect ?? defaultRect()}
+        onRectChange={setRect}
+        onDock={() => setFloating(false)}
+      >
+        {body}
+      </FloatingPanel>
+    </>
   );
 }
