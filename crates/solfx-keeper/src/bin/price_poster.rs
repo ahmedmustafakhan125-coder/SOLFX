@@ -338,29 +338,34 @@ async fn run(args: Args) -> Result<()> {
     }
 }
 
-/// One full sweep: every listed feed fetched and published, all of them concurrently.
+/// One full sweep: **one** Hermes fetch, **one** VAA verified, then every feed posted against
+/// it concurrently.
 ///
-/// # Why each feed fetches its own update, and why the pass is concurrent
+/// # Why the VAA is shared, and why that is the whole fix
 ///
-/// Both properties are load-bearing for the 60-second staleness gate, and the original shape
-/// violated it in two independent ways.
+/// The scarce resource is not bandwidth and not the gateway — it is `sendTransaction`.
+/// **Helius's free tier allows 1 per second**, separately from its 10 req/s general limit.
+/// Publishing a feed through its own VAA costs 5 sends (create+init, write, verify, post,
+/// close), so six feeds cost 30, and at 1/s that is a hard **30-second floor** on a pass
+/// before a single confirmation is waited for. A 60-second staleness gate leaves no margin,
+/// and no amount of concurrency tuning changes the arithmetic: raising concurrency raises the
+/// send *rate* past the cap and every feed starts failing on 429 instead.
 ///
-/// This used to fetch every feed in one Hermes call and then post them one after another. A
-/// price is dated when Hermes serves it, not when it lands, so the last feed in a serial pass
-/// carried a price as old as every preceding feed's transactions put together. Measured on
-/// devnet with six markets listed: BTC/USD, posted last, landed **142 seconds** old against a
-/// 60-second gate — and no amount of waiting made it fresher, because every pass reproduced
-/// the same ordering.
+/// One Hermes request for all six feeds returns **one VAA carrying all six price updates**,
+/// measured at 292 bytes with identical `publish_time` across the six. The receiver is built
+/// for this: `post_update` takes `encoded_vaa` as a **read-only, non-signer** account, so any
+/// number of posts may reference one verified VAA. That turns 30 sends into
+/// `3 + feeds + 1` — **10 for six feeds**, a 3x cut in the only thing that is rationed.
 ///
-/// Fetching per feed fixes the age *on arrival*. On its own it does not fix the age *between*
-/// passes: serial posting refreshes a feed once per full sweep, so six feeds at ~25 s each
-/// would leave each one stale for most of a ~150 s cycle. Publishing concurrently is what
-/// collapses the cycle to roughly one feed's duration, and that is what keeps every market
-/// inside the gate simultaneously rather than only the first two.
+/// It also removes the reason the old code fetched per feed. That was the right fix for the
+/// old shape: each feed carried its own full 5-transaction path, so a batched fetch left the
+/// last feed's price as old as every preceding feed's transactions put together — measured at
+/// 142 seconds. Here the fetch happens once, the verify happens once, and the posts land
+/// within a confirmation of each other, so every feed is equally fresh by construction.
 ///
-/// Batching instructions is still not an option: `PostUpdateAtomicParams` carries its own copy
-/// of the VAA, so two instructions in one transaction means two VAAs and the 1232-byte packet
-/// limit arrives immediately. Concurrency is across transactions, not within them.
+/// Batching *instructions* is still not an option: `PostUpdateAtomicParams` carries its own
+/// copy of the VAA, so two of those in one transaction means two VAAs and the 1232-byte packet
+/// limit arrives immediately. The sharing here is of one verified account, not of payloads.
 async fn post_pass(
     rpc: &RpcClient,
     args: &Args,
@@ -369,128 +374,141 @@ async fn post_pass(
     feeds: &[(String, String)],
     accounts: &HashMap<String, Keypair>,
 ) -> Result<(usize, usize)> {
-    // One blockhash per *feed*, not one for the whole pass.
-    //
-    // A single pass-wide blockhash held while all six feeds went out together, which is what
-    // `--concurrency 8` did. At `--concurrency 2` a six-feed pass is three sequential waves,
-    // and the last wave starts ~40 s after the blockhash was fetched — inside the 150-slot
-    // (~60 s) life on paper, past it by the time five transactions have been sent and
-    // confirmed one after another. The symptom was not an error but a silence: the send was
-    // accepted and the transaction then dropped, surfacing as `not confirmed in 45s` on
-    // whichever two feeds were sent last. It looked like a guardian-set or a rate problem
-    // because it always struck the same two, BTC/USD and XAG/USD, which are simply last.
-    //
-    // Six `getLatestBlockhash` calls a pass rather than one is a rounding error against the
-    // ~30 sends and ~100 status polls a pass already makes, and unlike a concurrency setting
-    // it stays correct however this is tuned.
-    let throttle = Throttle::new(args.max_rps);
-
-    let outcomes: Vec<bool> = stream::iter(feeds.iter())
-        .map(|(symbol, feed_id)| {
-            let throttle = &throttle;
-            async move {
-                throttle.acquire().await;
-                let blockhash = match rpc.get_latest_blockhash().await {
-                    Ok(hash) => hash,
-                    Err(e) => {
-                        eprintln!("  {symbol:<14} FAILED: blockhash: {e:#}");
-                        return false;
-                    }
-                };
-                let pass = Pass {
-                    rpc,
-                    payer,
-                    throttle,
-                    blockhash,
-                };
-                match post_feed(pass, args, config, symbol, feed_id, accounts).await {
-                    Ok(Some(sig)) => {
-                        println!("  {symbol:<14} {sig}");
-                        true
-                    }
-                    // Not one of ours, or no account for it — neither a success nor a failure.
-                    Ok(None) => false,
-                    Err(e) => {
-                        eprintln!("  {symbol:<14} FAILED: {e:#}");
-                        false
-                    }
-                }
-            }
-        })
-        .buffer_unordered(args.concurrency.max(1))
-        .collect()
-        .await;
-
-    let ok = outcomes.iter().filter(|posted| **posted).count();
-    let failed = outcomes.len().saturating_sub(ok);
-    Ok((ok, failed))
-}
-
-/// Fetch one feed's latest update and publish it at `Full`.
-///
-/// The fetch lives here rather than in the caller so that a price is served by Hermes
-/// immediately before its own transactions start, never before another feed's.
-async fn post_feed(
-    pass: Pass<'_>,
-    args: &Args,
-    config: &ReceiverConfig,
-    symbol: &str,
-    feed_id: &str,
-    accounts: &HashMap<String, Keypair>,
-) -> Result<Option<String>> {
-    let Some(account) = accounts.get(symbol) else {
-        return Ok(None);
-    };
-
-    let blobs = fetch_updates(
-        &args.hermes_url,
-        args.hermes_token.as_deref(),
-        std::slice::from_ref(&feed_id.to_string()),
-    )
-    .await
-    .with_context(|| format!("hermes fetch for {symbol}"))?;
-
-    let blob = blobs
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow!("hermes returned no update for {symbol}"))?;
-
-    let decoded =
-        AccumulatorUpdateData::try_from_slice(&blob).map_err(|e| anyhow!("{symbol}: {e:?}"))?;
-    let Proof::WormholeMerkle { vaa, updates } = decoded.proof;
-    let vaa_bytes: Vec<u8> = vaa.into();
-
-    // A full 13-signature VAA does not fit alongside everything else in a 1232-byte packet.
-    // The receiver anticipates this: it accepts `minimum_signatures`, and trimming to exactly
-    // that is what makes the atomic path viable.
-    let guardian_set = guardian_set_address(&config.wormhole, &vaa_bytes)?;
-
-    // A single-feed request returns a single update, but the wire format still carries a
-    // list. Match on the feed id rather than taking the first: an unchecked `next()` would
-    // publish whatever Hermes happened to return under this feed's account.
-    let update = updates
-        .into_iter()
-        .find(|u| {
-            let msg: Vec<u8> = u.message.clone().into();
-            msg.get(1..33).map(hex::encode).as_deref() == Some(feed_id)
-        })
-        .ok_or_else(|| anyhow!("{symbol}: hermes returned no update matching {feed_id}"))?;
-
-    if args.dry_run {
-        println!("  [dry-run] {symbol:<14} -> {}", account.pubkey());
-        return Ok(Some("dry-run".to_string()));
+    // Only feeds this poster actually owns an account for. Anything else is not ours to
+    // publish, and asking Hermes for it wastes a slot in the request.
+    let wanted: Vec<(&str, &str)> = feeds
+        .iter()
+        .filter(|(symbol, _)| accounts.contains_key(symbol))
+        .map(|(symbol, feed_id)| (symbol.as_str(), feed_id.as_str()))
+        .collect();
+    if wanted.is_empty() {
+        return Ok((0, 0));
     }
 
-    let sig = post_one_full(
-        pass,
-        &config.wormhole,
-        guardian_set,
-        &vaa_bytes,
-        &update,
-        account,
-    )
-    .await?;
-    Ok(Some(format!("{} {sig}", account.pubkey())))
+    // feed id -> (symbol, price account). Built once so matching an update to its account is a
+    // lookup rather than a scan, and so an update Hermes returned that we did not ask for is
+    // dropped rather than written somewhere.
+    let by_feed: HashMap<&str, (&str, &Keypair)> = wanted
+        .iter()
+        .filter_map(|(symbol, feed_id)| {
+            accounts
+                .get(*symbol)
+                .map(|account| (*feed_id, (*symbol, account)))
+        })
+        .collect();
+
+    let ids: Vec<String> = wanted.iter().map(|(_, id)| (*id).to_string()).collect();
+    let blobs = fetch_updates(&args.hermes_url, args.hermes_token.as_deref(), &ids)
+        .await
+        .context("hermes fetch for the pass")?;
+
+    let throttle = Throttle::new(args.max_rps);
+    throttle.acquire().await;
+    let blockhash = rpc
+        .get_latest_blockhash()
+        .await
+        .context("blockhash for the pass")?;
+    let pass = Pass {
+        rpc,
+        payer,
+        throttle: &throttle,
+        blockhash,
+    };
+
+    let mut ok = 0usize;
+    let mut failed = 0usize;
+
+    // Normally one blob covers every feed. Hermes may return more than one when the feeds'
+    // latest updates come from different Pythnet slots, and each blob carries its own VAA — so
+    // the verify-once is per blob, not per pass.
+    for blob in blobs {
+        let decoded = match AccumulatorUpdateData::try_from_slice(&blob) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("  FAILED: undecodable accumulator blob: {e:?}");
+                failed = failed.saturating_add(1);
+                continue;
+            }
+        };
+        let Proof::WormholeMerkle { vaa, updates } = decoded.proof;
+        let vaa_bytes: Vec<u8> = vaa.into();
+
+        // Which updates in this blob are ours, paired with where each one goes.
+        let mine: Vec<(&str, &Keypair, pythnet_sdk::wire::v1::MerklePriceUpdate)> = updates
+            .into_iter()
+            .filter_map(|u| {
+                let msg: Vec<u8> = u.message.clone().into();
+                let feed_id = msg.get(1..33).map(hex::encode)?;
+                by_feed
+                    .get(feed_id.as_str())
+                    .map(|(symbol, account)| (*symbol, *account, u))
+            })
+            .collect();
+        if mine.is_empty() {
+            continue;
+        }
+
+        if args.dry_run {
+            for (symbol, account, _) in &mine {
+                println!("  [dry-run] {symbol:<14} -> {}", account.pubkey());
+            }
+            ok = ok.saturating_add(mine.len());
+            continue;
+        }
+
+        let guardian_set = match guardian_set_address(&config.wormhole, &vaa_bytes) {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("  FAILED: guardian set: {e:#}");
+                failed = failed.saturating_add(mine.len());
+                continue;
+            }
+        };
+
+        // Three sends, once, for every feed in this blob.
+        let encoded_vaa =
+            match verify_vaa_once(&pass, &config.wormhole, guardian_set, &vaa_bytes).await {
+                Ok(k) => k,
+                Err(e) => {
+                    eprintln!("  FAILED: shared VAA: {e:#}");
+                    failed = failed.saturating_add(mine.len());
+                    continue;
+                }
+            };
+
+        // One send each, concurrently. They touch different price accounts and only read the
+        // shared VAA, so there is nothing to serialise them for.
+        let outcomes: Vec<bool> = stream::iter(mine.iter())
+            .map(|(symbol, account, update)| {
+                let encoded = encoded_vaa.pubkey();
+                async move {
+                    match post_one_update(&pass, encoded, update, account).await {
+                        Ok(sig) => {
+                            println!("  {symbol:<14} {} {sig}", account.pubkey());
+                            true
+                        }
+                        Err(e) => {
+                            eprintln!("  {symbol:<14} FAILED: {e:#}");
+                            false
+                        }
+                    }
+                }
+            })
+            .buffer_unordered(args.concurrency.max(1))
+            .collect()
+            .await;
+
+        let posted = outcomes.iter().filter(|p| **p).count();
+        ok = ok.saturating_add(posted);
+        failed = failed.saturating_add(outcomes.len().saturating_sub(posted));
+
+        // Reclaim the buffer's rent once every post has read it. Best-effort and unconfirmed:
+        // the prices are already on chain by now, and a leaked buffer is a cost rather than a
+        // correctness problem.
+        close_vaa(&pass, &config.wormhole, &encoded_vaa).await;
+    }
+
+    Ok((ok, failed))
 }
 
 /// Anchor discriminators on the Wormhole core bridge and the Pyth receiver.
@@ -518,19 +536,20 @@ fn meta(pubkey: Pubkey, is_signer: bool, is_writable: bool) -> solana_instructio
     }
 }
 
-/// Publish one feed at `Full` verification.
+/// Create, fill and verify one `EncodedVaa`, returning its keypair.
 ///
-/// Returns the signature of the `post_update` that actually wrote the price. Earlier
-/// transactions in the sequence are plumbing; if any fails the whole feed fails, and the
-/// buffer account is closed on the way out so a failure does not leak rent.
-async fn post_one_full(
-    pass: Pass<'_>,
+/// Three sends, and they are the expensive part of a pass — so they happen **once** for every
+/// feed the VAA carries rather than once per feed. See `post_pass` for why that is the fix
+/// rather than an optimisation.
+///
+/// The caller owns the returned keypair and must call [`close_vaa`] when every post that reads
+/// it has finished, or the rent leaks.
+async fn verify_vaa_once(
+    pass: &Pass<'_>,
     wormhole: &Pubkey,
     guardian_set: Pubkey,
     vaa: &[u8],
-    merkle_price_update: &pythnet_sdk::wire::v1::MerklePriceUpdate,
-    price_update_account: &Keypair,
-) -> Result<String> {
+) -> Result<Keypair> {
     let encoded_vaa = Keypair::new();
     let space = ENCODED_VAA_HEADER
         .checked_add(vaa.len())
@@ -560,12 +579,13 @@ async fn post_one_full(
         ],
         data: IX_INIT_ENCODED_VAA.to_vec(),
     };
-    send_signed(&pass, &[&encoded_vaa], vec![create, init], 100_000)
+    send_signed(pass, &[&encoded_vaa], vec![create, init], 100_000)
         .await
         .context("init_encoded_vaa")?;
 
-    // 2. Stream the VAA in. A 13-signature VAA is ~900 bytes and does not fit in one
-    //    instruction alongside its own overhead.
+    // 2. Stream the VAA in. Measured at 292 bytes against a 700-byte chunk, so this is one
+    //    send today — the loop stays because the size is Wormhole's to choose, not ours, and a
+    //    larger guardian set makes it two again.
     let mut offset = 0usize;
     while offset < vaa.len() {
         let end = offset.saturating_add(VAA_CHUNK).min(vaa.len());
@@ -584,14 +604,14 @@ async fn post_one_full(
             ],
             data,
         };
-        send_signed(&pass, &[], vec![write], 100_000)
+        send_signed(pass, &[], vec![write], 100_000)
             .await
             .with_context(|| format!("write_encoded_vaa at offset {offset}"))?;
         offset = end;
     }
 
-    // 3. Verify every signature against the guardian set. This is the step that earns
-    //    `Full`, and the reason the Wormhole program has to be on the cluster at all.
+    // 3. Verify every signature against the guardian set. This is the step that earns `Full`,
+    //    and the reason the Wormhole program has to be on the cluster at all.
     let verify = Instruction {
         program_id: *wormhole,
         accounts: vec![
@@ -601,11 +621,23 @@ async fn post_one_full(
         ],
         data: IX_VERIFY_ENCODED_VAA.to_vec(),
     };
-    send_signed(&pass, &[], vec![verify], 400_000)
+    send_signed(pass, &[], vec![verify], 400_000)
         .await
         .context("verify_encoded_vaa_v1 — is the guardian set cloned and current?")?;
 
-    // 4. The receiver reads the verified VAA and writes the price at `Full`.
+    Ok(encoded_vaa)
+}
+
+/// Write one feed's price, reading a VAA that is already verified.
+///
+/// One send. `encoded_vaa` is passed **read-only and unsigned** — which is what lets every
+/// feed in a pass share a single verified VAA instead of paying for its own.
+async fn post_one_update(
+    pass: &Pass<'_>,
+    encoded_vaa: Pubkey,
+    merkle_price_update: &pythnet_sdk::wire::v1::MerklePriceUpdate,
+    price_update_account: &Keypair,
+) -> Result<String> {
     let mut data = IX_POST_UPDATE.to_vec();
     data.extend_from_slice(
         &borsh::to_vec(&PostUpdateParams {
@@ -618,7 +650,7 @@ async fn post_one_full(
         program_id: pyth_solana_receiver_sdk::ID,
         accounts: vec![
             meta(pass.payer.pubkey(), true, true),           // payer
-            meta(encoded_vaa.pubkey(), false, false),        // encoded_vaa
+            meta(encoded_vaa, false, false),                 // encoded_vaa — read-only, shared
             meta(get_config_address(), false, false),        // config
             meta(get_treasury_address(0), false, true),      // treasury
             meta(price_update_account.pubkey(), true, true), // price_update_account
@@ -627,12 +659,14 @@ async fn post_one_full(
         ],
         data,
     };
-    let sig = send_signed(&pass, &[price_update_account], vec![post], 400_000)
+    send_signed(pass, &[price_update_account], vec![post], 400_000)
         .await
-        .context("post_update")?;
+        .context("post_update")
+}
 
-    // 5. Reclaim the buffer's rent. Best-effort: the price is already written, and a leaked
-    //    buffer is a cost, not a correctness problem.
+/// Reclaim the VAA buffer's rent. Best-effort, unconfirmed, and only safe once every
+/// `post_update` that reads this VAA has landed.
+async fn close_vaa(pass: &Pass<'_>, wormhole: &Pubkey, encoded_vaa: &Keypair) {
     let close = Instruction {
         program_id: *wormhole,
         accounts: vec![
@@ -641,9 +675,7 @@ async fn post_one_full(
         ],
         data: IX_CLOSE_ENCODED_VAA.to_vec(),
     };
-    let _ = send_no_confirm(&pass, vec![close], 60_000).await;
-
-    Ok(sig)
+    let _ = send_no_confirm(pass, vec![close], 60_000).await;
 }
 
 /// System program `CreateAccount` — instruction 0.
