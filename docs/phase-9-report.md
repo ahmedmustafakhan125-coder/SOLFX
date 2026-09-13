@@ -5,6 +5,37 @@ restatements: where a number appears here, the command that produced it appears 
 
 ---
 
+---
+
+## Scoreboard
+
+Ten tasks in [`phase-9-prompt.md`](phase-9-prompt.md). Where a row says done, the evidence is
+in this file under that task's heading.
+
+| Task | | Status |
+|---|---|---|
+| 0 | the staleness margin | **done** — proven on devnet, one VAA for all feeds |
+| 1 | establish the baseline | **done** |
+| 2 | keeper's stale-book guard | **done**, deployed to the VPS |
+| 3 | fuzzing to a 24-hour clean run | **running** — 0 crashes so far, needs to reach 24 h |
+| 4 | coverage > 90 % | **not started** — no coverage tooling in the repo yet |
+| 5 | the two scenario replays | **done** — COVID and EM devaluation, 9 scenarios total |
+| 6 | § 12.5 extensibility | **part done** — config half proven; browser trade and the carried position still owed |
+| 7 | amend the roadmap | **done** — `e64e32c` |
+| 8 | IB admin transactions | **skipped by decision**, recorded in the brief |
+| 9 | generated referral client | **blocked** on the VPS |
+
+**What is actually left: Task 4 in full, the rest of Task 6, Task 3 reaching 24 hours, and
+Task 9's unblocking.**
+
+Three things gate the remainder and none of them is code:
+
+- **The VPS has not been restarted for the eight-market venue**, so ETH/USD and SOL/USD are
+  `Halted` there. Steps and ordering at the top of [`CONTEXT.md`](CONTEXT.md).
+- **FX and metals reopen Sunday 21:00 UTC.** Before then only BTC, ETH and SOL are exercisable.
+- **Task 0's acceptance test cannot pass before that reopen** — five of six feeds are
+  legitimately stale at the weekend, so the watchdog flags them however well the poster runs.
+
 ## Task 0 — the staleness margin
 
 **Status: DONE and proven on devnet, 2026-09-13 07:45-07:55 UTC.** One shared VAA served all
@@ -502,7 +533,10 @@ guarding those constants, and it should outlive the module it was written for.
 
 ---
 
-## Task 3 (scenarios) — complete
+## Task 5 — the two missing scenario replays
+
+*(Committed as "Task 3: the two scenario replays" — the work is the brief's **Task 5**. Task 3
+is fuzzing. Renamed here so the scoreboard and the brief agree.)*
 
 **Status: both replays written and passing.** Commit `fa29808`. Nine scenarios now, up from
 seven. Full workspace: **562 passed, 0 failed**, clippy clean.
