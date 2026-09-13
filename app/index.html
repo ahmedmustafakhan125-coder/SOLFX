@@ -5,6 +5,33 @@
     <title>SolFX — Pro Terminal</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <!--
+      What Phantom reads to label its approval dialog.
+
+      Documented in Phantom's "Display apps within dialogs": the title comes from the Open
+      Graph title first and the document title only as a fallback, and the icon from the
+      Apple touch icon first, then the favicon, then a generic default. Without these the
+      dialog that asks someone to sign is less identifiable than it could be — which is the
+      wrong direction on the one screen where a user is deciding whether to trust the site.
+
+      This does not affect Phantom's "this domain is new" banner. That is a reputation
+      signal from its scanning provider about the age and traffic of solfx.cloud, and there
+      is nothing in the page that changes it.
+
+      TODO: apple-touch-icon wants a 180x180 PNG. `icon.svg` is the source; export it and
+      drop the file in `app/public/` alongside this.
+    -->
+    <meta property="og:title" content="SolFX — Pro Terminal" />
+    <meta
+      property="og:description"
+      content="Non-custodial forex, metals and crypto trading on Solana. Devnet."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://solfx.cloud/" />
+    <meta
+      name="description"
+      content="Non-custodial forex, metals and crypto trading on Solana. Devnet."
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
