@@ -20,12 +20,37 @@ in this file under that task's heading.
 | 3 | fuzzing to a 24-hour clean run | **running** — 0 crashes so far, needs to reach 24 h |
 | 4 | coverage > 90 % | **done** — `instructions/` at **97.14 %**; 27 unexercised refusal arms found |
 | 5 | the two scenario replays | **done** — COVID and EM devaluation, 9 scenarios total |
-| 6 | § 12.5 extensibility | **part done** — config half proven; browser trade and the carried position still owed |
+| 6 | § 12.5 extensibility | **done** for steps 1–3; step 4 was never exercised — see below |
 | 7 | amend the roadmap | **done** — `e64e32c` |
 | 8 | IB admin transactions | **skipped by decision**, recorded in the brief |
 | 9 | generated referral client | **skipped by decision**, 2026-09-13 — see below |
 
-**What is actually left: the rest of Task 6, and Task 3 reaching 24 hours.**
+**What is actually left: Task 3 reaching 24 hours, and step 4 of Task 6 if it is wanted.**
+
+### Task 6 — what the chain says was actually done
+
+Steps 1–3 are done and clean. ETH/USD #9 was traded end to end in the browser, twice:
+
+| | |
+|---|---|
+| open | `2ru4qruvLqd9KNY9CjyaMw5NRMNbKM8WeFTcqnrkdfh8EKAQ1kmgzxdqx5U9GcABNT7qwvnWrDKh7TjsissEhq5E` |
+| close | `5DbqLHxtUsA8goBCTHu9JVWpAYztgF7TJbDn44hDR5e2FVT9nNULEdYL626XGEp3dQwimHNYg7wPDsmdR6Tjryc` |
+| open | `LXfeaQWiG9B5T85q76XfUUMPfaPP7d3vyks3EQj8KxVTWdTiPpdSWjWFvjFfe4a9vp2AS97VhfXzNXmMs5twgyx` |
+| close | `336DgMbDBh2wCTq15iksSwYXAwL3Tvy1ZybGe6sU56uihtAxWE6uebU32NjAdCbjWUqnGDyV93EhUcPEHtA2Ner7` |
+
+Both against a byte-identical binary, on a market listed after deployment. That is the
+extensibility claim and it holds.
+
+**Step 4 — "confirm every pre-existing position is untouched" — was not exercised.** The
+carried BTC/USD position opened at 20:14:57 was closed at 20:17:02, and both ETH round trips
+happened after that: 20:18:08–20:18:22 and 20:33:29–20:33:43. The keeper's own book confirms
+it, reporting `positions=1` exactly once between 20:30 and 20:36 — the ETH position itself —
+and `positions=0` otherwise. No position was carried across either trade.
+
+This is the step § 12.5 warns gets skipped, and it is the one that distinguishes "listing a
+market did not visibly break anything" from "a position that predates the listing is
+bit-for-bit unaffected". It is five minutes of work with `app/scripts/position-snapshot.mts`
+whenever ETH is posting again. Recorded as owed rather than quietly counted as done.
 
 ### Task 9, skipped
 
