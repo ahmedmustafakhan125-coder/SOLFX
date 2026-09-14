@@ -43,7 +43,8 @@ pyth-solana-receiver-sdk.workspace = true
 # `Instruction` still come from `anchor_lang::solana_program`, so there is exactly one of
 # each type crossing the test boundary.
 [dev-dependencies]
-litesvm = "0.15.2"
+litesvm = { version = "0.15.2", features = ["register-tracing"] }
+
 solana-account = "4"
 solana-keypair = "3"
 solana-signer = "3"

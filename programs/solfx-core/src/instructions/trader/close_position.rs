@@ -461,6 +461,9 @@ pub(crate) fn reduce(
         size_closed: size_delta,
         remaining_size: position.size_base,
         oracle_price: price.spot.price,
+        // Unchanged by a reduce — a partial close does not move the weighted entry — so
+        // reading it here is the same value the position opened or was last increased at.
+        entry_price: position.entry_price,
         exec_price,
         realized_pnl: effective_pnl,
         fee,

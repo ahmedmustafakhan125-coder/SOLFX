@@ -32,7 +32,7 @@ State as of 2026-09-11 20:00 UTC:
 below is measured against. Two things are explicitly **out of scope**: the indexer (transaction
 logs already back the history panel, and a database is another service to keep alive for a
 demo nobody will scroll) and IB registration/claiming (it matters on mainnet, not for this).
-NOXFUNDING comes later and will carry the impact.
+NOXFUNDS comes later and will carry the impact.
 
 **A decision has been made that changes Phase 9's exit criteria: the venue stays at 6 pairs.**
 A free Pyth tier plus the poster's throughput will not carry 20 markets inside the 60-second
@@ -168,7 +168,7 @@ output**. Ask the solana-mcp to confirm what your installed Anchor supports, and
 this repo forbids touching, and its LCOV feeds Task 4.
 
 Whichever tool: the fuzz target must assert the protocol's own invariants after every action,
-not merely that nothing panicked. They are **I1–I8**, defined in
+not merely that nothing panicked. They are **I1, I2, I4–I8**, defined in
 `programs/solfx-core/tests/common/mod.rs` at `assert_invariants()` — collateral vault vs the
 sum of accounts, LP vault vs AUM, open interest vs positions, no size without collateral,
 insurance vault, total vault balances, LP supply vs AUM. Reuse that function if the harness can

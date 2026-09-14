@@ -18,15 +18,49 @@ in this file under that task's heading.
 | 1 | establish the baseline | **done** |
 | 2 | keeper's stale-book guard | **done**, deployed to the VPS |
 | 3 | fuzzing to a 24-hour clean run | **running** — 0 crashes so far, needs to reach 24 h |
-| 4 | coverage > 90 % | **not started** — no coverage tooling in the repo yet |
+| 4 | coverage > 90 % | **done** — `instructions/` at **97.14 %**; 27 unexercised refusal arms found |
 | 5 | the two scenario replays | **done** — COVID and EM devaluation, 9 scenarios total |
-| 6 | § 12.5 extensibility | **part done** — config half proven; browser trade and the carried position still owed |
+| 6 | § 12.5 extensibility | **done** for steps 1–3; step 4 was never exercised — see below |
 | 7 | amend the roadmap | **done** — `e64e32c` |
 | 8 | IB admin transactions | **skipped by decision**, recorded in the brief |
-| 9 | generated referral client | **blocked** on the VPS |
+| 9 | generated referral client | **skipped by decision**, 2026-09-13 — see below |
 
-**What is actually left: Task 4 in full, the rest of Task 6, Task 3 reaching 24 hours, and
-Task 9's unblocking.**
+**What is actually left: Task 3 reaching 24 hours, and step 4 of Task 6 if it is wanted.**
+
+### Task 6 — what the chain says was actually done
+
+Steps 1–3 are done and clean. ETH/USD #9 was traded end to end in the browser, twice:
+
+| | |
+|---|---|
+| open | `2ru4qruvLqd9KNY9CjyaMw5NRMNbKM8WeFTcqnrkdfh8EKAQ1kmgzxdqx5U9GcABNT7qwvnWrDKh7TjsissEhq5E` |
+| close | `5DbqLHxtUsA8goBCTHu9JVWpAYztgF7TJbDn44hDR5e2FVT9nNULEdYL626XGEp3dQwimHNYg7wPDsmdR6Tjryc` |
+| open | `LXfeaQWiG9B5T85q76XfUUMPfaPP7d3vyks3EQj8KxVTWdTiPpdSWjWFvjFfe4a9vp2AS97VhfXzNXmMs5twgyx` |
+| close | `336DgMbDBh2wCTq15iksSwYXAwL3Tvy1ZybGe6sU56uihtAxWE6uebU32NjAdCbjWUqnGDyV93EhUcPEHtA2Ner7` |
+
+Both against a byte-identical binary, on a market listed after deployment. That is the
+extensibility claim and it holds.
+
+**Step 4 — "confirm every pre-existing position is untouched" — was not exercised.** The
+carried BTC/USD position opened at 20:14:57 was closed at 20:17:02, and both ETH round trips
+happened after that: 20:18:08–20:18:22 and 20:33:29–20:33:43. The keeper's own book confirms
+it, reporting `positions=1` exactly once between 20:30 and 20:36 — the ETH position itself —
+and `positions=0` otherwise. No position was carried across either trade.
+
+This is the step § 12.5 warns gets skipped, and it is the one that distinguishes "listing a
+market did not visibly break anything" from "a position that predates the listing is
+bit-for-bit unaffected". It is five minutes of work with `app/scripts/position-snapshot.mts`
+whenever ETH is posting again. Recorded as owed rather than quietly counted as done.
+
+### Task 9, skipped
+
+Dropped by the user's decision on 2026-09-13, alongside Task 8. The hand-written referral
+client in `clients/js/src/referral/` stays, and so does the thing that makes that tolerable:
+`clients/js/src/__tests__/referral.test.ts` re-derives every discriminator from
+`sha256("global:<name>")` and `sha256("account:<Name>")` and asserts each instruction's
+account order. Generated code cannot drift from the program; hand-written code can, and that
+test is the only thing standing between a rename and a devnet failure. It must not be
+deleted or weakened while the hand-written client remains.
 
 Three things gate the remainder and none of them is code:
 
@@ -433,6 +467,265 @@ parallel task.
 ---
 
 
+---
+
+## Task 4 — coverage
+
+**Status: done. `programs/solfx-core/src/instructions/` measures 97.14 % line coverage, over
+the § 15 bar of 90 %.** Artifacts in [`coverage/`](coverage/). The percentage is the least
+interesting part; the 27 unexercised refusal arms below are the deliverable.
+
+### The numbers
+
+Collected 2026-09-14 by `anchor coverage` — DWARF build, 240 LiteSVM tests with litesvm
+`register-tracing`, 11,360 trace files, executed PCs mapped back to source lines.
+
+| Scope | Lines | Hit | Cover |
+|---|---:|---:|---:|
+| **`src/instructions/`** — the § 15 target | 1,645 | 1,598 | **97.14 %** |
+| `src/` as a whole | 1,960 | 1,890 | 96.43 % |
+| everything in the LCOV, dependencies included | 3,107 | 2,788 | 89.73 % |
+
+`solfx_core.so` resolved 52,803 of 56,495 executed PCs to source. Per-file figures are in
+[`coverage/solfx-core-sbf.txt`](coverage/solfx-core-sbf.txt); the LCOV is beside it.
+
+Only two files fall below 90 %, and both for the same reason — an instruction no test calls:
+
+| File | Cover | Why |
+|---|---:|---|
+| `instructions/admin/protocol_admin.rs` | 82.76 % | `update_fee_splits` and `set_guardian` are never invoked |
+| `instructions/keeper/session.rs` | 86.96 % | weekend/pre-close status arms and the week-wrap helpers |
+
+**`solfx_referral` is unmeasured, not uncovered.** It contributed 10,188 executed PCs and
+**0 resolved to source**, because only `solfx_core` was built with DWARF. Its coverage is
+unknown and should not be read as zero.
+
+### Finding 1 — two of the 38 instructions are never invoked at all
+
+Measured from the dispatch bodies in `lib.rs`: 36 of 38 have a non-zero hit count, and these
+two have none.
+
+| Instruction | | What is untested as a result |
+|---|---|---|
+| `update_fee_splits` | `lib.rs:129` | the whole handler, including `require!(split.lp > split.treasury)` and `FeeSplitBps::validate` |
+| `set_guardian` | `lib.rs:143` | the whole handler, including the `new_guardian != Pubkey::default()` guard |
+
+`set_guardian` is the one worth attention. The guardian is the account that can halt the
+protocol; the only check on it is that it is not the default pubkey, and nothing exercises
+that check or the assignment. A protocol whose emergency-stop *owner* is set by untested code
+is a worse gap than the percentage suggests.
+
+### Finding 2 — 27 refusal arms are never entered
+
+An unexercised `require!` is an untested refusal, and § 3 of the manual suite exists because
+a venue that accepts everything is not a venue. Grouped by what they protect:
+
+**Vault and pool solvency (5).** Every one is a "we are about to pay out more than we hold"
+guard, and none has ever been made to fire:
+
+| Where | Refusal |
+|---|---|
+| `admin/protocol_admin.rs:158` | `fee_vault.amount >= amount` → `InsufficientPoolLiquidity` |
+| `admin/protocol_admin.rs:260` | `fee_vault.amount >= amount` → `InsufficientPoolLiquidity` |
+| `lp.rs:394` | `lp_vault.amount >= payout + performance_fee` → `InsufficientPoolLiquidity` |
+| `trader/mod.rs:141` | `lp_vault_balance >= amount` → `InsufficientPoolLiquidity` |
+| `lp.rs:344` | `provider_lp_account.amount >= shares` → `InsufficientLpShares` |
+
+**Position-state preconditions (4).** `size_base > 0` → `PositionNotEmpty`, at
+`trader/adjust_collateral.rs:21`, `:63` and `trader/increase_position.rs:39`; and
+`shares <= pool.lp_token_supply` → `InsufficientLpShares` at `lp.rs:350`.
+
+**Sizing and leverage (4).** `trader/open_position.rs:148` (`min_position_size`/
+`max_position_size` → `PositionSizeOutOfBounds`), `trader/increase_position.rs:76`
+(`max_position_size`), and `LeverageTooHigh` at `trader/increase_position.rs:107` and
+`trader/adjust_collateral.rs:115`. Worth noting because `PositionSizeOutOfBounds` and
+`SlippageExceeded` are two of the five real failures this project already hit — the bounds
+are enforced in production and unexercised in tests.
+
+**Reduction size (2).** `ReductionExceedsSize` at `trader/close_position.rs:174` and `:270`.
+
+**Market status (4).** `allows_liquidation()` → `MarketNotActive` at `keeper/liquidate.rs:140`
+and `keeper/adl.rs:130`; `status != Initialized` at `keeper/funding.rs:53`; and
+`!matches!(status, Initialized | Delisted)` at `keeper/session.rs:71`. So **the refusal to
+liquidate in a market that forbids liquidation is untested on both the liquidation and the ADL
+path** — and the tests do cover a halted market refusing *triggers*, which makes the omission
+look narrower than it is.
+
+**Collateral mint (2).** `collateral_mint.key() == protocol.usdc_mint` → `WrongCollateralMint`
+at `user.rs:133` and `:189`. `InvalidCollateralMintDecimals` is exercised; the mint-identity
+check next to it is not.
+
+**Market parameter validation (4), in `state/market.rs`.** `liquidation_max_conf_bps >=
+max_conf_bps` (429), `max_deviation_bps > 0` (433), `max_oi_long > 0 && max_oi_short > 0`
+(442), and the session-bounds check at 633. These are the guards that stop a market being
+listed with a nonsensical risk envelope, and `initialize_market` itself is at 100 %.
+
+**Admin (2).** The two inside the never-invoked handlers of Finding 1.
+
+### Finding 3 — the four `TriggerKind::is_met` combinations: three fire, one does not
+
+**LCOV cannot answer this question**, and that is worth stating rather than working around: in
+`state/trigger_order.rs` the only lines with coverage data are the `match` at L34 and
+`is_placeable` at L52. The four arms carry **no line entries at all** — the compiler collapsed
+them — so line coverage cannot distinguish them. Answered instead from the tests:
+
+| Kind × direction | Fired in a test? | Evidence |
+|---|---|---|
+| TakeProfit × Long | **yes** | `anyone_can_fire_a_met_trigger_and_is_paid_a_tip`, also `a_partial_trigger_scales_out_of_the_position` |
+| StopLoss × Long | **yes** | `a_stop_loss_on_a_long_fires_when_the_price_falls` |
+| StopLoss × Short | **yes** | `a_stop_loss_on_a_short_fires_when_the_price_rises` |
+| **TakeProfit × Short** | **no** | `a_short_takes_profit_below_and_stops_above` contains **zero** `execute_trigger` calls — it is a placement test |
+
+So a short's take-profit is exercised only through `is_placeable` at placement, and **never
+through firing**. That is the gap the function's own doc comment predicts: *"a stop-loss wired
+backwards would close winning positions and hold losing ones, and would look like a market-
+conditions complaint rather than a bug."* There is also **no direct unit test of `is_met`** —
+its only non-test caller is `crates/solfx-keeper/src/services.rs:269`. Four explicit arms
+guarding against a sign error, and no test calls the function.
+
+### Finding 4 — the liquidation boundary is covered, and correctly
+
+This one is not a gap. `margin::is_liquidatable` is `equity < maintenance_margin`, a strict
+comparison, so equity exactly equal to the requirement is deliberately *not* liquidatable
+(threat T7, liquidation griefing). `crates/solfx-math/src/margin.rs:293` tests exactly that,
+deterministically rather than by property:
+
+```rust
+fn liquidation_boundary_is_strict() {
+    let mm = 1_000 * USD;
+    assert!(!is_liquidatable(1_000_000_000, mm));  // equal  -> not liquidatable
+    assert!(is_liquidatable(999_999_999, mm));     // 1 below -> liquidatable
+    assert!(!is_liquidatable(1_000_000_001, mm));  // 1 above -> not
+}
+```
+
+Both neighbours of the boundary are asserted, which is what makes it a boundary test rather
+than a point test. Two property tests in `crates/solfx-math/tests/properties.rs` bracket the
+same edge from the price side.
+
+### Finding 5 — uncovered lines that are not refusals
+
+Worth listing because they are error paths, not guards, and a percentage hides them:
+
+- **`risk.rs:190-212`** — 9 lines: the funding-settlement branch where a position cannot pay
+  what it owes and the shortfall is capped against `market.funding_balance`. Partial funding
+  payment is untested.
+- **`close_position.rs:366-403`** — 7 lines: the **bad-debt path**. `total_bad_debt`
+  accumulation and the `BadDebtIncurred` event are never reached, so nothing tests what
+  happens when a close leaves negative equity the vault must absorb.
+- **`errors.rs:200-206`** — 6 of the `MathError` → `SolfxError` conversions never fire:
+  `DivideByZero`, `InvalidPrice`, `ConfidenceTooWide`, `NotionalTooSmall`, `InvalidParameter`,
+  `PriceFromFuture`.
+- **`session.rs:180-313`** — the `WeekendMode` arm, the pre-close reduce-only window, and the
+  two week-wrap helpers. Consistent with the tests running mid-session.
+- **`oracle.rs:302`** — `validate_deviation` against `max_deviation_bps`. The deviation
+  breaker has a scenario test (`gbp_flash_crash...`), so this line being cold suggests the
+  scenario reaches the breaker by another route; worth a look.
+
+### Recommended order, if tests are written later
+
+Not done in this session — the brief asked for the measurement and the gap analysis, not new
+tests.
+
+1. `set_guardian` and `update_fee_splits` — two whole instructions, one of them owning the
+   emergency stop.
+2. The **bad-debt path** in `close_position.rs`. It is the only uncovered code that moves
+   money the protocol cannot recover, and invariant I1 has never been asserted across it.
+3. **TakeProfit × Short firing**, plus a direct unit test of `is_met` over all four arms.
+4. The five vault-solvency refusals.
+5. `allows_liquidation()` on both the liquidate and ADL paths.
+
+### How it was run, and two corrections to the brief's diagnosis
+
+The brief's `Permission denied (os error 13)` **did not reproduce**, and both of its suspected
+causes are disproven by direct test:
+
+- **`programs/solfx-core/target` does not exist**, so nothing was landing on the 9p mount via
+  the crate directory. `anchor coverage --skip-run` run *from* that directory creates no
+  crate-local `target` either — Anchor resolves the workspace root regardless of cwd.
+- **`chmod`/EACCES on directory creation is not the cause**: `mkdir -p
+  programs/solfx-core/target/coverage/traces` on the 9p mount **succeeds**, mode `drwxrwxrwx`.
+- No root-owned files existed under `target/coverage`, so no earlier `sudo` run was involved.
+
+What did surface is a **different** failure, and it is a real trap: **`anchor coverage` from
+the workspace root fails in the build phase**, not after the tests —
+
+```
+error: target is not supported, for more information see: https://docs.rs/getrandom/#unsupported-targets
+Error: `cargo build-sbf --tools-version v1.52` failed with status exit status: 1
+```
+
+`getrandom 0.2.17` is a *normal* dependency of `solfx-core` via `pyth-solana-receiver-sdk →
+pythnet-sdk → pyth-sdk → borsh 0.9.3 → hashbrown → ahash`. Plain `anchor build` handles it;
+building from the workspace root for SBF does not. **Run coverage from
+`programs/solfx-core`.** That this run reported `solfx_referral — 0 resolved to source` is the
+same fact seen from the other end: only the one crate is built with DWARF.
+
+The command that works:
+
+```bash
+cd ./programs/solfx-core
+anchor coverage --trace-dir "$HOME/solfx-cov/traces" --output "$HOME/solfx-cov/sbf.lcov"
+```
+
+`lcov` is not installed on this box; the summary was produced by parsing the LCOV directly, so
+`docs/coverage/solfx-core-sbf.txt` is line coverage only — SBF traces give executed program
+counters, so there are no region or branch columns as in the two `cargo llvm-cov` reports
+beside it.
+
+## The six-feed soak — the MVP bar, measured
+
+**16 h 23 m, 1,626 passes, 1,624 clean. 99.88 %.**
+
+The user's stated bar for the MVP is "six pairs, their prices inside the gate, and anyone can
+trade them without an error". That set — EUR/USD, USD/JPY, USD/CNH, XAU/USD, XAG/USD,
+BTC/USD — had never run for a sustained period *since* Task 0's gateway retry landed, so the
+bar was unverified rather than met. It was switched on at **2026-09-13 20:36:56 UTC**, ahead
+of the Sunday 21:00 FX open, and left overnight.
+
+| | |
+|---|---|
+| Window | 2026-09-13 20:36:56 → 2026-09-14 12:59:40 UTC |
+| `6 posted, 0 failed` | **1,624** |
+| `5 posted, 1 failed` | 1, at 20:51:29 |
+| `3 posted, 3 failed` | 1, at 22:41:40 |
+| Recovery | unassisted, on the next pass, both times |
+
+Both failures are the same thing and it is not the retry logic: `post_update: … was not
+confirmed in 45s`, on XAU/USD, XAG/USD and BTC/USD at 22:39–22:41. That is the Helius
+free-tier send path, and the venue healed itself without intervention. One bad minute in
+sixteen hours.
+
+### Markets, read from chain at 12:56 UTC
+
+Six Active and tradeable: EUR/USD #0, XAU/USD #3, BTC/USD #5, USD/JPY #6, USD/CNH #7,
+XAG/USD #8. The five Halted ones are Halted for the documented reasons — EUR/JPY #1 and
+USD/INR #2 have no poster feed, BTC/USD #4 is the duplicate listing, and ETH/USD #9 and
+SOL/USD #10 are not in `deployment.weekday.json`.
+
+### The one number that is thin
+
+Price age sampled every 10 s for a minute, six feeds:
+
+```
+EUR/USD   16, 28, 39, 16, 28, 40      max 40
+USD/JPY   17, 28, 40, 16, 28, 40      max 40
+USD/CNH   17, 28, 40, 17, 28, 41      max 41
+XAU/USD   17, 29, 40, 17, 28, 41      max 41
+XAG/USD   52, 29, 40, 52, 29, 41      max 52
+BTC/USD   53, 29, 41, 52, 29, 41      max 53
+```
+
+Four feeds run a clean 16 → 28 → 40 sawtooth on a ~34 s pass. **XAG/USD and BTC/USD
+occasionally skip a cycle and reach 52–53 s against the 60 s `MAX_ALLOWED_STALENESS_SECONDS`
+gate** — a seven-second margin, on the two feeds posted last in the pass. It held for
+sixteen hours, but it is the smallest margin in the system and the first thing that will
+break if the RPC has a bad minute during a demo. Reordering the deployment so the two
+laggards are posted first, or shortening the interval, would buy margin; neither has been
+tried.
+
+---
+
 ## Task 1 — the baseline
 
 **Status: complete.** Recorded in [`CONTEXT.md`](CONTEXT.md); commit `docs: the real test and
@@ -444,7 +737,7 @@ green in `app/` for the first time.
 ## Task 3 — fuzzing
 
 **Status: 24-hour run in progress.** Harness at [`fuzz/solfx_core/src/main.rs`](../fuzz/solfx_core/src/main.rs),
-commit `test: a Crucible fuzz harness that asserts I1-I8, not just "no panic"`.
+commit `test: a Crucible fuzz harness that asserts I1, I2, I4–I8, not just "no panic"`.
 
 **Tool: `anchor fuzz` (Crucible), not Trident.** The brief asked me to check first, and the
 answer changed: Anchor 1.1.2 ships coverage-guided fuzzing with stateful invariant testing,

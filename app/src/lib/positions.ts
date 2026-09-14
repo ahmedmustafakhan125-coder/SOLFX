@@ -30,6 +30,8 @@ import type {
   TransactionSigner,
 } from "@solana/kit";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 const BPS = 10_000n;
 const NOTIONAL_DIVISOR = 1_000_000_000_000n;
 
@@ -95,7 +97,7 @@ export async function loadPositions(
     const { value } = await rpc
       .getMultipleAccounts(
         chunk.map((w) => w.address),
-        { encoding: "base64" }
+        { commitment: READ_COMMITMENT, encoding: "base64" }
       )
       .send();
     value.forEach((raw, j) => {

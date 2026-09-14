@@ -48,7 +48,7 @@ cargo test -p solfx-keeper
 | 13 | `a_stale_price_cannot_fire_a_trigger` | A trigger reads through the same gates as any trade — a stale feed cannot fire a stop. | `StalePrice` |
 | 14 | `a_bracket_leaves_the_other_side_resting` | Firing the TP consumes it and leaves the SL. OCO pairing is the frontend's job, not the program's — and the leftover can be cancelled for its rent. | — |
 
-Every test asserts invariants **I1–I8** after each step.
+Every test asserts invariants **I1, I2, I4–I8** after each step.
 
 ---
 

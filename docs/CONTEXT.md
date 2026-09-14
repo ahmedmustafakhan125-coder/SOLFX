@@ -9,13 +9,32 @@ RAM and a `cargo build` OOM-killed itself there, so none of this could be verifi
 
 | Suite | Result |
 |---|---|
-| `cargo test --workspace` | **555 passed, 0 failed, 0 ignored** |
+| `cargo test --workspace` | **562 passed, 0 failed, 0 ignored** — of which `solfx-core` is **240**, re-run 2026-09-14 |
 | `cargo fmt --all --check` | clean |
 | `cargo clippy --workspace --all-targets` | **clean — 0 warnings** (7 fixed; see below) |
-| `npm --prefix clients/js test` | **198 passed** (11 files) |
-| `npm --prefix app run test` | **15 passed** (1 file) |
+| `npm --prefix clients/js test` | **211 passed** (12 files) — 13 added with `pricing.ts` |
+| `npm --prefix app run test` | **22 passed** (2 files) — 7 added with `floating.ts` |
 | `npm --prefix app run ci` | **green** — was red at `format:check` |
 | `anchor build` | clean; `solfx_core.so` sha256 `eff0ceee…`, **byte-identical to devnet** |
+| `anchor coverage` (SBF, `solfx-core`) | **`src/instructions/` 97.14 %** line coverage (1,598/1,645); `src/` 96.43 %. Run from `programs/solfx-core`, **not** the workspace root |
+| `cargo llvm-cov` `solfx-math` | 95.67 % regions / 98.67 % lines / 99.61 % functions |
+| `cargo llvm-cov` `solfx-keeper` | 18.60 % regions / 16.51 % lines / 23.15 % functions |
+
+**Coverage, measured 2026-09-14 — artifacts in [`coverage/`](coverage/).** The § 15 bar is
+90 % and `programs/solfx-core/src/instructions/` clears it at **97.14 %**. The number is not
+the point: the run found **27 refusal arms no test ever enters**, **two of the 38 instructions
+never invoked at all** (`set_guardian`, `update_fee_splits`), an untested **bad-debt path** in
+`close_position`, and that **a short's take-profit never fires** in any test. Full gap analysis
+under Task 4 in [`phase-9-report.md`](phase-9-report.md).
+
+Two things to know before re-running it:
+
+- **Run it from `programs/solfx-core`, not the workspace root.** From the root, `cargo
+  build-sbf` fails on `getrandom 0.2.17` ("target is not supported"), which arrives as a normal
+  dependency through `pyth-solana-receiver-sdk → pythnet-sdk → pyth-sdk → borsh 0.9.3 →
+  hashbrown → ahash`. Plain `anchor build` is unaffected.
+- **`solfx_referral` is unmeasured, not uncovered** — 10,188 executed PCs, 0 resolved to
+  source, because only `solfx_core` is built with DWARF.
 
 Three things the baseline corrected:
 
@@ -41,7 +60,7 @@ and all `enable`d at boot as of 2026-09-09; six markets are `Active` and the kee
 cranking, liquidating and executing triggers. See *Deploying to a VPS* and *What unblocked
 it* below. **Phase 8's feature list is complete** and Phase 9 has started — its market ceiling
 is measured in [`phase-9-feeds.md`](phase-9-feeds.md) and it is **24 symbols, not 33**.
-NOXFUNDING still starts only after all of that.
+NOXFUNDS still starts only after all of that.
 
 > **Session log:** [`CLAUDE-SESSION.md`](../CLAUDE-SESSION.md) at the repo root records what
 > changed on 2026-09-09 and when, including the things that are true but not yet fixed. Read it
@@ -221,7 +240,12 @@ others 8) plus `tests/properties.rs` (56 property tests) and `tests/broker_parit
 
 **Framework:** LiteSVM.
 
-### Invariants I1–I8 — how they are actually enforced
+### Invariants I1, I2, I4–I8 — how they are actually enforced
+
+**Seven, not eight.** `ARCHITECTURE.md` § 13 specifies I3 — funding conservation,
+`Σ(cum_funding_long × oi_long) + Σ(cum_funding_short × oi_short) ≈ 0` — and no `assert_i3`
+exists. This file and eight others claimed "I1–I8"; corrected 2026-09-14. The guarantee is
+whatever the harness asserts, and it asserts seven.
 
 `assert_invariants()` is a **test harness**, defined at
 `programs/solfx-core/tests/common/mod.rs:2241`. It does **not** run on chain — there are zero
@@ -266,7 +290,7 @@ programs/solfx-core/
   │   └── errors.rs          # 40+ domain-specific error codes
   │
   ├── tests/
-  │   ├── common/mod.rs      # Harness + assert_invariants() (I1–I8), line 2241
+  │   ├── common/mod.rs      # Harness + assert_invariants() (I1, I2, I4–I8), line 2241
   │   ├── markets.rs         # 32
   │   ├── positions.rs       # 26
   │   ├── oracle.rs          # 26
@@ -593,8 +617,8 @@ Pyth Indices for 24/7 gold/silver do not exist in the public Hermes catalogue. T
 ### Q3 — LATAM session windows (RESOLVED, 2026-08-01)
 USD/BRL, USD/CLP, USD/PEN publish at 1s during their local sessions (14–21 UTC windows) but go silent outside. Fully usable in-session via `feed_kind` state machine per market.
 
-### Stack frame risk (MITIGATED for Phase 7, UNPROVEN for NOXFUNDING)
-SolFX hit BPF stack frame errors at 13 and 18 accounts. Phase 7 kept it under 18 by not deserializing accounts only passed through. NOXFUNDING will need ~21 accounts for a CPI wrapper — this is why Stage 0 (the feasibility spike) is the first NOXFUNDING task.
+### Stack frame risk (MITIGATED for Phase 7, UNPROVEN for NOXFUNDS)
+SolFX hit BPF stack frame errors at 13 and 18 accounts. Phase 7 kept it under 18 by not deserializing accounts only passed through. NOXFUNDS will need ~21 accounts for a CPI wrapper — this is why Stage 0 (the feasibility spike) is the first NOXFUNDS task.
 
 ---
 
@@ -1020,9 +1044,9 @@ their prices are the only ones moving.
 
 ---
 
-## Sequence for Next Phase: NOXFUNDING
+## Sequence for Next Phase: NOXFUNDS
 
-**Do NOT start NOXFUNDING until:**
+**Do NOT start NOXFUNDS until:**
 1. ✅ SolFX is deployed to devnet
 2. ✅ All 33 markets are listed and testable
 3. ✅ Keeper is running stably
@@ -1030,9 +1054,9 @@ their prices are the only ones moving.
 
 **Then:**
 - **Stage 0:** Feasibility spike — prove a PDA-authority CPI into `open_position` fits the stack frame
-- **Stages 1–7:** Full NOXFUNDING implementation (evaluation, mandates, settlement, keeper, UI)
+- **Stages 1–7:** Full NOXFUNDS implementation (evaluation, mandates, settlement, keeper, UI)
 
-**Total NOXFUNDING timeline:** ~8–12 weeks after SolFX devnet is live.
+**Total NOXFUNDS timeline:** ~8–12 weeks after SolFX devnet is live.
 
 ---
 
@@ -1081,7 +1105,7 @@ their prices are the only ones moving.
 
 **For future work:**
 - Refer to this whenever you need to remember what SolFX is, what's been tested, and what's still open.
-- Before any NOXFUNDING stage, check the "Deployment Readiness" section.
+- Before any NOXFUNDS stage, check the "Deployment Readiness" section.
 - The "Known Limitations" section lists open items that do not block SolFX but affect feature completeness.
 
 **For external communication:**

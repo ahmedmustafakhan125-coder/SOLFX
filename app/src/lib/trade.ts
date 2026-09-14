@@ -28,6 +28,8 @@ import type {
   TransactionSigner,
 } from "@solana/kit";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 const BPS = 10_000n;
 
 /** Measured at ~59k against a 140k ceiling; the request leaves room without being wasteful. */
@@ -81,7 +83,10 @@ export async function firstFreeNonce(
     )
   );
   const { value } = await rpc
-    .getMultipleAccounts(pdas, { encoding: "base64" })
+    .getMultipleAccounts(pdas, {
+      commitment: READ_COMMITMENT,
+      encoding: "base64",
+    })
     .send();
   const free = value.findIndex((a) => a === null);
   return free === -1 ? undefined : free;

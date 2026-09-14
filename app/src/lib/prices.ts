@@ -14,6 +14,8 @@ import {
 import type { Address, Rpc, SolanaRpcApi } from "@solana/kit";
 import { getBase64Encoder } from "@solana/kit";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 export type LivePrice = {
   /** Normalised to PRICE_PRECISION (1e9), the scale the program works in. */
   readonly price: bigint;
@@ -53,7 +55,10 @@ export async function readPrice(
   account: Address
 ): Promise<LivePrice | undefined> {
   const { value } = await rpc
-    .getAccountInfo(account, { encoding: "base64" })
+    .getAccountInfo(account, {
+      commitment: READ_COMMITMENT,
+      encoding: "base64",
+    })
     .send();
   if (!value) return undefined;
 

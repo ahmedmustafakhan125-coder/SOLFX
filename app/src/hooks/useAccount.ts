@@ -13,8 +13,15 @@ export type AccountState = {
   readonly refresh: () => void;
 };
 
-/** Reads the connected wallet's protocol state. Undefined until a wallet is connected. */
-export function useAccount(): AccountState {
+/**
+ * Reads the connected wallet's protocol state. Undefined until a wallet is connected.
+ *
+ * Polled for the same reason `usePositions` is: a keeper-executed take-profit, stop-loss or
+ * liquidation returns collateral without this tab doing anything, so free collateral would
+ * otherwise sit at a stale figure until the trader acted. Slower than the position poll —
+ * this costs two reads, and a wrong balance is less alarming than a phantom position.
+ */
+export function useAccount(pollMs = 20_000): AccountState {
   const rpc = useRpc();
   const { wallet } = useWalletConnection();
   const owner = wallet?.account.address as Address | undefined;
@@ -51,5 +58,12 @@ export function useAccount(): AccountState {
   }, [rpc, owner, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+
+  useEffect(() => {
+    if (!owner) return;
+    const id = setInterval(refresh, pollMs);
+    return () => clearInterval(id);
+  }, [owner, pollMs, refresh]);
+
   return { status, owner, loading, error, refresh };
 }

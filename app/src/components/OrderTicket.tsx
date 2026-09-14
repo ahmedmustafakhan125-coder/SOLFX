@@ -4,7 +4,11 @@ import {
   SizingError,
   carryOver,
   carryRatePerHour,
+  confBps,
+  minCollateralFor,
+  quoteOpen,
   resolveSize,
+  sideForOpen,
   unitsPerLot,
   type Sizing,
 } from "@solfx/client";
@@ -23,9 +27,7 @@ import {
   firstFreeNonce,
 } from "@/lib/trade";
 
-const NOTIONAL_DIVISOR = 1_000_000_000_000n; // 1e12
 const RATE_PRECISION = 1_000_000_000n; // 1e9
-const BPS = 10_000n;
 
 type Mode = Sizing["mode"];
 
@@ -78,11 +80,65 @@ export function OrderTicket({
           : { mode, value };
       const sizeBase = resolveSize(market.symbol, sizing, price.price);
 
-      // The program's own formula: notional = size_base * price / NOTIONAL_DIVISOR.
-      const notional = (sizeBase * price.price) / NOTIONAL_DIVISOR;
-      const margin = notional / BigInt(leverage);
+      // Priced the way `open_position` prices it, not off the oracle mid.
+      //
+      // The program fills at `execution_price` — the mid widened by base spread, confidence
+      // and skew, against the trader — takes the notional of *that* with `mul_div_ceil`, and
+      // then checks `div_ceil(notional, collateral) <= max_leverage`. Sizing margin off the
+      // mid under-collateralises by a hair, which is invisible below the market's maximum
+      // leverage and a hard `LeverageTooHigh` refusal at it. Measured on devnet: ETH/USD,
+      // 10x on a 10x market, error 6047.
+      //
+      // Both sides are quoted because the ticket has no direction until submit. A buy fills
+      // above the mid and a sell below, so the buy is always the wider of the two; taking the
+      // larger margin means the figure shown here is never less than the figure charged.
+      const spreadParams = {
+        baseSpreadBps: market.baseSpreadBps,
+        confSpreadMultiplierBps: d.confSpreadMultiplierBps,
+        skewImpactBpsPerUnit: d.skewImpactBpsPerUnit,
+        baseOiLong: d.baseOiLong,
+        baseOiShort: d.baseOiShort,
+      };
+      const confidenceBps = confBps(price.price, price.conf);
+      const long = quoteOpen({
+        market: spreadParams,
+        oraclePrice: price.price,
+        confidenceBps,
+        sizeBase,
+        side: sideForOpen(Direction.Long),
+      });
+      const short = quoteOpen({
+        market: spreadParams,
+        oraclePrice: price.price,
+        confidenceBps,
+        sizeBase,
+        side: sideForOpen(Direction.Short),
+      });
+      // `quoteOpen` returns undefined only past the 50% total-spread ceiling, where the
+      // program errors too. Quoting a narrower fallback would be quoting a lie.
+      if (!long || !short) {
+        return {
+          error: "spread is beyond the protocol's 50% ceiling" as const,
+        };
+      }
+      const sides = { long, short };
+
+      const notional = long.notional;
+      const marginLong = minCollateralFor({
+        notional: long.notional,
+        leverage,
+        imrBps: d.imrBps,
+      });
+      const marginShort = minCollateralFor({
+        notional: short.notional,
+        leverage,
+        imrBps: d.imrBps,
+      });
+      const margin = marginLong > marginShort ? marginLong : marginShort;
       const fee = (notional * d.openFeeRate) / RATE_PRECISION;
-      const spread = (notional * BigInt(d.baseSpreadBps)) / BPS;
+      // What the spread actually costs on this fill, rather than base spread on the mid:
+      // the gap between the buy and sell notionals is the full round-trip width.
+      const spread = long.notional - short.notional;
 
       const belowMin = sizeBase < d.minPositionSize;
       const aboveMax = sizeBase > d.maxPositionSize;
@@ -118,6 +174,7 @@ export function OrderTicket({
         sizeBase,
         notional,
         margin,
+        sides,
         fee,
         spread,
         carry,
@@ -128,7 +185,7 @@ export function OrderTicket({
     } catch (e) {
       return { error: e instanceof SizingError ? e.message : String(e) };
     }
-  }, [mode, value, leverage, price, market.symbol, d]);
+  }, [mode, value, leverage, price, market.symbol, market.baseSpreadBps, d]);
 
   const free = account?.freeCollateral;
   const underfunded =
@@ -280,6 +337,16 @@ export function OrderTicket({
               value={`${fmtBase(quote.sizeBase)} ${market.symbol.slice(0, 3)}`}
             />
             <Row label="Notional" value={`$${fmtUsd(quote.notional)}`} />
+            {/* The fill, not the mid. A buy crosses up and a sell crosses down, and these
+                are the prices the program will actually book. */}
+            <Row
+              label="Fill, long"
+              value={fmtPrice(quote.sides.long.execPrice, places)}
+            />
+            <Row
+              label="Fill, short"
+              value={fmtPrice(quote.sides.short.execPrice, places)}
+            />
             <Row label="Margin required" value={`$${fmtUsd(quote.margin)}`} />
             <Row label="Open fee" value={`$${fmtUsd(quote.fee, 6)}`} />
             <Row label="Spread cost" value={`$${fmtUsd(quote.spread, 6)}`} />

@@ -1,9 +1,9 @@
-# NOXFUNDING — a decentralized prop firm on top of SolFX
+# NOXFUNDS — a decentralized prop firm on top of SolFX
 
 ## Context
 
 SolFX (Phases 1–7 complete, 490 tests, code-complete and headed to devnet) is a non-custodial
-forex broker on Solana. **NOXFUNDING is a separate product** that uses SolFX as its execution
+forex broker on Solana. **NOXFUNDS is a separate product** that uses SolFX as its execution
 venue: traders prove themselves on a simulated evaluation, investors pick them from an
 auditable on-chain track record and fund them, and the program custodies the capital so the
 trader can trade it but never take it.
@@ -12,7 +12,7 @@ User's constraints for this work:
 
 - **Do not change anything in solfx-core or solfx-referral.** Verified achievable — §2.1.
 - Plan first; implementation only after approval.
-- SolFX ships to devnet before NOXFUNDING is built.
+- SolFX ships to devnet before NOXFUNDS is built.
 
 ---
 
@@ -42,7 +42,7 @@ HyroTrader publishes a taxonomy the industry has largely adopted:
 | **blockfirm** | Solana | Solana memecoins | Firm's own | Live — Level 2 |
 | **Hyperliquid vaults** | Hyperliquid | Crypto perps | **Depositors fund a leader** | Live, large |
 
-**Hyro Protocol is the nearest thing to NOXFUNDING** and worth watching closely: Solana, USDC
+**Hyro Protocol is the nearest thing to NOXFUNDS** and worth watching closely: Solana, USDC
 settlement, LPs allocating to verified traders on track record. But crypto-only, and not yet
 fully live.
 
@@ -64,7 +64,7 @@ Every on-chain prop firm funds you to trade *somewhere else*: Hyperliquid, gTrad
 DEX. Their contract cannot see the order before it fills, so rules are necessarily
 **punitive** — the violating trade executes and you get flagged afterwards.
 
-SolFX *is* the venue, so NOXFUNDING can put its check **in front of** the fill:
+SolFX *is* the venue, so NOXFUNDS can put its check **in front of** the fill:
 
 > A trade that breaks the rules is not detected and punished. **It fails as a transaction. It
 > never existed, and the investor never took the loss.**
@@ -80,7 +80,7 @@ built the exchange, and it is what puts this at **Level 4**.
   platforms offering evaluation-based trading. Same posture applies here.
 - SolFX is a **B-book** — its LP pool is the counterparty to every trade, so funded traders'
   profits are ultimately paid by SolFX's LPs. A population pre-filtered for skill is adverse
-  selection against them. Small at first, and NOXFUNDING volume pays SolFX fees, but it must
+  selection against them. Small at first, and NOXFUNDS volume pays SolFX fees, but it must
   be monitored (§5, risk R3).
 
 **Sources:** [HyroTrader — the 4 levels](https://www.hyrotrader.com/blog/on-chain-prop-trading-firm/) ·
@@ -106,14 +106,14 @@ Verified directly in the code:
 - `solfx-core/Cargo.toml` already exposes `cpi = ["no-entrypoint"]` — the referral program
   uses it.
 
-So **a NOXFUNDING PDA can be the authority of a SolFX `UserAccount`** and sign via
-`CpiContext::new_with_signer`. The trader signs NOXFUNDING; the mandate PDA signs SolFX.
+So **a NOXFUNDS PDA can be the authority of a SolFX `UserAccount`** and sign via
+`CpiContext::new_with_signer`. The trader signs NOXFUNDS; the mandate PDA signs SolFX.
 
 This is what makes custody safe with no new code in SolFX:
 
 > The trader can open and close positions. The trader can **never** call
 > `withdraw_collateral`, because they are not the authority — the mandate PDA is, and it only
-> signs a withdrawal through NOXFUNDING's settlement path.
+> signs a withdrawal through NOXFUNDS's settlement path.
 
 Two consequences to budget for:
 - `position` is `init, payer = authority`, so the mandate PDA must hold SOL (~0.0017 per
@@ -121,7 +121,7 @@ Two consequences to budget for:
 - `deposit_collateral` requires `user_token_account.owner == authority`, so the mandate PDA
   must own a USDC token account.
 
-Dependency direction matches the `solfx-referral` precedent exactly: `noxfunding → solfx-core`,
+Dependency direction matches the `solfx-referral` precedent exactly: `noxfunds → solfx-core`,
 one way, `features = ["cpi"]`.
 
 ### 2.2 The transaction-size question — answered
@@ -142,7 +142,7 @@ three oracle legs:
 ### 2.3 The remaining real risk: BPF stack frames
 
 SolFX hit `Access violation in stack frame 5` twice — at 13 accounts, and again at 18. The
-wrapper needs ~21. **Mitigation: NOXFUNDING deserializes only what it reads.**
+wrapper needs ~21. **Mitigation: NOXFUNDS deserializes only what it reads.**
 
 | Deserialize (`Box<Account<T>>`) | Pass through (`UncheckedAccount`) |
 |---|---|
@@ -150,13 +150,13 @@ wrapper needs ~21. **Mitigation: NOXFUNDING deserializes only what it reads.**
 
 An `UncheckedAccount` is a bare `AccountInfo` — no deserialization, far less stack, and
 **solfx-core re-validates every one of them anyway** through its own seeds and constraints. An
-account NOXFUNDING never reads is an account it should not deserialize.
+account NOXFUNDS never reads is an account it should not deserialize.
 
 **This must be proven before anything else is built** — see Stage 0.
 
 ### 2.4 Accounts
 
-All PDAs of the `noxfunding` program.
+All PDAs of the `noxfunds` program.
 
 | Account | Seeds | Holds |
 |---|---|---|
@@ -239,7 +239,7 @@ virtual trade is priced by **the same functions a real fill uses**:
 | Margin, equity, liquidation | `solfx_math::margin` |
 
 So the claim is exact, not marketing: **the demo is not an approximation of a SolFX fill; it is
-computed by identical code.** No token ever moves, so SolFX invariants I1–I8 are untouched by
+computed by identical code.** No token ever moves, so SolFX invariants I1, I2, I4–I8 are untouched by
 construction — the strongest possible safety argument for the evaluation.
 
 Two stages, each with its own rule set and a **minimum trade count (~10)** so the win rate
@@ -248,7 +248,7 @@ means something.
 ### 2.7 Statistics and tiering
 
 SolFX stores **no** per-account PnL, trade count, win count, or drawdown — those exist only in
-events. So NOXFUNDING must compute and store its own:
+events. So NOXFUNDS must compute and store its own:
 
 ```rust
 pub struct TraderProfile {
@@ -272,10 +272,10 @@ Investor USDC → `MandateVault` → SolFX `collateral_vault` via `deposit_colla
 signs). On settlement the mandate PDA calls `withdraw_collateral`, then splits:
 
 - principal back to investor first
-- profit above principal split `trader_split_bps` / remainder, minus NOXFUNDING's fee
+- profit above principal split `trader_split_bps` / remainder, minus NOXFUNDS's fee
 - a loss simply means the investor gets back less than principal
 
-NOXFUNDING needs its **own** invariant series (SolFX's I7 is a closed sum over exactly four
+NOXFUNDS needs its **own** invariant series (SolFX's I7 is a closed sum over exactly four
 vaults and must not be disturbed):
 
 - **N1** `Σ MandateVault balances + Σ capital deployed into SolFX == Σ principal − Σ settled`
@@ -480,21 +480,21 @@ Two things to be clear-eyed about:
   [lp.rs](../programs/solfx-core/src/instructions/lp.rs) and
   [mod.rs](../programs/solfx-core/src/instructions/trader/mod.rs). So the treasury cannot hand
   the pool money without receiving shares back. What it gets is **protocol-owned liquidity**:
-  the pool deepens, and NOXFUNDING's own position takes losses alongside every other LP. That
+  the pool deepens, and NOXFUNDS's own position takes losses alongside every other LP. That
   is real alignment, even though NAV per share is unchanged for existing holders.
 - **It is discretionary, so it is a promise rather than a mechanism.** Everything else in this
   design is enforced by code; this one is not. That is a deliberate choice for launch — it
   keeps the treasury flexible while volumes are small — but it is the single place where
-  NOXFUNDING asks to be trusted, and it should be said out loud rather than glossed. It can be
+  NOXFUNDS asks to be trusted, and it should be said out loud rather than glossed. It can be
   made rule-based later (e.g. "maintain LP ≥ X% of funded notional") **without touching
-  SolFX**, because the rule would live in NOXFUNDING.
+  SolFX**, because the rule would live in NOXFUNDS.
 
 ### 5.3 Is the protocol solvent?
 
 Revenue is forfeited stakes plus 5% of winners' gross. Costs are refunds, rent,
-and keeper gas. Nothing here requires NOXFUNDING to hold risk: **the protocol never takes the
+and keeper gas. Nothing here requires NOXFUNDS to hold risk: **the protocol never takes the
 other side of a trade.** The investor bears trading loss, SolFX's LP pool is the counterparty,
-and NOXFUNDING only ever moves other people's money between escrows. That is what makes N1–N4
+and NOXFUNDS only ever moves other people's money between escrows. That is what makes N1–N4
 sufficient — there is no balance-sheet risk to model.
 
 ### 5.4 Integrity: Sybil resistance and copy-trading
@@ -526,7 +526,7 @@ marketplace dies. A trust problem, not a theft problem, and still worth preventi
 
 A trader mirrors a genuinely skilled trader's entries and inherits their record.
 
-**This cannot be prevented in the UI.** Every NOXFUNDING trade is a public on-chain event the
+**This cannot be prevented in the UI.** Every NOXFUNDS trade is a public on-chain event the
 moment it lands; anyone can watch the chain and mirror it without ever opening the website.
 UI-level blocking would be theatre. Four things that do work, strongest first:
 
@@ -668,7 +668,7 @@ Shares the Phase 8 SolFX frontend stack. Three surfaces:
 | Stage | Deliverable | Exit criteria |
 |---|---|---|
 | **0. Feasibility spike** | One throwaway instruction that CPIs `open_position` from a PDA authority, with pass-through `UncheckedAccount`s | **Fits the stack frame and the packet.** Measured, not argued. If this fails the design changes — nothing else is built first. |
-| **1. Mandate primitive** | `NoxConfig`, `Mandate`, `MandateVault`, `funded_open_position` + close | A rule-violating trade **fails as a transaction**; a compliant one lands with its stop attached atomically; SolFX I1–I8 still hold |
+| **1. Mandate primitive** | `NoxConfig`, `Mandate`, `MandateVault`, `funded_open_position` + close | A rule-violating trade **fails as a transaction**; a compliant one lands with its stop attached atomically; SolFX I1, I2, I4–I8 still hold |
 | **2. The full rulebook** | Every Part 3 rule, split CPI vs crank | Each rule has a test that proves it blocks *and* one that proves it permits; each names its own error |
 | **3. Evaluation engine** | `Evaluation`, `VirtualPosition`, simulated trade path | A simulated fill matches a real SolFX fill **to the unit** on the same oracle input; no token moves |
 | **4. Track record & tiers** | `TraderProfile`, stats, `observe_equity` | Drawdown cannot be hidden by holding a loser; tier boundaries pinned exactly |
@@ -713,10 +713,10 @@ Shares the Phase 8 SolFX frontend stack. Three surfaces:
 
 - **Stage 0 is itself the verification** of the central assumption; it produces a measured
   packet size and a passing CPI, or it invalidates the design.
-- Every stage: LiteSVM tests loading **both** `solfx_core.so` and `noxfunding.so`, exactly as
+- Every stage: LiteSVM tests loading **both** `solfx_core.so` and `noxfunds.so`, exactly as
   `programs/solfx-core/tests/referral.rs` already does for the two-program case.
-- **SolFX's `assert_invariants()` (I1–I8) runs after every NOXFUNDING action.** This is the
-  guarantee that NOXFUNDING cannot corrupt SolFX — your constraint, enforced as a test rather
+- **SolFX's `assert_invariants()` (I1, I2, I4–I8) runs after every NOXFUNDS action.** This is the
+  guarantee that NOXFUNDS cannot corrupt SolFX — your constraint, enforced as a test rather
   than a promise.
 - Every rule in Part 3 gets a **paired** test: one proving it blocks, one proving it permits.
   A rule with only the first is indistinguishable from a rule that blocks everything.

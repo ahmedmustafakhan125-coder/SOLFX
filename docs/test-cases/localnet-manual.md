@@ -206,7 +206,7 @@ The hardest to drive by hand — liquidation needs the price to move against a t
 
 ## 10. Invariants under real conditions (95–100)
 
-I1–I8 are asserted in the automated suite. These check they survive a live cluster.
+I1, I2, I4–I8 are asserted in the automated suite. These check they survive a live cluster.
 
 | # | Check | Expect |
 |---|---|---|

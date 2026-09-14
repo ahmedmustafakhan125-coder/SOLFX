@@ -185,6 +185,8 @@ pub enum SolfxError {
     TriggerAlreadyMet,
     #[msg("Trigger condition has not been met")]
     TriggerNotMet,
+    #[msg("Trigger belongs to a previous position at this address, not the current one")]
+    TriggerPositionMismatch,
 }
 
 /// Map the maths crate's errors onto program errors.

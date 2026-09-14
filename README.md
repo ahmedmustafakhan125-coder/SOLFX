@@ -26,7 +26,7 @@ Read in this order:
 | [`docs/test-cases/`](docs/test-cases/README.md) | The full test catalogue — automated tests documented per phase |
 | [`docs/test-cases/localnet-manual.md`](docs/test-cases/localnet-manual.md) | **100 manual cases** against a live validator — what LiteSVM cannot cover |
 | [`docs/diagrams/`](docs/diagrams/) | Flowcharts (PNG + editable Graphviz sources) |
-| [`docs/NOXFUNDING-PLAN.md`](docs/NOXFUNDING-PLAN.md) | **NOXFUNDING** — the prop-firm product built on top of SolFX. Design plan, not yet built |
+| [`docs/NOXFUNDS-PLAN.md`](docs/NOXFUNDS-PLAN.md) | **NOXFUNDS** — the prop-firm product built on top of SolFX. Design plan, not yet built |
 
 ## Progress
 

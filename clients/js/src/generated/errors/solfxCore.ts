@@ -162,6 +162,8 @@ export const SOLFX_CORE_ERROR__INVALID_TRIGGER_PRICE = 0x17b7; // 6071
 export const SOLFX_CORE_ERROR__TRIGGER_ALREADY_MET = 0x17b8; // 6072
 /** TriggerNotMet: Trigger condition has not been met */
 export const SOLFX_CORE_ERROR__TRIGGER_NOT_MET = 0x17b9; // 6073
+/** TriggerPositionMismatch: Trigger belongs to a previous position at this address, not the current one */
+export const SOLFX_CORE_ERROR__TRIGGER_POSITION_MISMATCH = 0x17ba; // 6074
 
 export type SolfxCoreError =
   | typeof SOLFX_CORE_ERROR__AUTHORITY_MISMATCH
@@ -230,6 +232,7 @@ export type SolfxCoreError =
   | typeof SOLFX_CORE_ERROR__TOO_MANY_MARKETS
   | typeof SOLFX_CORE_ERROR__TRIGGER_ALREADY_MET
   | typeof SOLFX_CORE_ERROR__TRIGGER_NOT_MET
+  | typeof SOLFX_CORE_ERROR__TRIGGER_POSITION_MISMATCH
   | typeof SOLFX_CORE_ERROR__UNEXPECTED_PRICE_UPDATE
   | typeof SOLFX_CORE_ERROR__UTILISATION_CAP_REACHED
   | typeof SOLFX_CORE_ERROR__WITHDRAWAL_COOLDOWN_ACTIVE
@@ -308,6 +311,7 @@ if (process.env.NODE_ENV !== "production") {
     [SOLFX_CORE_ERROR__TOO_MANY_MARKETS]: `Maximum market count reached`,
     [SOLFX_CORE_ERROR__TRIGGER_ALREADY_MET]: `Trigger is already met at the current price; that is a market close, not an order`,
     [SOLFX_CORE_ERROR__TRIGGER_NOT_MET]: `Trigger condition has not been met`,
+    [SOLFX_CORE_ERROR__TRIGGER_POSITION_MISMATCH]: `Trigger belongs to a previous position at this address, not the current one`,
     [SOLFX_CORE_ERROR__UNEXPECTED_PRICE_UPDATE]: `A price update account was supplied that this market does not use`,
     [SOLFX_CORE_ERROR__UTILISATION_CAP_REACHED]: `Vault utilisation is at its ceiling; no new positions`,
     [SOLFX_CORE_ERROR__WITHDRAWAL_COOLDOWN_ACTIVE]: `Withdrawal cooldown has not elapsed`,

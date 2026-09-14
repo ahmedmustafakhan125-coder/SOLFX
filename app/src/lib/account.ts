@@ -28,6 +28,8 @@ import type {
   TransactionSigner,
 } from "@solana/kit";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 /** No referrer. The program binds this once at init and never reassigns it. */
 const NO_REFERRER = "11111111111111111111111111111111" as Address;
 
@@ -49,7 +51,9 @@ export async function readAccountStatus(
   owner: Address
 ): Promise<AccountStatus> {
   const [protocolPda] = await findProtocolPda();
-  const protocol = await fetchProtocol(rpc, protocolPda);
+  const protocol = await fetchProtocol(rpc, protocolPda, {
+    commitment: READ_COMMITMENT,
+  });
   const usdcMint = protocol.data.usdcMint;
 
   const [userAccountPda] = await findUserAccountPda({ authority: owner });
@@ -61,7 +65,10 @@ export async function readAccountStatus(
 
   // Both may legitimately not exist, so read raw rather than through a decoder that throws.
   const { value: accounts } = await rpc
-    .getMultipleAccounts([userAccountPda, ata], { encoding: "base64" })
+    .getMultipleAccounts([userAccountPda, ata], {
+      commitment: READ_COMMITMENT,
+      encoding: "base64",
+    })
     .send();
 
   const userRaw = accounts[0];

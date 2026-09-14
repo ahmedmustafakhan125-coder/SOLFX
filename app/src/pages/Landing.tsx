@@ -34,6 +34,12 @@ function Nav() {
             About
           </Link>
           <a
+            href="#verification"
+            className="uppercase tracking-wider text-ink-muted hover:text-ink"
+          >
+            Verification
+          </a>
+          <a
             href="#status"
             className="uppercase tracking-wider text-ink-muted hover:text-ink"
           >
@@ -103,6 +109,85 @@ function Feature({
     </div>
   );
 }
+
+/**
+ * The verification band.
+ *
+ * Every figure here is measured and reproducible from the repository — the commands are on
+ * the page for exactly that reason. Nothing is rounded up, and the things that are *not*
+ * true sit in the band immediately below this one rather than being left out.
+ *
+ * That pairing is deliberate. A venue asking people to trust it with money is more credible
+ * for saying "no external audit" in the same breath as "97% coverage" than for saying only
+ * the second. The numbers are good enough not to need help.
+ */
+/** Reproduces every figure in the verification band, in order. */
+const CHECK_COMMANDS = `cargo test --workspace          # 555 passing, 0 ignored
+npm --prefix clients/js test    # 211
+npm --prefix app run test       # 22
+
+anchor coverage                 # 97.14% of programs/solfx-core/src/instructions
+cargo test -p solfx-math --test properties   # the 56 laws
+cargo test -p solfx-core --test scenarios    # the 9 crisis replays
+
+cargo clippy --workspace --all-targets       # clean; the lints are in Cargo.toml`;
+
+const PROOF_STATS: readonly {
+  figure: string;
+  label: string;
+  detail: string;
+}[] = [
+  {
+    figure: "788",
+    label: "tests passing",
+    detail: "555 Rust · 211 SDK · 22 app · none ignored",
+  },
+  {
+    figure: "97.14%",
+    label: "coverage of the on-chain code",
+    detail: "SBF source coverage across 38 instructions",
+  },
+  {
+    figure: "56",
+    label: "property tests",
+    detail: "laws over the money paths, not examples",
+  },
+  {
+    figure: "99.88%",
+    label: "price-feed uptime",
+    detail: "1,624 of 1,626 passes over 16h 23m",
+  },
+];
+
+const PROOF_GROUPS: readonly {
+  title: string;
+  items: readonly string[];
+}[] = [
+  {
+    title: "The arithmetic cannot drift",
+    items: [
+      "Every money path goes through one fixed-point module. No floating point anywhere in the protocol — not in a test, not in a log line.",
+      "The build denies overflow, truncation, silent division, unwrap, panic and index-slicing. A money path cannot opt out.",
+      "56 property tests assert laws rather than examples: a round trip at an unchanged price always loses, P&L is antisymmetric, fee splits conserve every unit, the book is never crossed.",
+    ],
+  },
+  {
+    title: "Solvency is checked, not assumed",
+    items: [
+      "Seven accounting invariants are re-asserted after individual instructions in the test suite — vault balances against the sum of accounts, open interest against live positions, LP supply against assets under management.",
+      "Compute and packet ceilings are enforced by tests, so a regression fails CI rather than a transaction: open_position runs at 55,584 units against a 120,000 ceiling, and a liquidation is 758 bytes against Solana's 1,232 limit.",
+      "Refusal is tested as heavily as success. A venue that accepts everything is not a venue.",
+    ],
+  },
+  {
+    title: "It has been run against history",
+    items: [
+      "Nine crisis replays drive the engine through real events: the 2015 Swiss franc depeg, the 2016 sterling flash crash, COVID's sustained wide spreads, an emerging-market devaluation, and a weekend gap.",
+      "Each one asserts the documented order of absorption — insurance fund, then socialised loss — and that the venue refuses new risk without ever bricking.",
+      "21.7 million fuzzing executions have found zero crashes.",
+    ],
+  },
+];
 
 function Band({
   eyebrow,
@@ -315,6 +400,81 @@ export function Landing() {
       </Band>
 
       {/* Status */}
+      {/* Verification — measured, reproducible, and paired with what is not true */}
+      <section
+        id="verification"
+        className="border-t border-line px-4 py-20 md:px-8"
+      >
+        <div className="mx-auto max-w-[1440px]">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-brand">
+              Verification
+            </div>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
+              Every number here is <span className="text-brand">measured.</span>
+            </h2>
+            <p className="mt-3 text-sm text-ink-muted">
+              Not estimated, not aspirational. Each one is reproducible from the
+              repository, and the commands that produce it are at the bottom of
+              this section.
+            </p>
+          </div>
+
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {PROOF_STATS.map((s) => (
+              <div key={s.label} className="panel p-6">
+                <div className="font-mono text-3xl font-bold tracking-tight text-brand md:text-4xl">
+                  {s.figure}
+                </div>
+                <div className="mt-2 text-sm font-bold uppercase tracking-wide">
+                  {s.label}
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-ink-muted">
+                  {s.detail}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            {PROOF_GROUPS.map((g) => (
+              <div key={g.title} className="panel p-6">
+                <h3 className="text-base font-bold uppercase tracking-wide">
+                  {g.title}
+                </h3>
+                <ul className="mt-4 space-y-3 text-sm leading-relaxed text-ink-muted">
+                  {g.items.map((item) => (
+                    <li key={item} className="flex gap-2">
+                      <span className="mt-[2px] shrink-0 text-brand">·</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 panel p-6">
+            <h3 className="text-base font-bold uppercase tracking-wide">
+              Check it yourself
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+              The figures above come from these, run against the same commit
+              that is deployed here.
+            </p>
+            <pre className="mt-4 overflow-x-auto border border-line bg-surface-highest p-4 font-mono text-xs leading-relaxed text-ink-muted">
+              <code>{CHECK_COMMANDS}</code>
+            </pre>
+            <p className="mt-3 text-xs leading-relaxed text-ink-dim">
+              The protocol is 38 instructions across two Anchor programs. It has
+              never been upgraded since the markets you can trade here were
+              listed — the extensibility claim was tested by listing two new
+              markets against a byte-identical binary.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section id="status" className="border-t border-line px-4 py-20 md:px-8">
         <div className="mx-auto max-w-[1440px]">
           <div className="mx-auto max-w-3xl text-center">
@@ -322,8 +482,12 @@ export function Landing() {
               Status
             </div>
             <h2 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
-              What is true <span className="text-brand">today.</span>
+              And what is <span className="text-brand">not.</span>
             </h2>
+            <p className="mt-3 text-sm text-ink-muted">
+              The numbers above are good. They are also not the same thing as
+              safety, and the difference is worth stating plainly.
+            </p>
           </div>
           <div className="mt-12 grid gap-4 md:grid-cols-2">
             <div className="border border-long/25 bg-long/5 p-6">
@@ -336,8 +500,8 @@ export function Landing() {
                   · Full round trip — open, hold, close — verified on every one
                 </li>
                 <li>
-                  · 549 tests passing, none ignored; property tests over the
-                  money paths
+                  · 788 tests passing, none ignored; 97% coverage of the
+                  on-chain code
                 </li>
                 <li>
                   · Liquidation, funding, carry, LP vault and IB rebates
@@ -352,7 +516,11 @@ export function Landing() {
               <ul className="mt-4 space-y-2 text-sm leading-relaxed text-ink-muted">
                 <li>
                   · <strong className="text-ink">No external audit.</strong>{" "}
-                  None. Fuzzing is planned, not done
+                  None. Tests prove what someone thought to test
+                </li>
+                <li>
+                  · Fuzzing has run 21.7M executions with zero crashes, but not
+                  yet the 24 continuous hours the exit criterion asks for
                 </li>
                 <li>
                   · Devnet only — test money, and nothing here is production

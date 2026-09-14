@@ -27,6 +27,8 @@ import {
 import type { Address, Rpc, Signature, SolanaRpcApi } from "@solana/kit";
 import { findUserAccountPda } from "@solfx/client";
 
+import { READ_COMMITMENT } from "@/lib/commitment";
+
 const NOTIONAL_DIVISOR = 1_000_000_000_000n;
 
 /** One thing that happened to a position, in the order it happened. */
@@ -84,6 +86,43 @@ export const EMPTY_TOTALS: HistoryTotals = {
  * A hundred signatures is a few hundred trades' worth of events for a devnet account and
  * still only a couple of seconds of calls.
  */
+/**
+ * How many `getTransaction` calls are in flight at once.
+ *
+ * Eight is a compromise, not a tuned figure: enough to turn a serial wait into roughly an
+ * eighth of one, few enough to stay inside the gateway's budget while the poster and keeper
+ * are also using it.
+ */
+const HISTORY_CONCURRENCY = 8;
+
+/**
+ * `Promise.all` with a ceiling on how many run at once, preserving input order.
+ *
+ * Order matters here: the rows are built by index against `wanted`, so a result that came
+ * back out of order would attach the wrong signature and timestamp to an event.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      for (;;) {
+        const i = next++;
+        const item = items[i];
+        if (i >= items.length || item === undefined) return;
+        out[i] = await fn(item);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return out;
+}
+
 export async function loadHistory(
   rpc: Rpc<SolanaRpcApi>,
   owner: Address,
@@ -92,24 +131,44 @@ export async function loadHistory(
   const [userAccount] = await findUserAccountPda({ authority: owner });
 
   const signatures = await rpc
-    .getSignaturesForAddress(userAccount, { limit })
+    .getSignaturesForAddress(userAccount, {
+      commitment: READ_COMMITMENT,
+      limit,
+    })
     .send();
 
   const rows: HistoryRow[] = [];
 
-  for (const entry of signatures) {
-    // A failed transaction emitted no events; it also cost a fee, but nothing that belongs
-    // in a trade history.
-    if (entry.err) continue;
+  // A failed transaction emitted no events; it also cost a fee, but nothing that belongs in
+  // a trade history.
+  const wanted = signatures.filter((entry) => !entry.err);
 
-    const tx = await rpc
-      .getTransaction(entry.signature as Signature, {
-        maxSupportedTransactionVersion: 0,
-        encoding: "json",
-      })
-      .send();
+  // Fetched a few at a time rather than one after another.
+  //
+  // This loop used to `await` each `getTransaction` in turn. At ~200ms per call measured
+  // through the gateway that is 20 seconds for a full hundred signatures from inside the
+  // datacentre, and minutes from a browser on a home connection — for a tab that is supposed
+  // to open. Concurrency is bounded rather than unbounded because the browser shares one
+  // rate-limited endpoint with the poster and the keeper, and a hundred simultaneous calls
+  // buys a 429 storm instead of a fast page.
+  const fetched = await mapWithConcurrency(
+    wanted,
+    HISTORY_CONCURRENCY,
+    (entry) =>
+      rpc
+        .getTransaction(entry.signature as Signature, {
+          commitment: READ_COMMITMENT,
+          maxSupportedTransactionVersion: 0,
+          encoding: "json",
+        })
+        .send()
+        .catch(() => undefined)
+  );
 
-    const logs = tx?.meta?.logMessages;
+  for (let i = 0; i < wanted.length; i++) {
+    const entry = wanted[i];
+    if (!entry) continue;
+    const logs = fetched[i]?.meta?.logMessages;
     if (!logs) continue;
 
     const events = parseEvents(logs);
