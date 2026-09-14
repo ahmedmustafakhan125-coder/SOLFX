@@ -2,7 +2,7 @@
 
 **Flowchart:** [`../diagrams/phase-next.png`](../diagrams/phase-next.png)
 **Where we stand:** Phases 0–6 complete. 454 tests, two programs (~905 KB + 257 KB), all
-invariants (I1–I8) asserted after every instruction, the CHF-depeg replay passing.
+invariants (I1, I2, I4–I8) asserted after every instruction, the CHF-depeg replay passing.
 Everything below is specified in `ARCHITECTURE.md` § 15 with **testable exit criteria** —
 a phase finishes when its criteria pass, not when time runs out.
 

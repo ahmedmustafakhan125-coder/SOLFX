@@ -239,7 +239,7 @@ virtual trade is priced by **the same functions a real fill uses**:
 | Margin, equity, liquidation | `solfx_math::margin` |
 
 So the claim is exact, not marketing: **the demo is not an approximation of a SolFX fill; it is
-computed by identical code.** No token ever moves, so SolFX invariants I1–I8 are untouched by
+computed by identical code.** No token ever moves, so SolFX invariants I1, I2, I4–I8 are untouched by
 construction — the strongest possible safety argument for the evaluation.
 
 Two stages, each with its own rule set and a **minimum trade count (~10)** so the win rate
@@ -668,7 +668,7 @@ Shares the Phase 8 SolFX frontend stack. Three surfaces:
 | Stage | Deliverable | Exit criteria |
 |---|---|---|
 | **0. Feasibility spike** | One throwaway instruction that CPIs `open_position` from a PDA authority, with pass-through `UncheckedAccount`s | **Fits the stack frame and the packet.** Measured, not argued. If this fails the design changes — nothing else is built first. |
-| **1. Mandate primitive** | `NoxConfig`, `Mandate`, `MandateVault`, `funded_open_position` + close | A rule-violating trade **fails as a transaction**; a compliant one lands with its stop attached atomically; SolFX I1–I8 still hold |
+| **1. Mandate primitive** | `NoxConfig`, `Mandate`, `MandateVault`, `funded_open_position` + close | A rule-violating trade **fails as a transaction**; a compliant one lands with its stop attached atomically; SolFX I1, I2, I4–I8 still hold |
 | **2. The full rulebook** | Every Part 3 rule, split CPI vs crank | Each rule has a test that proves it blocks *and* one that proves it permits; each names its own error |
 | **3. Evaluation engine** | `Evaluation`, `VirtualPosition`, simulated trade path | A simulated fill matches a real SolFX fill **to the unit** on the same oracle input; no token moves |
 | **4. Track record & tiers** | `TraderProfile`, stats, `observe_equity` | Drawdown cannot be hidden by holding a loser; tier boundaries pinned exactly |
@@ -715,7 +715,7 @@ Shares the Phase 8 SolFX frontend stack. Three surfaces:
   packet size and a passing CPI, or it invalidates the design.
 - Every stage: LiteSVM tests loading **both** `solfx_core.so` and `noxfunds.so`, exactly as
   `programs/solfx-core/tests/referral.rs` already does for the two-program case.
-- **SolFX's `assert_invariants()` (I1–I8) runs after every NOXFUNDS action.** This is the
+- **SolFX's `assert_invariants()` (I1, I2, I4–I8) runs after every NOXFUNDS action.** This is the
   guarantee that NOXFUNDS cannot corrupt SolFX — your constraint, enforced as a test rather
   than a promise.
 - Every rule in Part 3 gets a **paired** test: one proving it blocks, one proving it permits.

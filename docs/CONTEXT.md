@@ -240,7 +240,12 @@ others 8) plus `tests/properties.rs` (56 property tests) and `tests/broker_parit
 
 **Framework:** LiteSVM.
 
-### Invariants I1–I8 — how they are actually enforced
+### Invariants I1, I2, I4–I8 — how they are actually enforced
+
+**Seven, not eight.** `ARCHITECTURE.md` § 13 specifies I3 — funding conservation,
+`Σ(cum_funding_long × oi_long) + Σ(cum_funding_short × oi_short) ≈ 0` — and no `assert_i3`
+exists. This file and eight others claimed "I1–I8"; corrected 2026-09-14. The guarantee is
+whatever the harness asserts, and it asserts seven.
 
 `assert_invariants()` is a **test harness**, defined at
 `programs/solfx-core/tests/common/mod.rs:2241`. It does **not** run on chain — there are zero
@@ -285,7 +290,7 @@ programs/solfx-core/
   │   └── errors.rs          # 40+ domain-specific error codes
   │
   ├── tests/
-  │   ├── common/mod.rs      # Harness + assert_invariants() (I1–I8), line 2241
+  │   ├── common/mod.rs      # Harness + assert_invariants() (I1, I2, I4–I8), line 2241
   │   ├── markets.rs         # 32
   │   ├── positions.rs       # 26
   │   ├── oracle.rs          # 26

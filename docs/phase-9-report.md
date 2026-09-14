@@ -737,7 +737,7 @@ green in `app/` for the first time.
 ## Task 3 — fuzzing
 
 **Status: 24-hour run in progress.** Harness at [`fuzz/solfx_core/src/main.rs`](../fuzz/solfx_core/src/main.rs),
-commit `test: a Crucible fuzz harness that asserts I1-I8, not just "no panic"`.
+commit `test: a Crucible fuzz harness that asserts I1, I2, I4–I8, not just "no panic"`.
 
 **Tool: `anchor fuzz` (Crucible), not Trident.** The brief asked me to check first, and the
 answer changed: Anchor 1.1.2 ships coverage-guided fuzzing with stateful invariant testing,

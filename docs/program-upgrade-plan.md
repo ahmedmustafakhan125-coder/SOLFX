@@ -193,7 +193,7 @@ into consensus state.
 - every account: owner, instance, signer, mutability
 - new errors are real variants in `errors.rs`, named, not invented at the call site
 - `assert_invariants()` called in every new test — a new instruction that does not call it is
-  outside the I1–I8 guarantee
+  outside the I1, I2, I4–I8 guarantee
 - `compute_budget.rs` gets a ceiling for every new instruction, so a regression fails CI
 - `cargo fmt`, `cargo clippy --workspace --all-targets`, `cargo test --workspace` green with
   no validator running
