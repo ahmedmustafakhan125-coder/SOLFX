@@ -60,7 +60,7 @@ and all `enable`d at boot as of 2026-09-09; six markets are `Active` and the kee
 cranking, liquidating and executing triggers. See *Deploying to a VPS* and *What unblocked
 it* below. **Phase 8's feature list is complete** and Phase 9 has started — its market ceiling
 is measured in [`phase-9-feeds.md`](phase-9-feeds.md) and it is **24 symbols, not 33**.
-NOXFUNDING still starts only after all of that.
+NOXFUNDS still starts only after all of that.
 
 > **Session log:** [`CLAUDE-SESSION.md`](../CLAUDE-SESSION.md) at the repo root records what
 > changed on 2026-09-09 and when, including the things that are true but not yet fixed. Read it
@@ -612,8 +612,8 @@ Pyth Indices for 24/7 gold/silver do not exist in the public Hermes catalogue. T
 ### Q3 — LATAM session windows (RESOLVED, 2026-08-01)
 USD/BRL, USD/CLP, USD/PEN publish at 1s during their local sessions (14–21 UTC windows) but go silent outside. Fully usable in-session via `feed_kind` state machine per market.
 
-### Stack frame risk (MITIGATED for Phase 7, UNPROVEN for NOXFUNDING)
-SolFX hit BPF stack frame errors at 13 and 18 accounts. Phase 7 kept it under 18 by not deserializing accounts only passed through. NOXFUNDING will need ~21 accounts for a CPI wrapper — this is why Stage 0 (the feasibility spike) is the first NOXFUNDING task.
+### Stack frame risk (MITIGATED for Phase 7, UNPROVEN for NOXFUNDS)
+SolFX hit BPF stack frame errors at 13 and 18 accounts. Phase 7 kept it under 18 by not deserializing accounts only passed through. NOXFUNDS will need ~21 accounts for a CPI wrapper — this is why Stage 0 (the feasibility spike) is the first NOXFUNDS task.
 
 ---
 
@@ -1039,9 +1039,9 @@ their prices are the only ones moving.
 
 ---
 
-## Sequence for Next Phase: NOXFUNDING
+## Sequence for Next Phase: NOXFUNDS
 
-**Do NOT start NOXFUNDING until:**
+**Do NOT start NOXFUNDS until:**
 1. ✅ SolFX is deployed to devnet
 2. ✅ All 33 markets are listed and testable
 3. ✅ Keeper is running stably
@@ -1049,9 +1049,9 @@ their prices are the only ones moving.
 
 **Then:**
 - **Stage 0:** Feasibility spike — prove a PDA-authority CPI into `open_position` fits the stack frame
-- **Stages 1–7:** Full NOXFUNDING implementation (evaluation, mandates, settlement, keeper, UI)
+- **Stages 1–7:** Full NOXFUNDS implementation (evaluation, mandates, settlement, keeper, UI)
 
-**Total NOXFUNDING timeline:** ~8–12 weeks after SolFX devnet is live.
+**Total NOXFUNDS timeline:** ~8–12 weeks after SolFX devnet is live.
 
 ---
 
@@ -1100,7 +1100,7 @@ their prices are the only ones moving.
 
 **For future work:**
 - Refer to this whenever you need to remember what SolFX is, what's been tested, and what's still open.
-- Before any NOXFUNDING stage, check the "Deployment Readiness" section.
+- Before any NOXFUNDS stage, check the "Deployment Readiness" section.
 - The "Known Limitations" section lists open items that do not block SolFX but affect feature completeness.
 
 **For external communication:**

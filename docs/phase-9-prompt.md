@@ -32,7 +32,7 @@ State as of 2026-09-11 20:00 UTC:
 below is measured against. Two things are explicitly **out of scope**: the indexer (transaction
 logs already back the history panel, and a database is another service to keep alive for a
 demo nobody will scroll) and IB registration/claiming (it matters on mainnet, not for this).
-NOXFUNDING comes later and will carry the impact.
+NOXFUNDS comes later and will carry the impact.
 
 **A decision has been made that changes Phase 9's exit criteria: the venue stays at 6 pairs.**
 A free Pyth tier plus the poster's throughput will not carry 20 markets inside the 60-second
