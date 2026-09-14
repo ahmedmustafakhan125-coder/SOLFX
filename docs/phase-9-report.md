@@ -648,6 +648,59 @@ anchor coverage --trace-dir "$HOME/solfx-cov/traces" --output "$HOME/solfx-cov/s
 counters, so there are no region or branch columns as in the two `cargo llvm-cov` reports
 beside it.
 
+## The six-feed soak — the MVP bar, measured
+
+**16 h 23 m, 1,626 passes, 1,624 clean. 99.88 %.**
+
+The user's stated bar for the MVP is "six pairs, their prices inside the gate, and anyone can
+trade them without an error". That set — EUR/USD, USD/JPY, USD/CNH, XAU/USD, XAG/USD,
+BTC/USD — had never run for a sustained period *since* Task 0's gateway retry landed, so the
+bar was unverified rather than met. It was switched on at **2026-09-13 20:36:56 UTC**, ahead
+of the Sunday 21:00 FX open, and left overnight.
+
+| | |
+|---|---|
+| Window | 2026-09-13 20:36:56 → 2026-09-14 12:59:40 UTC |
+| `6 posted, 0 failed` | **1,624** |
+| `5 posted, 1 failed` | 1, at 20:51:29 |
+| `3 posted, 3 failed` | 1, at 22:41:40 |
+| Recovery | unassisted, on the next pass, both times |
+
+Both failures are the same thing and it is not the retry logic: `post_update: … was not
+confirmed in 45s`, on XAU/USD, XAG/USD and BTC/USD at 22:39–22:41. That is the Helius
+free-tier send path, and the venue healed itself without intervention. One bad minute in
+sixteen hours.
+
+### Markets, read from chain at 12:56 UTC
+
+Six Active and tradeable: EUR/USD #0, XAU/USD #3, BTC/USD #5, USD/JPY #6, USD/CNH #7,
+XAG/USD #8. The five Halted ones are Halted for the documented reasons — EUR/JPY #1 and
+USD/INR #2 have no poster feed, BTC/USD #4 is the duplicate listing, and ETH/USD #9 and
+SOL/USD #10 are not in `deployment.weekday.json`.
+
+### The one number that is thin
+
+Price age sampled every 10 s for a minute, six feeds:
+
+```
+EUR/USD   16, 28, 39, 16, 28, 40      max 40
+USD/JPY   17, 28, 40, 16, 28, 40      max 40
+USD/CNH   17, 28, 40, 17, 28, 41      max 41
+XAU/USD   17, 29, 40, 17, 28, 41      max 41
+XAG/USD   52, 29, 40, 52, 29, 41      max 52
+BTC/USD   53, 29, 41, 52, 29, 41      max 53
+```
+
+Four feeds run a clean 16 → 28 → 40 sawtooth on a ~34 s pass. **XAG/USD and BTC/USD
+occasionally skip a cycle and reach 52–53 s against the 60 s `MAX_ALLOWED_STALENESS_SECONDS`
+gate** — a seven-second margin, on the two feeds posted last in the pass. It held for
+sixteen hours, but it is the smallest margin in the system and the first thing that will
+break if the RPC has a bad minute during a demo. Reordering the deployment so the two
+laggards are posted first, or shortening the interval, would buy margin; neither has been
+tried.
+
+---
+
 ## Task 1 — the baseline
 
 **Status: complete.** Recorded in [`CONTEXT.md`](CONTEXT.md); commit `docs: the real test and
