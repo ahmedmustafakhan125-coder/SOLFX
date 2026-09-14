@@ -321,6 +321,9 @@ pub fn execute_trigger_order(ctx: Context<ExecuteTriggerOrder>) -> Result<()> {
     let trigger_price = order.trigger_price;
     let order_key = order.key();
     let position_key = ctx.accounts.position.key();
+    // Read before the reduce, because a fully closed position's account is closed below and
+    // this is the one field the event cannot recover afterwards.
+    let entry_price = ctx.accounts.position.entry_price;
 
     let transfer = VaultTransfer {
         token_program: ctx.accounts.token_program.to_account_info(),
@@ -389,6 +392,7 @@ pub fn execute_trigger_order(ctx: Context<ExecuteTriggerOrder>) -> Result<()> {
         kind: kind as u8,
         trigger_price,
         oracle_price: price.spot.price,
+        entry_price,
         size_base: size_delta,
         keeper_tip_lamports: tip,
         ts: clock.unix_timestamp,

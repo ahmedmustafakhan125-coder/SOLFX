@@ -201,6 +201,14 @@ pub struct PositionDecreased {
     pub size_closed: u64,
     pub remaining_size: u64,
     pub oracle_price: i64,
+    /// Volume-weighted entry the position closed *from*, at `PRICE_PRECISION`.
+    ///
+    /// Emitted because the distance a trade travelled is not otherwise recoverable from
+    /// events. `exec_price` says where it closed and `realized_pnl` says what that was worth,
+    /// but neither says where it started, and a position that was increased no longer entered
+    /// at the price `PositionOpened` reported. An indexer scoring a trader — NOXFUNDS ranks on
+    /// exactly this — would have to replay every increase to reconstruct it.
+    pub entry_price: i64,
     pub exec_price: i64,
     pub realized_pnl: i64,
     pub fee: u64,
@@ -470,6 +478,11 @@ pub struct TriggerOrderExecuted {
     pub kind: u8,
     pub trigger_price: i64,
     pub oracle_price: i64,
+    /// The position's entry, at `PRICE_PRECISION`. See [`PositionDecreased::entry_price`].
+    ///
+    /// Captured **before** the close, because a fully closed position's account is gone by
+    /// the time this is emitted.
+    pub entry_price: i64,
     pub size_base: u64,
     /// The order account's rent, released to whoever fired it.
     pub keeper_tip_lamports: u64,
