@@ -75,6 +75,40 @@ export type TriggerOrder = {
   sizeBase: bigint;
   createdAt: bigint;
   bump: number;
+  /**
+   * The `opened_at_slot` of the position this order was placed against.
+   *
+   * # Why an order needs to know which position it belongs to
+   *
+   * A position's address is `["position", user_account, market_index, nonce]`, and a client
+   * picks the lowest free nonce — so closing a position and opening another on the same
+   * market lands on the **same address**. `close_position` does not cancel outstanding
+   * orders, and without this field nothing distinguishes one occupant of that address from
+   * the next: a stop left behind by the closed position silently re-arms itself against
+   * whatever opens there, carrying the old direction's meaning.
+   *
+   * Measured on devnet 2026-09-13. A take-profit at 2500 left by a closed ETH **short** was
+   * inherited by a fresh ETH **long** entered at 2509.61; a take-profit on a long fires when
+   * the price rises past it, so it was already met the instant the position existed and the
+   * keeper closed it nineteen seconds after it opened. Every layer behaved correctly — the
+   * account model let two logical objects share one identity, which `.claude/rules/solana.md`
+   * § 3 already calls a bug rather than a collision to handle later.
+   *
+   * The slot rather than the timestamp because it is strictly monotonic: two positions
+   * cannot occupy one address in the same slot, since the first must be closed and § 6.6's
+   * minimum-hold rule forbids reopening that fast. `Position` already stores it for exactly
+   * that check.
+   *
+   * # Why this costs no migration
+   *
+   * The eight bytes come out of the former `[u8; 32]` reserve, so `InitSpace` is unchanged
+   * at 32 and every account written by the previous program still passes Anchor's
+   * minimum-length check. Those accounts read back as slot `0`, which matches no real
+   * position, so they refuse to execute — **fail-closed on purpose**. Grandfathering in the
+   * orders that caused the bug is the one outcome worth ruling out, and their rent is still
+   * reclaimable through `cancel_trigger_order`, which does not consult this field.
+   */
+  positionOpenedAtSlot: bigint;
   reserved: ReadonlyUint8Array;
 };
 
@@ -93,6 +127,40 @@ export type TriggerOrderArgs = {
   sizeBase: number | bigint;
   createdAt: number | bigint;
   bump: number;
+  /**
+   * The `opened_at_slot` of the position this order was placed against.
+   *
+   * # Why an order needs to know which position it belongs to
+   *
+   * A position's address is `["position", user_account, market_index, nonce]`, and a client
+   * picks the lowest free nonce — so closing a position and opening another on the same
+   * market lands on the **same address**. `close_position` does not cancel outstanding
+   * orders, and without this field nothing distinguishes one occupant of that address from
+   * the next: a stop left behind by the closed position silently re-arms itself against
+   * whatever opens there, carrying the old direction's meaning.
+   *
+   * Measured on devnet 2026-09-13. A take-profit at 2500 left by a closed ETH **short** was
+   * inherited by a fresh ETH **long** entered at 2509.61; a take-profit on a long fires when
+   * the price rises past it, so it was already met the instant the position existed and the
+   * keeper closed it nineteen seconds after it opened. Every layer behaved correctly — the
+   * account model let two logical objects share one identity, which `.claude/rules/solana.md`
+   * § 3 already calls a bug rather than a collision to handle later.
+   *
+   * The slot rather than the timestamp because it is strictly monotonic: two positions
+   * cannot occupy one address in the same slot, since the first must be closed and § 6.6's
+   * minimum-hold rule forbids reopening that fast. `Position` already stores it for exactly
+   * that check.
+   *
+   * # Why this costs no migration
+   *
+   * The eight bytes come out of the former `[u8; 32]` reserve, so `InitSpace` is unchanged
+   * at 32 and every account written by the previous program still passes Anchor's
+   * minimum-length check. Those accounts read back as slot `0`, which matches no real
+   * position, so they refuse to execute — **fail-closed on purpose**. Grandfathering in the
+   * orders that caused the bug is the one outcome worth ruling out, and their rent is still
+   * reclaimable through `cancel_trigger_order`, which does not consult this field.
+   */
+  positionOpenedAtSlot: number | bigint;
   reserved: ReadonlyUint8Array;
 };
 
@@ -111,7 +179,8 @@ export function getTriggerOrderEncoder(): FixedSizeEncoder<TriggerOrderArgs> {
       ["sizeBase", getU64Encoder()],
       ["createdAt", getI64Encoder()],
       ["bump", getU8Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 32)],
+      ["positionOpenedAtSlot", getU64Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 24)],
     ]),
     (value) => ({ ...value, discriminator: TRIGGER_ORDER_DISCRIMINATOR }),
   );
@@ -131,7 +200,8 @@ export function getTriggerOrderDecoder(): FixedSizeDecoder<TriggerOrder> {
     ["sizeBase", getU64Decoder()],
     ["createdAt", getI64Decoder()],
     ["bump", getU8Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 32)],
+    ["positionOpenedAtSlot", getU64Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 24)],
   ]);
 }
 

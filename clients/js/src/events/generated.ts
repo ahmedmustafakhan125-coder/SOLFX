@@ -480,6 +480,7 @@ export type PositionDecreased = {
   sizeClosed: bigint;
   remainingSize: bigint;
   oraclePrice: bigint;
+  entryPrice: bigint;
   execPrice: bigint;
   realizedPnl: bigint;
   fee: bigint;
@@ -498,6 +499,7 @@ export function getPositionDecreasedDecoder(): Decoder<PositionDecreased> {
     ["sizeClosed", getU64Decoder()],
     ["remainingSize", getU64Decoder()],
     ["oraclePrice", getI64Decoder()],
+    ["entryPrice", getI64Decoder()],
     ["execPrice", getI64Decoder()],
     ["realizedPnl", getI64Decoder()],
     ["fee", getU64Decoder()],
@@ -734,6 +736,7 @@ export type TriggerOrderExecuted = {
   kind: number;
   triggerPrice: bigint;
   oraclePrice: bigint;
+  entryPrice: bigint;
   sizeBase: bigint;
   keeperTipLamports: bigint;
   ts: bigint;
@@ -751,6 +754,7 @@ export function getTriggerOrderExecutedDecoder(): Decoder<TriggerOrderExecuted> 
     ["kind", getU8Decoder()],
     ["triggerPrice", getI64Decoder()],
     ["oraclePrice", getI64Decoder()],
+    ["entryPrice", getI64Decoder()],
     ["sizeBase", getU64Decoder()],
     ["keeperTipLamports", getU64Decoder()],
     ["ts", getI64Decoder()],
