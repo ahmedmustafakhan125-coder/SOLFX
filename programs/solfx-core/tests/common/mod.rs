@@ -318,6 +318,14 @@ pub struct Env {
     pub lp_vault: Pubkey,
     pub lp_mint: Pubkey,
     pub now: i64,
+    /// The slot the `Clock` sysvar reports.
+    ///
+    /// Held rather than hardcoded because `Position::opened_at_slot` is derived from it, and
+    /// two behaviours depend on that being able to move: § 6.6's minimum-hold rule, and the
+    /// binding that stops a `TriggerOrder` inheriting a later position at the same address.
+    /// A harness where the slot never advances cannot exercise either. Defaults to 1 and only
+    /// moves when a test asks, so nothing that was written against a frozen slot changes.
+    pub slot: u64,
     users: Vec<Pubkey>,
     positions: Vec<Pubkey>,
     /// Insurance-fund seeding. The only inflow the program does not record itself —
@@ -368,6 +376,7 @@ impl Env {
             lp_vault: pda(&[LP_VAULT_SEED]),
             lp_mint: pda(&[LP_MINT_SEED]),
             now: T0,
+            slot: 1,
             users: Vec::new(),
             positions: Vec::new(),
             external_deposits: 0,
@@ -383,7 +392,7 @@ impl Env {
     pub fn set_clock(&mut self, unix_timestamp: i64) {
         self.now = unix_timestamp;
         let clock = Clock {
-            slot: 1,
+            slot: self.slot,
             epoch_start_timestamp: unix_timestamp,
             epoch: 1,
             leader_schedule_epoch: 1,
@@ -394,6 +403,16 @@ impl Env {
 
     pub fn advance_clock(&mut self, seconds: i64) {
         self.set_clock(self.now + seconds);
+    }
+
+    /// Move the slot forward without moving the wall clock.
+    ///
+    /// Separate from `advance_clock` because the two are independent in the program: staleness
+    /// and funding read `unix_timestamp`, while the minimum-hold rule and trigger binding read
+    /// `slot`. A test that needs one should not silently get the other.
+    pub fn advance_slot(&mut self, slots: u64) {
+        self.slot = self.slot.saturating_add(slots);
+        self.set_clock(self.now);
     }
 
     // --- transactions ------------------------------------------------------------------

@@ -130,6 +130,9 @@ pub fn place_trigger_order(
         SolfxError::TriggerAlreadyMet
     );
 
+    // Read before the mutable borrow of `trigger_order` below.
+    let position_opened_at_slot = ctx.accounts.position.opened_at_slot;
+
     let order = &mut ctx.accounts.trigger_order;
     order.position = ctx.accounts.position.key();
     order.user_account = ctx.accounts.user_account.key();
@@ -140,6 +143,9 @@ pub fn place_trigger_order(
     order.trigger_price = trigger_price;
     order.size_base = size_base;
     order.created_at = clock.unix_timestamp;
+    // Binds the order to *this* position, not merely to its address. See
+    // `TriggerOrder::position_opened_at_slot`.
+    order.position_opened_at_slot = position_opened_at_slot;
     order.bump = ctx.bumps.trigger_order;
 
     emit!(TriggerOrderPlaced {
@@ -302,6 +308,21 @@ pub fn execute_trigger_order(ctx: Context<ExecuteTriggerOrder>) -> Result<()> {
 
     let order = &ctx.accounts.trigger_order;
     let direction = ctx.accounts.position.direction;
+
+    // The order must belong to *this* position, not merely to its address.
+    //
+    // The seeds constrain the order to the position's **address**, and that address is reused:
+    // `["position", user_account, market_index, nonce]` with the lowest free nonce means the
+    // next position on this market lands exactly here. Without this check a stop left behind
+    // by the previous occupant fires against the new one, carrying the old direction's
+    // meaning. See `TriggerOrder::position_opened_at_slot` for the devnet case.
+    //
+    // Checked before any state is touched, and before the trigger condition, so an inherited
+    // order is refused for what it is rather than for happening not to be met yet.
+    require!(
+        order.position_opened_at_slot == ctx.accounts.position.opened_at_slot,
+        SolfxError::TriggerPositionMismatch
+    );
 
     // The condition is checked against the **oracle** price, not the fill price. A trigger is
     // a trigger, not a promise about where it fills.

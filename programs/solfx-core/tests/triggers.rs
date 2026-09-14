@@ -575,3 +575,134 @@ fn a_bracket_leaves_the_other_side_resting() {
     assert!(!env.trigger_exists(&position, 1));
     env.assert_invariants();
 }
+
+// --- binding to the position instance -------------------------------------------------------
+
+/// The devnet bug of 2026-09-13, as a test.
+///
+/// A position's address is `["position", user_account, market_index, nonce]` and clients pick
+/// the lowest free nonce, so closing a position and opening another on the same market lands
+/// on the **same address**. `close_position` does not cancel outstanding orders. Before
+/// `TriggerOrder::position_opened_at_slot` existed, the stop left behind by the first position
+/// armed itself against the second — and, because the two were opposite directions, it was
+/// already met the instant that position existed.
+///
+/// On chain this closed a fresh ETH long nineteen seconds after it opened, with a take-profit
+/// the trader had set on a short they had already closed.
+#[test]
+fn a_trigger_cannot_fire_against_a_later_position_at_the_same_address() {
+    let (mut env, user) = env_with_position(Direction::Short, 5_000 * ONE_USDC);
+    let position = Env::position_pda(&user.account, 0, 0);
+
+    // A take-profit on the short: it fires when the price *falls* to it.
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    env.place_trigger(
+        &user,
+        0,
+        0,
+        0,
+        TriggerKind::TakeProfit,
+        SPOT - 5_000_000,
+        MINI,
+        p,
+    )
+    .unwrap();
+
+    // Close the short. The order is left behind — only its owner can reclaim that rent, so the
+    // program deliberately does not touch it.
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    // Closing a short is a buy, so it takes the buy-side bound.
+    env.close(&user, 0, 0, NO_BOUND_BUY, p).unwrap();
+    assert!(
+        env.trigger_exists(&position, 0),
+        "the order outlives the position it was placed on; that is the whole problem"
+    );
+
+    // Reopen on the same market and nonce — the same address, a new position, and this time a
+    // long. A take-profit on a long fires when the price *rises*, so the inherited order's
+    // condition is met immediately at any price above the trigger.
+    env.advance_slot(10);
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    env.open(
+        &user,
+        0,
+        0,
+        Direction::Long,
+        MINI,
+        5_000 * ONE_USDC,
+        NO_BOUND_BUY,
+        p,
+    )
+    .unwrap();
+    assert_eq!(
+        position,
+        Env::position_pda(&user.account, 0, 0),
+        "the address really is reused; without that this test proves nothing"
+    );
+
+    let keeper = new_keeper(&mut env);
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let err = env
+        .execute_trigger_as(&keeper, &user, 0, 0, 0, p)
+        .expect_err("an order from the previous position must not fire against this one");
+    assert!(
+        format!("{err:?}").contains("TriggerPositionMismatch"),
+        "refused for the right reason, not merely refused: {err:?}"
+    );
+
+    assert!(
+        env.position_exists(&user, 0, 0),
+        "the inherited order must not have closed the new position"
+    );
+    env.assert_invariants();
+}
+
+/// The same order still fires on the position it was actually placed against.
+///
+/// The binding check is fail-closed, so the failure mode worth guarding is not "an inherited
+/// order fires" but "no order fires at all".
+#[test]
+fn binding_does_not_stop_an_order_firing_on_its_own_position() {
+    let (mut env, user) = env_with_position(Direction::Long, 5_000 * ONE_USDC);
+    let position = Env::position_pda(&user.account, 0, 0);
+
+    let p = env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    env.place_trigger(
+        &user,
+        0,
+        0,
+        0,
+        TriggerKind::TakeProfit,
+        SPOT + 5_000_000,
+        MINI,
+        p,
+    )
+    .unwrap();
+
+    // Slots pass while the position is held — the binding is to the slot the position opened
+    // at, not to the slot the order fires in.
+    env.advance_slot(50);
+    let keeper = new_keeper(&mut env);
+    // The same mantissa `anyone_can_fire_a_met_trigger_and_is_paid_a_tip` uses: far enough to
+    // meet the trigger, near enough not to trip the market's deviation breaker first.
+    let hit = env.post_price_now(FEED_EUR_USD, PriceSpec::at(109_143_000).conf(13_893));
+    env.execute_trigger_as(&keeper, &user, 0, 0, 0, hit)
+        .expect("a trigger on its own position must still fire");
+
+    assert!(!env.trigger_exists(&position, 0));
+    env.assert_invariants();
+}
+
+/// The binding field costs no account space, which is what makes the upgrade migration-free.
+///
+/// It was taken out of the former `[u8; 32]` reserve. If this ever changes, every
+/// `TriggerOrder` written by the deployed program stops deserialising.
+#[test]
+fn the_binding_field_did_not_change_the_account_size() {
+    use anchor_lang::Space;
+    assert_eq!(
+        solfx_core::state::TriggerOrder::INIT_SPACE,
+        32 + 32 + 32 + 2 + 1 + 1 + 8 + 8 + 8 + 1 + 8 + 24,
+        "position_opened_at_slot must come out of the reserve, not extend the account"
+    );
+}
