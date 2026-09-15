@@ -17,15 +17,49 @@ in this file under that task's heading.
 | 0 | the staleness margin | **done** — proven on devnet, one VAA for all feeds |
 | 1 | establish the baseline | **done** |
 | 2 | keeper's stale-book guard | **done**, deployed to the VPS |
-| 3 | fuzzing to a 24-hour clean run | **running** — 0 crashes so far, needs to reach 24 h |
+| 3 | fuzzing to a 24-hour clean run | **running on the VPS** since 2026-09-15 15:38 UTC, completes 16 Sep 15:38 |
 | 4 | coverage > 90 % | **done** — `instructions/` at **97.14 %**; 27 unexercised refusal arms found |
 | 5 | the two scenario replays | **done** — COVID and EM devaluation, 9 scenarios total |
-| 6 | § 12.5 extensibility | **done** for steps 1–3; step 4 was never exercised — see below |
+| 6 | § 12.5 extensibility | **closed by decision** 2026-09-15 at steps 1–3; step 4 dropped |
 | 7 | amend the roadmap | **done** — `e64e32c` |
 | 8 | IB admin transactions | **skipped by decision**, recorded in the brief |
 | 9 | generated referral client | **skipped by decision**, 2026-09-13 — see below |
 
-**What is actually left: Task 3 reaching 24 hours, and step 4 of Task 6 if it is wanted.**
+**What is actually left: Task 3's clock, and nothing else.**
+
+### Task 3 moved to the VPS
+
+The blocker was never throughput, it was uptime: the best local run reached **6 h 57 m** of
+the 24-hour criterion before a power cut took the machine down, and the run before it died at
+1 h 21 m the same way. Across both, 21.7 M executions and zero crashes — good evidence about
+the program, no evidence about the criterion, which asks for one *continuous* day.
+
+Now a systemd unit on a box that does not lose power. Measured before committing to it:
+
+| | |
+|---|---|
+| Throughput | **217 exec/sec**, one client (local was ~600 at four workers) |
+| A full day | ~18.7 M executions — close to what two interrupted local runs managed between them |
+| Coverage | 2,431/20,652 edges (11.8 %), 2,313/10,326 branches (22.4 %) |
+| Accept rate | 42.4 % — the report's acceptance figure is ~39 %, so the generator is still producing valid action sequences rather than noise |
+| Actions | 9 of 9 discovered |
+
+`Nice=15`, `CPUQuota=90%` and idle IO scheduling, because the venue comes first: the poster
+publishes six feeds against a 60-second staleness gate on a two-core box, and a fuzzer that
+starves it turns a testing task into an outage. Checked under load — seven consecutive
+`6 posted, 0 failed` passes, the keeper still cranking, load average 0.94.
+
+**`Restart=no` on purpose.** A restart resets the clock, and an interrupted run that silently
+begins again is exactly the failure being measured. If it dies, that is the result.
+
+### Task 6, closed at steps 1–3
+
+Dropped by the user's decision on 2026-09-15. Steps 1–3 are done and evidenced above: ETH/USD
+traded end to end in the browser, twice, against a byte-identical binary on a market listed
+after deployment. Step 4 — confirming a position that predates the listing is bit-for-bit
+unaffected — was never exercised and is now not going to be. The extensibility claim rests on
+the config half plus the two round trips, which is weaker than § 12.5 asks for, and that is
+the accepted state rather than an oversight.
 
 ### Task 6 — what the chain says was actually done
 
