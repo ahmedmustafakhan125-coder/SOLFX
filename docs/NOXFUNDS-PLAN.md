@@ -2,7 +2,8 @@
 
 ## Context
 
-SolFX (Phases 1–7 complete, 490 tests, code-complete and headed to devnet) is a non-custodial
+SolFX (**live on devnet** since 2026-09; Phases 1–9, 565 Rust tests, 97.14% SBF coverage of
+the on-chain instructions) is a non-custodial
 forex broker on Solana. **NOXFUNDS is a separate product** that uses SolFX as its execution
 venue: traders prove themselves on a simulated evaluation, investors pick them from an
 auditable on-chain track record and fund them, and the program custodies the capital so the
@@ -13,6 +14,33 @@ User's constraints for this work:
 - **Do not change anything in solfx-core or solfx-referral.** Verified achievable — §2.1.
 - Plan first; implementation only after approval.
 - SolFX ships to devnet before NOXFUNDS is built.
+
+---
+
+## Corrections — 2026-09-15
+
+This document was written before SolFX reached devnet, and its load-bearing numbers were
+**modelled, never measured**. They have now been derived from source and confirmed against the
+Solana MCP. Four decisions were also settled with the user. Sections below are amended in
+place; this is the index.
+
+| # | What changed | Where |
+|---|---|---|
+| **C1** | **The Mandate PDA cannot be the SolFX `authority`.** Both CPIs are `payer = authority`, which routes through the System Program, which rejects a `from` that carries data. A second dataless PDA, `mandate_signer`, is required. | §2.1, §2.4, §2.5 |
+| **C2** | **`UncheckedAccount` is not cheaper on the stack than `Box<Account<T>>`** — both are 8 bytes. The mitigation is right, the stated reason is wrong, and the real cost (two by-value `CpiContext`s, 1,392 bytes) was never modelled. | §2.3, R1 |
+| **C3** | **Rent is 2.73× the estimate:** 0.0046354 SOL per open position, not ~0.0017. The `TriggerOrder` was omitted entirely. | §2.1 |
+| **C4** | **`funded_cancel_stop` is missing.** Without it every voluntary close strands 0.0020393 SOL in an orphaned `TriggerOrder`. | §2.5, Part 6 |
+| **C5** | **The account count is 22, not ~21**, and the two extra oracle legs must be **deserialized**, not passed through — §2.3 contradicted §2.5 and §2.5 wins. | §2.3, §2.5 |
+
+Decisions settled with the user, 2026-09-15:
+
+- **Product:** the prop firm described here. A mockup circulated with a
+  SWAP/LIQUIDITY/STAKE/GOVERNANCE nav is a **style reference only** and is not this product.
+- **Location:** same repository, new `programs/noxfunds/`, one branch.
+- **Protocol fee:** **flat 5% of gross.** §4.2's tiered 10/8/6/4 column is withdrawn.
+- **Treasury:** `7ktphnZe9rER59HanbM6mDk9aDAbvc2pcjDcPWDvBdWs`, the program upgrade authority.
+  Recorded concern, overridden by the user: one key then holds both protocol revenue and the
+  power to replace the program. It is a `NoxConfig` field and admin-updatable.
 
 ---
 
@@ -116,8 +144,16 @@ This is what makes custody safe with no new code in SolFX:
 > signs a withdrawal through NOXFUNDS's settlement path.
 
 Two consequences to budget for:
-- `position` is `init, payer = authority`, so the mandate PDA must hold SOL (~0.0017 per
-  position).
+- `position` is `init, payer = authority`, so the signing PDA must hold SOL. **Corrected
+  (C3):** rent is `(128 + len) × 6,960` lamports — verified against `solana-rent 4.3.0`, and
+  invariant to SIMD-0194. `Position` is 245 data bytes → **2,596,080 lamports**;
+  `TriggerOrder` is 165 → **2,039,280**. Because the stop-loss is mandatory, an open position
+  costs **both**: **4,635,360 lamports (0.0046354 SOL)**, and a mandate at the three-position
+  cap must float ≈ **0.0148 SOL**. The original ~0.0017 counted neither correctly.
+- **C1: the payer cannot be the `Mandate` account.** `payer = authority` is serviced by the
+  System Program, which refuses a `from` that carries data, and `Mandate` is an `#[account]`
+  struct. The authority must be a **dataless, system-owned PDA** — `mandate_signer` — which
+  also signs both CPIs and holds the rent float above. See §2.4.
 - `deposit_collateral` requires `user_token_account.owner == authority`, so the mandate PDA
   must own a USDC token account.
 
@@ -148,11 +184,33 @@ wrapper needs ~21. **Mitigation: NOXFUNDS deserializes only what it reads.**
 |---|---|
 | `config`, `mandate`, `trader_profile`, `market` | protocol, user_account, position, all four vaults, lp_pool, insurance_fund, price updates, programs |
 
-An `UncheckedAccount` is a bare `AccountInfo` — no deserialization, far less stack, and
-**solfx-core re-validates every one of them anyway** through its own seeds and constraints. An
-account NOXFUNDS never reads is an account it should not deserialize.
+An `UncheckedAccount` is a bare `AccountInfo` — no deserialization, and **solfx-core
+re-validates every one of them anyway** through its own seeds and constraints. An account
+NOXFUNDS never reads is an account it should not deserialize.
 
-**This must be proven before anything else is built** — see Stage 0.
+> **C2 — the reason above is wrong, though the conclusion is right.** Read from
+> `anchor-lang 1.1.2`: `UncheckedAccount` is `(&AccountInfo)` — **8 bytes** — and
+> `Box<Account<T>>` is a pointer, also **8 bytes**. Pass-through saves compute and heap, not
+> stack. A 22-field accounts struct is ~176 bytes, comparable to `LiquidatePosition`'s 17 × 8
+> = 136, which passes in CI today.
+>
+> **The real stack cost is in the handler, and this document never modelled it.** Anchor's
+> generated CPI structs hold `AccountInfo` *by value* (48 bytes each), so
+> `CpiContext<OpenPosition>` is 16 × 48 + 72 = **840 bytes** and
+> `CpiContext<PlaceTriggerOrder>` is 10 × 48 + 72 = **552**. If both live at once that is
+> **1,392 bytes** before anything else. Total peak is ~1,100 (LLVM reuses the slot) to ~2,890
+> (it does not), against `STACK_FRAME_SIZE` = **4,096**.
+>
+> **Even the pessimistic bound clears by ~1,200 bytes**, and the failure mode has a
+> pre-committed two-line remedy: `#[inline(never)]` on each CPI call, so the two contexts
+> never share a frame and peak drops to ~1 KB. R1 is downgraded accordingly.
+>
+> **C5:** the table above puts the price updates in the pass-through column. §2.5 step 2 calls
+> `load_validated_price`, whose signature takes `&PriceUpdateV2` — so all three oracle legs
+> must be **deserialized**. §2.5 wins; it costs 8 bytes each.
+
+**Stage 0 still measures this before anything else is built**, because whether LLVM reuses
+that one stack slot is the single thing arithmetic cannot settle.
 
 ### 2.4 Accounts
 
@@ -165,8 +223,21 @@ All PDAs of the `noxfunds` program.
 | `Evaluation` | `["eval", trader, stage:u8]` | simulated balance, stage rules, per-stage stats |
 | `VirtualPosition` | `["vpos", evaluation, market_index, nonce]` | simulated position (mirrors SolFX `Position` fields) |
 | `InvestorAccount` | `["investor", authority]` | tier, total funded, active mandates, lifetime returns |
-| **`Mandate`** | `["mandate", investor, trader, seq:u8]` | **the SolFX authority.** Rules, capital, split, peak equity, state |
-| `MandateVault` | `["vault", mandate]` | USDC token account owned by the mandate PDA |
+| **`Mandate`** | `["mandate", investor, trader, seq:u8]` | Rules, capital, split, peak equity, state. **Not** the SolFX authority — see below |
+| **`MandateSigner`** | `["signer", mandate]` | **The SolFX authority.** Dataless and system-owned: signs both CPIs, pays position and trigger rent, owns the USDC token account |
+| `MandateVault` | `["vault", mandate]` | USDC token account owned by `MandateSigner` |
+
+> **C1 — why two accounts and not one.** The plan originally made `Mandate` itself the SolFX
+> authority. It cannot be. `open_position` and `place_trigger_order` are both
+> `init, payer = authority`, and Anchor services that through the System Program, which
+> rejects a `from` that carries data. `Mandate` is an `#[account]` struct, so it is
+> data-bearing and owned by `noxfunds`. The direct-lamport workaround fails too: the runtime
+> raises `UnbalancedInstruction` when an account whose lamports were changed by hand is not in
+> the CPI's own account list, and `Mandate` is not in `OpenPosition`.
+>
+> `MandateSigner` is a `SystemAccount` — no data, system-owned, so the System Program will
+> debit it. It is the account that must hold ≈ 0.0148 SOL at the three-position cap.
+> The custody argument is unchanged: the trader still never holds the authority.
 
 `Mandate` is the centre of the design. Its fields:
 
@@ -223,7 +294,28 @@ Steps 7–8 in one instruction is what makes "every trade must carry a stop-loss
 than monitored** — SolFX has no `Position → TriggerOrder` link, so the only way to guarantee
 it is to place both atomically.
 
-Also needed: `funded_close_position`, `funded_reduce_position`, `funded_modify_stop`.
+Also needed: `funded_close_position`, `funded_reduce_position`, `funded_modify_stop`, and
+**`funded_cancel_stop` (C4)**.
+
+> **C4 — why `funded_cancel_stop` is not optional.** Rent on a `TriggerOrder` returns to the
+> keeper when a stop *fires*, and to the authority when the order is *cancelled*. There is no
+> third path. So every **voluntary** close leaves an orphaned order holding 2,039,280 lamports
+> with nothing able to reclaim it, and a mandate bleeds 0.0020393 SOL per closed trade.
+> `cancel_trigger_order` takes only the authority and the order account — it consults no
+> position state — so the wrapper is small. It belongs in Stage 1, not in a later cleanup.
+>
+> **C5 — the derived account count is 22, not ~21**, and 23–24 transaction keys. The extra
+> slots over bare `open_position` are `trigger_order`, `trader`, `nox_config`, `mandate`,
+> `trader_profile`, `mandate_signer` and `solfx_core_program`. Packet at the widest market is
+> **959 bytes** against 1232 — the original ~958 estimate was right to one byte, for partly
+> coincidental reasons.
+>
+> Two encoding details Stage 0 must pin, both cheaper to find now than in a devnet log:
+> an absent oracle leg is passed to the CPI as `Some(solfx_core_program.to_account_info())`
+> and **never** `None`, because `ToAccountMetas` emits a meta that `ToAccountInfos` does not
+> back; and v1 transactions reject duplicate addresses, so Anchor's absent-`Option`
+> convention (which emits the program ID, already present) makes a USD-quoted market
+> unencodable as v1 — carry the two extra legs in `remaining_accounts` instead.
 
 ### 2.6 The evaluation engine (simulated, priced by SolFX's own code)
 
@@ -422,10 +514,17 @@ By cumulative capital deployed, not by wallet balance — the tier is earned, no
 
 | Tier | Cumulative deployed | Protocol fee | Perks |
 |---|---|---|---|
-| **Seed** | $2,500 min | 10% | 1 active mandate |
-| **Backer** | $25,000 | 8% | 5 active mandates |
-| **Partner** | $100,000 | 6% | 15 mandates, Gold+ traders |
-| **Anchor** | $500,000 | 4% | unlimited, Platinum access, custom rulesets |
+| **Seed** | $2,500 min | 5% | 1 active mandate |
+| **Backer** | $25,000 | 5% | 5 active mandates |
+| **Partner** | $100,000 | 5% | 15 mandates, Gold+ traders |
+| **Anchor** | $500,000 | 5% | unlimited, Platinum access, custom rulesets |
+
+> **Withdrawn, 2026-09-15.** This column previously read 10 / 8 / 6 / 4 %, which contradicted
+> both §5.1's worked example and the Decisions table — those say a **flat 5% of gross**, and
+> the user confirmed 5% flat. The tiered figures were a leftover from a pre-5% draft. Tiers
+> still differ on *how many mandates* and *which traders*, not on the fee. The fee lives in
+> `NoxConfig` and is admin-updatable, so a tiered schedule can be switched on later without a
+> program upgrade.
 
 The **$2,500 minimum** is yours. It is worth keeping: below roughly that, a 1%-risk rule
 produces position sizes smaller than SolFX's `min_position_size` on several markets, so the
@@ -680,9 +779,15 @@ Shares the Phase 8 SolFX frontend stack. Three surfaces:
 
 ## Part 11 — The hard problems, stated plainly
 
-- **R1 — Stack frame.** The wrapper needs ~21 accounts and SolFX broke at 18. Mitigated by
-  pass-through `UncheckedAccount`s, but *unproven until Stage 0*. The one that could force a
-  redesign.
+- **R1 — Stack frame. DOWNGRADED, 2026-09-15.** The wrapper needs **22** accounts, and
+  SolFX's own failures were at 13 (unboxed `Account<T>`) and 18 (a wider struct plus a vault
+  transfer) — while `LiquidatePosition` passes in CI today at **17** fully-boxed accounts. The
+  accounts struct is not where the risk is: at 8 bytes per field it is ~176 bytes against a
+  4,096-byte frame. The real cost is the two by-value `CpiContext`s in the handler, 1,392
+  bytes, giving a peak of ~1,100–2,890. **Even the pessimistic bound clears by ~1,200 bytes.**
+  The one genuinely unknowable part is whether LLVM reuses a stack slot between the two
+  contexts, and that has a pre-committed two-line remedy — `#[inline(never)]` on each CPI
+  call. Still measured in Stage 0; no longer "the one that could force a redesign". See §2.3.
 - **R2 — A trader who walks away.** Answered: `observe`, `flag_breach` and `wind_down` are all
   permissionless and rent-paid, so anyone can free the investor's capital.
 - **R3 — Adverse selection on SolFX's LPs.** Funded traders are pre-filtered for skill and
@@ -741,6 +846,11 @@ Shares the Phase 8 SolFX frontend stack. Three surfaces:
 | **Copy-trading** | Cannot be blocked in UI. Latency + correlation label + delayed publication + tier self-correction |
 | **Drawdown** | **3% daily / 6% total trailing.** Tighter than the 5/10 industry norm; variance-washout cost accepted and recorded in §3.2 |
 | **Market bitmap** | **`u128`** — 128 markets |
+| **Product** | The prop firm described here. A mockup with a SWAP/LIQUIDITY/STAKE/GOVERNANCE nav is a **style reference only** |
+| **Location** | Same repository, new `programs/noxfunds/`, one branch. `solfx-referral` is the template; CI asserts neither existing program is modified |
+| **Treasury** | `7ktphnZe9rER59HanbM6mDk9aDAbvc2pcjDcPWDvBdWs` — the program upgrade authority. Concern recorded and overridden: one key then holds both protocol revenue and the power to replace the program. `NoxConfig` field, admin-updatable |
+| **Authority split** | `Mandate` holds the rules; a dataless `MandateSigner` PDA is the SolFX authority, signer and rent payer (C1) |
+| **Rent float** | **0.0046354 SOL** per open position; ≈ **0.0148 SOL** at the three-position cap (C3) |
 
 ### Deferred, not open
 
