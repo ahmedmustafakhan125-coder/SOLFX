@@ -8,10 +8,12 @@ skip-lint = false
 [programs.localnet]
 solfx_referral = "J7dwkNcyPjHtRyqkpnqq3wgE6XmYCaENhYZozX2MHsyt"
 solfx_core = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi"
+noxfunds = "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx"
 
 [programs.devnet]
 solfx_referral = "J7dwkNcyPjHtRyqkpnqq3wgE6XmYCaENhYZozX2MHsyt"
 solfx_core = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi"
+noxfunds = "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx"
 
 [registry]
 url = "https://api.apr.dev"

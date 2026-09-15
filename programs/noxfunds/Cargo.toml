@@ -1,0 +1,42 @@
+[package]
+name = "noxfunds"
+description = "NOXFUNDS: a decentralized prop firm whose rules are checked before the fill, not after."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "noxfunds"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "solfx-core/idl-build"]
+custom-heap = []
+custom-panic = []
+anchor-debug = []
+
+[lints]
+workspace = true
+
+[dependencies]
+anchor-lang = { workspace = true }
+anchor-spl.workspace = true
+# The oracle account type. Stage 1 prices the trade here before the CPI, so the price updates
+# are deserialized rather than passed through — `load_validated_price` takes `&PriceUpdateV2`.
+pyth-solana-receiver-sdk.workspace = true
+# The venue, as a library. The dependency points **one way** — `solfx-core` has no idea this
+# program exists, and nothing here may change it. Same shape as `solfx-referral`.
+solfx-core = { path = "../solfx-core", features = ["cpi"] }
+
+[dev-dependencies]
+# `no-entrypoint` is required, not optional: linking a test binary against both this program
+# and `solfx-core` without it fails with "duplicate symbol: entrypoint".
+solfx-core = { path = "../solfx-core", features = ["cpi"] }
+solana-message = { version = "3", features = ["bincode"] }
+solana-compute-budget-interface = "3"

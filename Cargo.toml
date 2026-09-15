@@ -5,6 +5,7 @@ members = [
     "crates/solfx-keeper",
     "programs/solfx-core",
     "programs/solfx-referral",
+    "programs/noxfunds",
 ]
 
 [workspace.package]
