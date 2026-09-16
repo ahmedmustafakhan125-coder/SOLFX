@@ -1253,6 +1253,19 @@ impl Env {
         }
     }
 
+    /// Register a `UserAccount` with the invariant sweep without creating it here.
+    ///
+    /// The mirror of [`track_position`](Self::track_position), and needed for the same reason:
+    /// I1 sums the collateral vault against every account the harness knows about, and an
+    /// account created by a **CPI from another program** is invisible to it. NOXFUNDS creates
+    /// its mandates' SolFX accounts that way, so without this the invariant reads a funded
+    /// vault against a sum of zero and reports a break that is really a bookkeeping gap.
+    pub fn track_user(&mut self, account: Pubkey) {
+        if !self.users.contains(&account) {
+            self.users.push(account);
+        }
+    }
+
     // --- liquidity -----------------------------------------------------------------------
 
     /// Seed the counterparty pool. Without it the vault cannot pay a winning trade, so only

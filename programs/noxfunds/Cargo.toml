@@ -30,6 +30,9 @@ anchor-spl.workspace = true
 # The oracle account type. Stage 1 prices the trade here before the CPI, so the price updates
 # are deserialized rather than passed through — `load_validated_price` takes `&PriceUpdateV2`.
 pyth-solana-receiver-sdk.workspace = true
+# Every money figure goes through the venue's own arithmetic. A reimplementation drifts
+# silently and fails on chain rather than in CI.
+solfx-math.workspace = true
 # The venue, as a library. The dependency points **one way** — `solfx-core` has no idea this
 # program exists, and nothing here may change it. Same shape as `solfx-referral`.
 solfx-core = { path = "../solfx-core", features = ["cpi"] }
@@ -38,5 +41,15 @@ solfx-core = { path = "../solfx-core", features = ["cpi"] }
 # `no-entrypoint` is required, not optional: linking a test binary against both this program
 # and `solfx-core` without it fails with "duplicate symbol: entrypoint".
 solfx-core = { path = "../solfx-core", features = ["cpi"] }
+# solfx-core's LiteSVM harness is included by `#[path]` rather than copied, so these mirror
+# its dev-dependencies exactly. A second copy of that 2,000-line fixture would drift, and the
+# invariant assertions in it are the ones Stage 1 has to satisfy.
+solfx-referral = { path = "../solfx-referral", features = ["no-entrypoint"] }
+litesvm = { version = "0.15.2", features = ["register-tracing"] }
+solana-account = "4"
+solana-keypair = "3"
+solana-signer = "3"
+solana-transaction = "4"
 solana-message = { version = "3", features = ["bincode"] }
 solana-compute-budget-interface = "3"
+spl-token = { version = "9", features = ["no-entrypoint"] }

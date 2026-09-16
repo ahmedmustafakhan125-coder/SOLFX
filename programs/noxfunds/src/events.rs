@@ -1,0 +1,70 @@
+//! Events are the indexer's only input.
+//!
+//! NOXFUNDS ranks traders on what these carry, and Part 9 promises every displayed statistic
+//! is re-derivable from them by a third party. Adding a field is fine; changing or removing
+//! one is a breaking change.
+
+use anchor_lang::prelude::*;
+
+#[event]
+pub struct ConfigInitialized {
+    pub admin: Pubkey,
+    pub treasury: Pubkey,
+    pub protocol_fee_bps: u16,
+    pub ts: i64,
+}
+
+#[event]
+pub struct MandateFunded {
+    pub mandate: Pubkey,
+    pub investor: Pubkey,
+    pub trader: Pubkey,
+    pub principal: u64,
+    pub max_trade_notional: u64,
+    pub max_drawdown_bps: u16,
+    pub allowed_markets: u128,
+    pub trader_split_bps: u16,
+    pub ts: i64,
+}
+
+/// Emitted after both CPIs land, carrying **the margins the trade passed by**.
+///
+/// Not just that it was allowed — by how much. An investor watching a trader run at 99% of
+/// every limit is reading something a pass/fail flag cannot tell them.
+#[event]
+pub struct FundedTradeOpened {
+    pub mandate: Pubkey,
+    pub trader: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub direction: u8,
+    pub size_base: u64,
+    pub notional: u64,
+    pub collateral: u64,
+    pub stop_loss_price: i64,
+    /// Notional as bps of the mandate's per-trade ceiling. 10_000 = exactly at the limit.
+    pub notional_used_bps: u64,
+    /// Risk at the stop as bps of equity — against `max_risk_per_trade_bps`.
+    pub risk_used_bps: u64,
+    pub open_positions: u8,
+    pub ts: i64,
+}
+
+#[event]
+pub struct FundedTradeClosed {
+    pub mandate: Pubkey,
+    pub trader: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub open_positions: u8,
+    pub ts: i64,
+}
+
+#[event]
+pub struct StopCancelled {
+    pub mandate: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub order_id: u8,
+    pub ts: i64,
+}
