@@ -39,6 +39,12 @@ pub enum NoxError {
     MinimumHoldNotMet,
     #[msg("Mandate has not breached anything; there is nothing to flag")]
     NotBreached,
+    #[msg("Only the investor who funded this mandate may do this")]
+    NotTheInvestor,
+    #[msg("Mandate still holds open positions; close them before settling")]
+    PositionsStillOpen,
+    #[msg("Mandate is not winding down or breached, so it cannot be settled")]
+    MandateNotSettleable,
 
     #[msg("Mandate rules are not internally consistent")]
     InvalidMandateRules,

@@ -100,3 +100,30 @@ pub struct MandateBreached {
     pub drawdown_bps: u64,
     pub ts: i64,
 }
+
+/// The investor asked to end the mandate. New trades stop; open positions may still be closed.
+#[event]
+pub struct SettlementRequested {
+    pub mandate: Pubkey,
+    pub investor: Pubkey,
+    pub ts: i64,
+}
+
+/// Money moved and the mandate is finished. Every figure in the §5.1 worked example is here,
+/// so a third party can check the split from the event alone.
+#[event]
+pub struct MandateSettled {
+    pub mandate: Pubkey,
+    pub investor: Pubkey,
+    pub trader: Pubkey,
+    pub principal: u64,
+    pub final_equity: u64,
+    pub gross_profit: u64,
+    pub protocol_fee: u64,
+    pub trader_share: u64,
+    pub investor_share: u64,
+    /// Whether this ended in `Breached` rather than a voluntary wind-down.
+    pub was_breached: bool,
+    pub settled_by: Pubkey,
+    pub ts: i64,
+}

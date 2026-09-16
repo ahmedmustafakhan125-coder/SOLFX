@@ -34,6 +34,7 @@ pub mod constants;
 pub mod errors;
 pub mod events;
 pub mod instructions;
+pub mod settlement;
 pub mod state;
 
 use instructions::*;
@@ -134,6 +135,19 @@ pub mod noxfunds {
         price_limit: i64,
     ) -> Result<()> {
         instructions::trading::funded_close_position(ctx, market_index, nonce, price_limit)
+    }
+
+    // --- settlement ------------------------------------------------------------------------
+
+    /// The investor ends the mandate. New trades stop; open positions may still be closed.
+    pub fn request_settlement(ctx: Context<RequestSettlement>) -> Result<()> {
+        instructions::settlement::request_settlement(ctx)
+    }
+
+    /// Withdraw the mandate's collateral, take the 5% fee off gross profit, split the rest
+    /// 70/30, and return principal. **Permissionless** — the investor never waits on anyone.
+    pub fn claim_settlement(ctx: Context<ClaimSettlement>) -> Result<()> {
+        instructions::settlement::claim_settlement(ctx)
     }
 
     // --- keeper ----------------------------------------------------------------------------
