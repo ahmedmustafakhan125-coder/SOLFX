@@ -35,6 +35,10 @@ pub enum NoxError {
     TotalNotionalExceeded,
     #[msg("Mandate has breached its maximum drawdown")]
     DrawdownExceeded,
+    #[msg("Position has not been held for the mandate's minimum")]
+    MinimumHoldNotMet,
+    #[msg("Mandate has not breached anything; there is nothing to flag")]
+    NotBreached,
 
     #[msg("Mandate rules are not internally consistent")]
     InvalidMandateRules,

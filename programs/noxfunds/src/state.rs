@@ -103,6 +103,17 @@ pub struct Mandate {
     /// How many SolFX positions this mandate currently holds open. Maintained here because
     /// SolFX stores no per-account position count, and the concurrency rule needs one.
     pub open_positions: u8,
+    /// Sum of the notional of every open position, in USDC, as booked at entry.
+    ///
+    /// Booked at entry rather than marked, for the same reason SolFX stores `entry_notional`
+    /// on a position: a figure that moves with the price would make the total drift on a
+    /// mandate that merely held, and the rule is about how much exposure the trader *took*.
+    pub open_notional: u64,
+    /// Equity at the last observation, in USDC. Zero until the first crank.
+    pub last_equity: u64,
+    /// When that observation happened. The crank cadence is the honesty of the drawdown rule,
+    /// so it is recorded rather than implied.
+    pub last_observed_at: i64,
     pub opened_at: i64,
     pub bump: u8,
     pub _reserved: [u8; 64],

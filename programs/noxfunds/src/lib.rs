@@ -136,6 +136,18 @@ pub mod noxfunds {
         instructions::trading::funded_close_position(ctx, market_index, nonce, price_limit)
     }
 
+    // --- keeper ----------------------------------------------------------------------------
+
+    /// Observe a mandate's equity, update its high-water mark, and breach it if it has fallen
+    /// too far. **Permissionless** — investor capital is never hostage to an absent trader or
+    /// an absent operator.
+    ///
+    /// `remaining_accounts` carries (position, market, price_update) triples, one per open
+    /// position.
+    pub fn observe_mandate_equity(ctx: Context<ObserveMandateEquity>) -> Result<()> {
+        instructions::keeper::observe_mandate_equity(ctx)
+    }
+
     /// Reclaim a resting stop's rent after a voluntary close. Without this a mandate bleeds
     /// ~0.002 SOL per closed trade with no recovery path.
     pub fn funded_cancel_stop(

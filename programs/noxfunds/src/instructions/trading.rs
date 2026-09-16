@@ -188,6 +188,18 @@ fn check_rules(
         NoxError::TradeExceedsMandate
     );
 
+    // The per-trade ceiling bounds one mistake; this bounds the book. A mandate allowed three
+    // positions at its per-trade ceiling could otherwise carry three times the exposure the
+    // investor thought they were authorising.
+    let total_after = mandate
+        .open_notional
+        .checked_add(notional)
+        .ok_or(NoxError::MathOverflow)?;
+    require!(
+        total_after <= mandate.max_total_notional,
+        NoxError::TotalNotionalExceeded
+    );
+
     // --- risk at the stop -------------------------------------------------------------------
     //
     // The rule no centralized firm can enforce before the fill. It is `size × |entry − stop|`
@@ -279,6 +291,10 @@ pub fn funded_open_position(
 
     let m = &mut ctx.accounts.mandate;
     m.open_positions = m.open_positions.saturating_add(1);
+    m.open_notional = m
+        .open_notional
+        .checked_add(margins.notional)
+        .ok_or(NoxError::MathOverflow)?;
 
     emit!(FundedTradeOpened {
         mandate: mandate_key,
@@ -423,9 +439,11 @@ pub struct FundedClosePosition<'info> {
     /// CHECK: validated by `solfx-core`.
     #[account(mut)]
     pub market: UncheckedAccount<'info>,
-    /// CHECK: validated by `solfx-core`.
+    /// Deserialized here, unlike on the open path: the minimum-hold rule is judged against
+    /// `opened_at_slot`, and the position's booked notional is what leaves the mandate's open
+    /// book when it closes.
     #[account(mut)]
-    pub position: UncheckedAccount<'info>,
+    pub position: Box<Account<'info, solfx_core::state::Position>>,
     /// CHECK: validated by `solfx-core`.
     #[account(mut)]
     pub collateral_vault: UncheckedAccount<'info>,
@@ -462,6 +480,21 @@ pub fn funded_close_position(
 ) -> Result<()> {
     require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
 
+    // The no-scalping rule, and **only on a voluntary close**.
+    //
+    // A stop-out is exempt by construction rather than by an exception: a stop fires through
+    // `solfx-core`'s own `execute_trigger_order`, which never enters this instruction. So a
+    // trader stopped out three minutes after entry does not breach a ten-minute floor through
+    // something they did not do. Phase 7 reached the same conclusion for `min_hold_slots`.
+    let held = Clock::get()?
+        .slot
+        .saturating_sub(ctx.accounts.position.opened_at_slot);
+    require!(
+        held >= ctx.accounts.mandate.min_hold_slots,
+        NoxError::MinimumHoldNotMet
+    );
+    let booked = ctx.accounts.position.entry_notional;
+
     let mandate_key = ctx.accounts.mandate.key();
     let bump = ctx.accounts.mandate.signer_bump;
     let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];
@@ -470,6 +503,10 @@ pub fn funded_close_position(
 
     let m = &mut ctx.accounts.mandate;
     m.open_positions = m.open_positions.saturating_sub(1);
+    // Removed at the figure it was added at. Recomputing from the current price would make
+    // the book drift on a mandate that merely held — the same reason SolFX stores
+    // `entry_notional` rather than re-deriving open interest at close.
+    m.open_notional = m.open_notional.saturating_sub(booked);
 
     emit!(FundedTradeClosed {
         mandate: mandate_key,

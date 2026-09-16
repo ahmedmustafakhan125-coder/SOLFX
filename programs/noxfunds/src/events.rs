@@ -68,3 +68,35 @@ pub struct StopCancelled {
     pub order_id: u8,
     pub ts: i64,
 }
+
+/// Emitted on every observation, breach or not.
+///
+/// The crank cadence *is* the honesty of the drawdown rule — equity moves between
+/// observations and a spike in the gap is not caught — so each observation is published
+/// rather than only the ones that trip something.
+#[event]
+pub struct EquityObserved {
+    pub mandate: Pubkey,
+    pub equity: u64,
+    pub peak_equity: u64,
+    pub drawdown_bps: u64,
+    pub open_positions: u8,
+    pub observer: Pubkey,
+    pub ts: i64,
+}
+
+/// A mandate has broken a rule that can only be detected by observation.
+///
+/// Distinct from a wind-down on purpose: this records *why* it ended, permanently, and that
+/// is exactly what an investor choosing a trader is reading.
+#[event]
+pub struct MandateBreached {
+    pub mandate: Pubkey,
+    pub trader: Pubkey,
+    /// The rule that broke, as its `NoxError` discriminant.
+    pub rule: u32,
+    pub equity: u64,
+    pub peak_equity: u64,
+    pub drawdown_bps: u64,
+    pub ts: i64,
+}
