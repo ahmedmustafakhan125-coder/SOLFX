@@ -41,9 +41,20 @@ path = "src/bin/price_poster.rs"
 name = "admin"
 path = "src/bin/admin.rs"
 
+# Checks and claims ownership of every singleton across the three programs: the SolFX
+# protocol, the referral config and the NOXFUNDS config. See the module docs for why each
+# initialisation is simulated and stops unless told to send.
+[[bin]]
+name = "authority"
+path = "src/bin/authority.rs"
+
 [dependencies]
 solfx-math = { path = "../solfx-math" }
 solfx-core = { path = "../../programs/solfx-core", features = ["no-entrypoint"] }
+# Only `authority` uses these — for the programs' own account types, seeds and instruction
+# builders, so an address or a layout can never be retyped here and drift.
+solfx-referral = { path = "../../programs/solfx-referral", features = ["no-entrypoint"] }
+noxfunds = { path = "../../programs/noxfunds", features = ["no-entrypoint"] }
 
 anchor-lang = "1.1.2"
 pyth-solana-receiver-sdk = "2.0.0"
