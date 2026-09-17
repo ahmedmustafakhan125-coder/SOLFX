@@ -62,6 +62,46 @@ it* below. **Phase 8's feature list is complete** and Phase 9 has started — it
 is measured in [`phase-9-feeds.md`](phase-9-feeds.md) and it is **24 symbols, not 33**.
 NOXFUNDS still starts only after all of that.
 
+## Ownership and initialisation — measured 2026-09-17
+
+**The rule: every singleton belongs to the deployer, `7ktph…`.** Configuration is owned;
+operation is not. Liquidations, stop execution and the NOXFUNDS crank, wind-down and settlement
+stay permissionless on purpose — a venue that needs its operator present to liquidate, or to
+release an investor's capital, fails exactly when the operator is absent.
+
+`./target/debug/authority check --owner 7ktphnZe9rER59HanbM6mDk9aDAbvc2pcjDcPWDvBdWs`
+checks it and exits non-zero if anything is open or held by another key. Measured on devnet:
+
+| | State |
+|---|---|
+| Upgrade authority — `solfx-core`, `solfx-referral`, `noxfunds` | all `7ktph…` |
+| SolFX `Protocol.admin` | `7ktph…` |
+| SolFX guardian | unset (all-zero key) — only the admin can pause |
+| `ReferralConfig` | **open** — never initialised, and `initialize_referral` takes *any* signer |
+| `NoxConfig` | **open** — NOXFUNDS live since slot 499,915,146, not yet initialised |
+| Poster and keeper key, `EyvqeDSh…` (`$SOLFX_OPERATOR_KEYPAIR`) | holds **none** of the above |
+
+What changed, and what did not:
+
+- **NOXFUNDS `initialize_config` now requires the program's upgrade authority** — Anchor's
+  documented `Program` + `ProgramData` pattern, confirmed via the MCP. Six tests in
+  `programs/noxfunds/tests/initialization.rs` cover the attacks, including passing *another*
+  program's data account whose authority the attacker genuinely holds. **The deployed binary
+  predates it** — `authority init-noxfunds` detects that by simulation and refuses until the
+  program is upgraded.
+- **SolFX `initialize_protocol` and `initialize_referral` are still first-caller-wins in code.**
+  Both live in `programs/solfx-core/` and `programs/solfx-referral/`, which are off-limits, so
+  the same guard there needs the deny lifted. On devnet SolFX is already owned, so that one
+  matters for a fresh deployment; the referral config is closed operationally by running
+  `authority init-referral` from the deployer's wallet.
+- **The IDL freshness check compared instruction names only**, so it would have reported the
+  pre-guard on-chain IDL as current: `initialize_config` went from 3 accounts to 5 and no name
+  changed. `scripts/idl-compare.py` now compares accounts, arguments, discriminators, errors and
+  types, and both deploy scripts use it.
+- **The referral check was first run against the wrong address**, derived from a retyped
+  `"config"` seed; the programme's seed is `"referral_config"`. The conclusion held at the right
+  address (`9s7xiSzi…`), and `authority`'s tests now pin every derived address to devnet.
+
 > **Session log:** [`CLAUDE-SESSION.md`](../CLAUDE-SESSION.md) at the repo root records what
 > changed on 2026-09-09 and when, including the things that are true but not yet fixed. Read it
 > if you are picking this up cold; this document is what *is*, that one is what *changed*.
@@ -370,7 +410,10 @@ final tranche.
 
 `solfx-referral` (`J7dwkNcy…MHsyt`) is on devnet and holds **zero accounts**:
 `initialize_referral` has never run, and `Protocol.referral_authority` is still
-`Pubkey::default()`, which is the protocol's own way of saying it pays no rebates. Turning it
+`Pubkey::default()`, which is the protocol's own way of saying it pays no rebates. **Switched
+off is not the same as safe:** `initialize_referral` accepts any signer, so until the deployer
+runs it, anyone can create the config and fix `override_bps` permanently — see *Ownership and
+initialisation* above. Turning it
 on is two admin transactions by two different authorities — `initialize_referral` on the
 referral program, then `set_referral_authority` on the core — and the admin wallet is
 deliberately not on the VPS. Until then `/partners` reports that state rather than rendering
