@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Publish the on-chain IDL for solfx-core.
+# Publish the on-chain IDL for a program.
+#
+#   ./scripts/publish-idl.sh              # solfx_core, the default
+#   ./scripts/publish-idl.sh noxfunds
+#
+# The program is an argument rather than a constant because a hardcoded name here once meant
+# `deploy-devnet.sh noxfunds` would have closed and rewritten the *live solfx-core* IDL — a
+# destructive, flaky operation — while never publishing the program it was asked about.
 #
 # `anchor program deploy` tries to do this itself and fails on this program. The failure is
 # silent about its cause — every path (anchor idl init/upgrade/create-buffer, and the
@@ -33,7 +40,12 @@ cd "$ROOT"
 
 RPC_URL="${SOLFX_RPC_URL:-http://127.0.0.1:8899}"
 KEYPAIR="${SOLFX_KEYPAIR:-$HOME/.config/solana/id.json}"
-IDL="$ROOT/target/idl/solfx_core.json"
+PROGRAM="${1:-solfx_core}"
+case "$PROGRAM" in
+  solfx_core|noxfunds) ;;
+  *) echo "error: unknown program '$PROGRAM' (expected solfx_core or noxfunds)" >&2; exit 1 ;;
+esac
+IDL="$ROOT/target/idl/$PROGRAM.json"
 # Pinned rather than `latest`: this writes the program's canonical public interface.
 PMP="@solana-program/program-metadata@0.9.1"
 
@@ -60,7 +72,7 @@ if ! solana program show "$PROGRAM_ID" -u "$RPC_URL" >/dev/null 2>&1; then
   echo "       nothing was changed" >&2
   exit 1
 fi
-SLIM="$(mktemp -t solfx-idl-slim-XXXXXX.json)"
+SLIM="$(mktemp -t "$PROGRAM"-idl-slim-XXXXXX.json)"
 trap 'rm -f "$SLIM"' EXIT
 
 python3 - "$IDL" "$SLIM" <<'PY'
@@ -94,7 +106,7 @@ print(
 )
 PY
 
-echo "==> program $PROGRAM_ID on $RPC_URL"
+echo "==> $PROGRAM $PROGRAM_ID on $RPC_URL"
 
 # The write is flaky — measured at roughly one failure in two against devnet, with the same
 # payload that had just succeeded. The transaction plan reports no cause, so there is nothing
@@ -125,7 +137,7 @@ if [[ "${written:-no}" != "yes" ]]; then
 fi
 
 echo "==> verifying it reads back"
-FETCHED="$(mktemp -t solfx-idl-fetched-XXXXXX.json)"
+FETCHED="$(mktemp -t "$PROGRAM"-idl-fetched-XXXXXX.json)"
 trap 'rm -f "$SLIM" "$FETCHED"' EXIT
 anchor idl fetch -o "$FETCHED" "$PROGRAM_ID" --provider.cluster "$RPC_URL" >/dev/null
 

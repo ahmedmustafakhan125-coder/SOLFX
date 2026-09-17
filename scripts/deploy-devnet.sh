@@ -188,5 +188,5 @@ then
   echo "==> everything is current"
 else
   echo "  publishing"
-  "$ROOT/scripts/publish-idl.sh"
+  "$ROOT/scripts/publish-idl.sh" "$PROGRAM"
 fi
