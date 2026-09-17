@@ -29,3 +29,34 @@ pub const DEFAULT_PROTOCOL_FEE_BPS: u16 = 500;
 
 /// The trader's share of net profit, in bps. **70%**, leaving 30% to the investor.
 pub const DEFAULT_TRADER_SPLIT_BPS: u16 = 7_000;
+
+/// `TraderProfile` — `["trader", authority]`. One per trader, across every mandate they hold.
+pub const TRADER_SEED: &[u8] = b"trader";
+
+// --- tier thresholds (Part 4.1) -----------------------------------------------------------
+//
+// Constants rather than `NoxConfig` fields, deliberately. A threshold an admin can move is a
+// threshold an admin can move *after* seeing who it would promote, and the whole claim of this
+// programme is that the track record is not curated. Changing one is a program upgrade, which
+// is public and versioned. The plan floated storing them on `NoxConfig`; this is the stricter
+// reading of the same intent.
+//
+// **Win rate never determines a tier on its own.** A 90% win rate against a 0.6 profit factor
+// is a trader taking tiny wins and enormous losses — the single most common way a track record
+// lies. Profit factor and max drawdown are load-bearing; win rate only ever adds a condition.
+
+/// Profit factor is `gross_profit / gross_loss`, carried at `BPS`. 12_000 = 1.2×.
+pub const SILVER_MIN_TRADES: u32 = 20;
+pub const SILVER_MIN_WIN_RATE_BPS: u64 = 4_500;
+pub const SILVER_MIN_PROFIT_FACTOR_BPS: u64 = 12_000;
+
+pub const GOLD_MIN_TRADES: u32 = 50;
+pub const GOLD_MIN_PROFIT_FACTOR_BPS: u64 = 15_000;
+/// Gold and above require a *shallow* worst drawdown, not merely a profitable one.
+pub const GOLD_MAX_DRAWDOWN_BPS: u16 = 400;
+
+pub const PLATINUM_MIN_TRADES: u32 = 100;
+pub const PLATINUM_MIN_PROFIT_FACTOR_BPS: u64 = 18_000;
+/// Two mandates that were **settled** in profit — a live result, not a statistic derived from
+/// the trades inside one still-open mandate.
+pub const PLATINUM_MIN_PROFITABLE_MANDATES: u32 = 2;

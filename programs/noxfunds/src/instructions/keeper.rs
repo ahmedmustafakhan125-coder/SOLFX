@@ -28,10 +28,10 @@ use anchor_lang::prelude::*;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use solfx_core::state::{Market, Position, UserAccount};
 
-use crate::constants::{CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED};
+use crate::constants::{CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, TRADER_SEED};
 use crate::errors::NoxError;
 use crate::events::{EquityObserved, MandateBreached};
-use crate::state::{Mandate, MandateState, NoxConfig};
+use crate::state::{Mandate, MandateState, NoxConfig, TraderProfile};
 
 #[derive(Accounts)]
 pub struct ObserveMandateEquity<'info> {
@@ -55,6 +55,21 @@ pub struct ObserveMandateEquity<'info> {
 
     #[account(address = mandate.solfx_user_account)]
     pub user_account: Box<Account<'info, UserAccount>>,
+
+    /// The trader's record, so the worst drawdown ever *observed* lands on it.
+    ///
+    /// Required rather than optional, and this is the load-bearing reason the crank exists at
+    /// all: a trader holding a losing position and refusing to close it would otherwise never
+    /// record the drawdown, because nothing but a close writes to the profile. Marking it here
+    /// means the gaming vector that matters most costs the trader their tier whether they close
+    /// or not.
+    #[account(
+        mut,
+        seeds = [TRADER_SEED, mandate.trader.as_ref()],
+        bump = trader_profile.bump,
+        constraint = trader_profile.authority == mandate.trader @ NoxError::ProfileMismatch,
+    )]
+    pub trader_profile: Box<Account<'info, TraderProfile>>,
     // Open positions arrive in `remaining_accounts` as (position, market, price_update)
     // triples. Passing them as named optionals would fix the count at compile time; a mandate
     // may hold up to `max_concurrent_positions`, which is a per-mandate figure.
@@ -156,6 +171,15 @@ pub fn observe_mandate_equity(ctx: Context<ObserveMandateEquity>) -> Result<()> 
         observer: ctx.accounts.observer.key(),
         ts: clock.unix_timestamp,
     });
+
+    // The worst drawdown the record has ever seen, across every mandate this trader has held.
+    // Saturating at `u16::MAX` rather than wrapping: `drawdown_bps` returns `u64::MAX` on an
+    // arithmetic failure it treats as "breached", and that must not come back as a small number.
+    let observed = u16::try_from(drawdown_bps).unwrap_or(u16::MAX);
+    let profile = &mut ctx.accounts.trader_profile;
+    profile.max_drawdown_bps = profile.max_drawdown_bps.max(observed);
+
+    let m = &mut ctx.accounts.mandate;
 
     // The transition. Only from `Active`: a mandate already breached or winding down does not
     // get breached twice, and re-emitting would make the event stream lie about when it broke.

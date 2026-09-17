@@ -2,10 +2,12 @@
 
 use anchor_lang::prelude::*;
 
-use crate::constants::{CONFIG_SEED, DEFAULT_TRADER_SPLIT_BPS, MANDATE_SEED, MANDATE_SIGNER_SEED};
+use crate::constants::{
+    CONFIG_SEED, DEFAULT_TRADER_SPLIT_BPS, MANDATE_SEED, MANDATE_SIGNER_SEED, TRADER_SEED,
+};
 use crate::errors::NoxError;
 use crate::events::MandateFunded;
-use crate::state::{Mandate, MandateState, NoxConfig};
+use crate::state::{Mandate, MandateState, NoxConfig, TraderProfile};
 
 /// The rules an investor sets. Passed as one struct because nine loose arguments at a call
 /// site is how a `max_drawdown_bps` ends up in the `max_daily_loss_bps` slot.
@@ -76,6 +78,15 @@ pub struct FundMandate<'info> {
     /// nothing here, which is the point — an investor funds a trader without their cooperation.
     pub trader: UncheckedAccount<'info>,
 
+    /// The trader's record. Required, so a mandate can never be opened against a trader with
+    /// no tier — and so the tier's size and concurrency limits have something to bind to.
+    #[account(
+        mut,
+        seeds = [TRADER_SEED, trader.key().as_ref()],
+        bump = trader_profile.bump,
+    )]
+    pub trader_profile: Box<Account<'info, TraderProfile>>,
+
     #[account(
         init,
         payer = investor,
@@ -114,6 +125,19 @@ pub fn fund_mandate(
     require!(principal > 0, NoxError::ZeroAmount);
     rules.validate()?;
 
+    // The two things a tier actually binds. Both are checked here rather than at trade time,
+    // because both are properties of the *mandate* and an investor should be refused while
+    // they are still filling in the form, not after their capital has moved.
+    let tier = ctx.accounts.trader_profile.tier;
+    require!(
+        principal <= tier.max_mandate(),
+        NoxError::MandateExceedsTierLimit
+    );
+    require!(
+        ctx.accounts.trader_profile.active_mandates < tier.max_concurrent_mandates(),
+        NoxError::TooManyActiveMandates
+    );
+
     let m = &mut ctx.accounts.mandate;
     m.investor = ctx.accounts.investor.key();
     m.trader = ctx.accounts.trader.key();
@@ -140,6 +164,10 @@ pub fn fund_mandate(
     m.slots = Default::default();
     m.opened_at = Clock::get()?.unix_timestamp;
     m.bump = ctx.bumps.mandate;
+
+    let profile = &mut ctx.accounts.trader_profile;
+    profile.mandates_funded = profile.mandates_funded.saturating_add(1);
+    profile.active_mandates = profile.active_mandates.saturating_add(1);
 
     emit!(MandateFunded {
         mandate: m.key(),

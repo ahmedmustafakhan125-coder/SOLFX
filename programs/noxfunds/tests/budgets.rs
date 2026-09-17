@@ -22,6 +22,21 @@
 //! instruction is the price of the guarantee that a funded position can never exist without
 //! its stop.
 //!
+//! # Why the compute figures move between runs
+//!
+//! `funded_open_position` was measured six times at 109,236 / 110,736 / 112,236 (×3) /
+//! 113,736 / 116,736 CU. The steps are exactly 1,500 apart, which is the cost of one
+//! `create_program_address`: `solfx-core` creates the `Position` and the `TriggerOrder` with
+//! `init` and an unstored `bump`, so Anchor runs `find_program_address`, which counts down
+//! from 255 until it finds an off-curve address. These tests use fresh random keypairs, so
+//! the canonical bumps — and therefore the number of misses — differ every run.
+//!
+//! Two things follow. **A given trade is deterministic**: the seeds are fixed, so one
+//! trader's position always costs the same. And **the ceilings must cover the search**, which
+//! is why they sit well above the base rather than snugly above one lucky measurement. It is
+//! also a live demonstration of why `.claude/rules/solana.md` §3 says to store bumps — every
+//! seed constraint NOXFUNDS owns uses `bump = account.bump` and costs a flat ~1,500 once.
+//!
 //! Run `cargo test -p noxfunds --test budgets -- --nocapture` to print the table.
 
 // Test code asserts against known values and unwraps expected-Ok results. See the same block
@@ -90,6 +105,32 @@ fn mandate_pda(investor: &Pubkey, trader: &Pubkey, seq: u8) -> Pubkey {
         &noxfunds::ID,
     )
     .0
+}
+
+fn profile_pda(trader: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[noxfunds::constants::TRADER_SEED, trader.as_ref()],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+/// A trader needs a record before anyone can fund them: `fund_mandate` reads the tier to bound
+/// the mandate's size and the trader's concurrent count. Anyone may pay for it, which is why
+/// the admin does here.
+fn create_profile(env: &mut Env, payer: &solana_keypair::Keypair, trader: &Pubkey) {
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::InitializeTraderProfile {
+            payer: payer.pubkey(),
+            authority: *trader,
+            profile: profile_pda(trader),
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::InitializeTraderProfile {}.data(),
+    };
+    env.send(ix, &[payer]).expect("create the trader profile");
 }
 
 fn signer_pda(mandate: &Pubkey) -> Pubkey {
@@ -164,11 +205,14 @@ fn roomy_mandate() -> Nox {
     };
     env.send(ix, &[&admin]).unwrap();
 
+    create_profile(&mut env, &admin, &trader.pubkey());
+
     let mandate = mandate_pda(&investor.pubkey(), &trader.pubkey(), 0);
     let signer = signer_pda(&mandate);
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
+            trader_profile: profile_pda(&trader.pubkey()),
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader.pubkey(),
@@ -305,6 +349,7 @@ impl Nox {
         Instruction {
             program_id: noxfunds::ID,
             accounts: noxfunds::accounts::FundedClosePosition {
+                trader_profile: profile_pda(&self.trader.pubkey()),
                 trader: self.trader.pubkey(),
                 config: config_pda(),
                 mandate: self.mandate,
@@ -348,6 +393,7 @@ impl Nox {
         let user_account = Env::user_pda(&self.signer);
 
         let mut metas = noxfunds::accounts::ObserveMandateEquity {
+            trader_profile: profile_pda(&self.trader.pubkey()),
             observer: observer.pubkey(),
             config: config_pda(),
             mandate: self.mandate,
@@ -416,6 +462,7 @@ impl Nox {
         let ix = Instruction {
             program_id: noxfunds::ID,
             accounts: noxfunds::accounts::ClaimSettlement {
+                trader_profile: profile_pda(&self.trader.pubkey()),
                 settler: settler.pubkey(),
                 config: config_pda(),
                 mandate: self.mandate,
@@ -496,11 +543,11 @@ fn every_noxfunds_instruction_stays_within_its_budget() {
     // The account count is a design constraint, not an observation: it is what the two-CPI
     // shape costs, and it is the input to the stack-frame analysis.
     //
-    // The plan derived **22**. It is 21, because that derivation included a `trader_profile`
-    // account for the track-record work that is not built. Every other account it listed is
-    // here. The spare slot is worth naming rather than quietly enjoying: adding the profile
-    // later costs one account and roughly 33 bytes, both of which this test already has room
-    // for.
+    // The plan derived **22**, counting a `trader_profile`. The profile now exists, but it is
+    // not on this path: nothing about *opening* a position changes a trader's record. It is
+    // written by the close (realised PnL, hold time), by the equity crank (observed drawdown)
+    // and by settlement (the mandate's outcome). Keeping it off the open leaves the most
+    // expensive instruction at 21 accounts instead of 22.
     assert_eq!(
         accounts, 21,
         "the two-CPI shape is 21 accounts; a change here changes the stack-frame analysis"
@@ -596,9 +643,9 @@ fn a_fully_loaded_crank_fits_in_one_transaction() {
         cu <= CRANK_5_CEILING,
         "a five-position crank consumed {cu} CU, above its {CRANK_5_CEILING} ceiling"
     );
-    // 5 fixed + 3 per position. The market and the price repeat, so only the position address
+    // 6 fixed + 3 per position. The market and the price repeat, so only the position address
     // is new each time — which is why the wire cost per extra position is far below 3 × 32.
-    assert_eq!(accounts, 20);
+    assert_eq!(accounts, 21);
 
     // The worst case the state can produce. Built at full width and measured; not sent,
     // because nonces 5–7 hold no position and the packet does not care.

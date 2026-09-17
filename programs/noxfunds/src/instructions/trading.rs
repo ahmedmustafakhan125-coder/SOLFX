@@ -21,10 +21,10 @@ use anchor_spl::token::Token;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use solfx_core::state::{Direction, Market, TriggerKind};
 
-use crate::constants::{BPS, CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED};
+use crate::constants::{BPS, CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, TRADER_SEED};
 use crate::errors::NoxError;
-use crate::events::{FundedTradeClosed, FundedTradeOpened, StopCancelled};
-use crate::state::{Mandate, MandateState, NoxConfig};
+use crate::events::{FundedTradeClosed, FundedTradeOpened, StopCancelled, TradeRecorded};
+use crate::state::{Mandate, MandateState, NoxConfig, TraderProfile};
 use crate::SolfxCore;
 
 /// Resolve an optional oracle leg to the `AccountInfo` the CPI should carry.
@@ -429,9 +429,11 @@ pub struct FundedClosePosition<'info> {
     /// CHECK: validated by `solfx-core`.
     #[account(mut)]
     pub protocol: UncheckedAccount<'info>,
-    /// CHECK: validated by `solfx-core`, and bound to this mandate.
+    /// Deserialized, unlike on the open path, and reloaded after the CPI: the change in
+    /// `free_collateral` across the close is how this program learns what the trade actually
+    /// made. `solfx-core` owns it, so Anchor never writes it back on exit.
     #[account(mut, address = mandate.solfx_user_account)]
-    pub user_account: UncheckedAccount<'info>,
+    pub user_account: Box<Account<'info, solfx_core::state::UserAccount>>,
     /// CHECK: validated by `solfx-core`.
     #[account(mut)]
     pub market: UncheckedAccount<'info>,
@@ -440,6 +442,15 @@ pub struct FundedClosePosition<'info> {
     /// book when it closes.
     #[account(mut)]
     pub position: Box<Account<'info, solfx_core::state::Position>>,
+    /// The trader's record. Bound to the mandate's trader by its seed, so a trader cannot
+    /// direct their losses onto somebody else's profile.
+    #[account(
+        mut,
+        seeds = [TRADER_SEED, mandate.trader.as_ref()],
+        bump = trader_profile.bump,
+        constraint = trader_profile.authority == mandate.trader @ NoxError::ProfileMismatch,
+    )]
+    pub trader_profile: Box<Account<'info, TraderProfile>>,
     /// CHECK: validated by `solfx-core`.
     #[account(mut)]
     pub collateral_vault: UncheckedAccount<'info>,
@@ -490,6 +501,16 @@ pub fn funded_close_position(
         NoxError::MinimumHoldNotMet
     );
 
+    // What the trade made, measured rather than recomputed.
+    //
+    // `close_position` credits `raw_equity` — the released margin plus realised PnL less fees —
+    // back to free collateral in one `credit`. So the change in that balance, minus the margin
+    // the position was holding, **is** the venue's own net figure for this trade. Recomputing
+    // it here from price and size would be a second opinion that drifts the moment either side
+    // changes a fee, which is precisely the failure `.claude/rules/solana.md` §10 warns about.
+    let free_before = ctx.accounts.user_account.free_collateral;
+    let released_margin = ctx.accounts.position.collateral;
+
     let mandate_key = ctx.accounts.mandate.key();
     let bump = ctx.accounts.mandate.signer_bump;
     let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];
@@ -521,6 +542,20 @@ pub fn funded_close_position(
         price_limit,
     )?;
 
+    // The in-memory copy is stale the instant the CPI returns; `reload` re-reads the bytes and
+    // re-checks the owner. Anchor's own `declare-program` test does exactly this for an account
+    // a *foreign* program mutated, and the SolFX account is never written back on exit because
+    // `solfx-core` owns it, not this program.
+    ctx.accounts.user_account.reload()?;
+    let realized_pnl = i128::from(ctx.accounts.user_account.free_collateral)
+        .checked_sub(i128::from(free_before))
+        .and_then(|d| d.checked_sub(i128::from(released_margin)))
+        .ok_or(NoxError::MathOverflow)?;
+    let realized_pnl = i64::try_from(realized_pnl).map_err(|_| NoxError::MathOverflow)?;
+
+    let profile = &mut ctx.accounts.trader_profile;
+    profile.record_trade(realized_pnl, held)?;
+
     // Released at the exact figure `book` recorded, which is the oracle-priced notional the
     // rules were judged against. An earlier version released core's `entry_notional` instead,
     // which is priced at the fill *after* spread — so every close unbooked a slightly different
@@ -528,13 +563,29 @@ pub fn funded_close_position(
     let m = &mut ctx.accounts.mandate;
     m.unbook(market_index, nonce)?;
 
+    let ts = Clock::get()?.unix_timestamp;
+    emit!(TradeRecorded {
+        profile: profile.key(),
+        mandate: mandate_key,
+        trader: m.trader,
+        market_index,
+        nonce,
+        realized_pnl,
+        hold_slots: held,
+        trades: profile.trades,
+        wins: profile.wins,
+        losses: profile.losses,
+        gross_profit: profile.gross_profit,
+        gross_loss: profile.gross_loss,
+        ts,
+    });
     emit!(FundedTradeClosed {
         mandate: mandate_key,
         trader: m.trader,
         market_index,
         nonce,
         open_positions: m.open_positions,
-        ts: Clock::get()?.unix_timestamp,
+        ts,
     });
     Ok(())
 }

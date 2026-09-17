@@ -150,3 +150,50 @@ pub struct PositionReconciled {
     pub caller: Pubkey,
     pub ts: i64,
 }
+
+/// A trader's record opened. The marketplace's first row for them.
+#[event]
+pub struct TraderProfileCreated {
+    pub profile: Pubkey,
+    pub authority: Pubkey,
+    pub ts: i64,
+}
+
+/// One closed trade, as it landed on the record.
+///
+/// `realized_pnl` is the **delta in the trader's SolFX free collateral across the close, less
+/// the margin the position released** — which is the venue's own arithmetic, net of fees, not a
+/// figure this program recomputed. Emitted per trade so any third party can rebuild
+/// `gross_profit`, `gross_loss`, win rate and profit factor from the event stream and check
+/// them against the account.
+#[event]
+pub struct TradeRecorded {
+    pub profile: Pubkey,
+    pub mandate: Pubkey,
+    pub trader: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub realized_pnl: i64,
+    pub hold_slots: u64,
+    pub trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub gross_profit: u64,
+    pub gross_loss: u64,
+    pub ts: i64,
+}
+
+/// A tier moved. Emitted in both directions — a demotion is the more interesting event, and
+/// suppressing it would let the marketplace show a peak tier the trader no longer holds.
+#[event]
+pub struct TierChanged {
+    pub profile: Pubkey,
+    pub authority: Pubkey,
+    pub from: u8,
+    pub to: u8,
+    pub trades: u32,
+    pub profit_factor_bps: u64,
+    pub win_rate_bps: u64,
+    pub max_drawdown_bps: u16,
+    pub ts: i64,
+}

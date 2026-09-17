@@ -17,11 +17,11 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 use solfx_core::state::UserAccount;
 
-use crate::constants::{CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED};
+use crate::constants::{CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, TRADER_SEED};
 use crate::errors::NoxError;
 use crate::events::{MandateSettled, SettlementRequested};
 use crate::settlement::split;
-use crate::state::{Mandate, MandateState, NoxConfig};
+use crate::state::{Mandate, MandateState, NoxConfig, TraderProfile};
 use crate::SolfxCore;
 
 #[derive(Accounts)]
@@ -120,6 +120,17 @@ pub struct ClaimSettlement<'info> {
     )]
     pub treasury_token: Box<Account<'info, TokenAccount>>,
 
+    /// The trader's record. Settlement is where a mandate's outcome — not just its individual
+    /// trades — lands on it: the active count comes down, and a mandate that finished above
+    /// principal counts toward Platinum.
+    #[account(
+        mut,
+        seeds = [TRADER_SEED, mandate.trader.as_ref()],
+        bump = trader_profile.bump,
+        constraint = trader_profile.authority == mandate.trader @ NoxError::ProfileMismatch,
+    )]
+    pub trader_profile: Box<Account<'info, TraderProfile>>,
+
     pub token_program: Program<'info, Token>,
     #[account(address = config.solfx_program)]
     pub solfx_core_program: Program<'info, SolfxCore>,
@@ -169,6 +180,17 @@ pub fn claim_settlement(ctx: Context<ClaimSettlement>) -> Result<()> {
     pay(&ctx, seeds, PayTo::Treasury, s.protocol, decimals)?;
 
     let was_breached = state == MandateState::Breached;
+
+    // The mandate is over either way, so the slot frees either way — a breach must not leave a
+    // trader permanently one mandate below their tier's limit. Only the *profit* count is
+    // conditional, and it is measured against principal rather than against the trader's payout,
+    // because a mandate that made money for its investor is the claim the tier is about.
+    let profile = &mut ctx.accounts.trader_profile;
+    profile.active_mandates = profile.active_mandates.saturating_sub(1);
+    if final_equity > ctx.accounts.mandate.principal {
+        profile.mandates_settled_in_profit = profile.mandates_settled_in_profit.saturating_add(1);
+    }
+
     let m = &mut ctx.accounts.mandate;
     m.state = MandateState::Settled;
     m.last_equity = final_equity;

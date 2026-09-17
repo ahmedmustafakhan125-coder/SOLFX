@@ -46,6 +46,32 @@ fn mandate_pda(investor: &Pubkey, trader: &Pubkey, seq: u8) -> Pubkey {
     )
     .0
 }
+fn profile_pda(trader: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[noxfunds::constants::TRADER_SEED, trader.as_ref()],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+/// A trader needs a record before anyone can fund them: `fund_mandate` reads the tier to bound
+/// the mandate's size and the trader's concurrent count. Anyone may pay for it, which is why
+/// the admin does here.
+fn create_profile(env: &mut Env, payer: &solana_keypair::Keypair, trader: &Pubkey) {
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::InitializeTraderProfile {
+            payer: payer.pubkey(),
+            authority: *trader,
+            profile: profile_pda(trader),
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::InitializeTraderProfile {}.data(),
+    };
+    env.send(ix, &[payer]).expect("create the trader profile");
+}
+
 fn signer_pda(mandate: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(
         &[noxfunds::constants::MANDATE_SIGNER_SEED, mandate.as_ref()],
@@ -103,11 +129,14 @@ fn setup_funded(rules: MandateRules, principal: u64, deposit: u64) -> Nox {
     };
     env.send(ix, &[&admin]).unwrap();
 
+    create_profile(&mut env, &admin, &trader.pubkey());
+
     let mandate = mandate_pda(&investor.pubkey(), &trader.pubkey(), 0);
     let signer = signer_pda(&mandate);
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
+            trader_profile: profile_pda(&trader.pubkey()),
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader.pubkey(),
@@ -305,6 +334,7 @@ impl Nox {
         let ix = Instruction {
             program_id: noxfunds::ID,
             accounts: noxfunds::accounts::FundedClosePosition {
+                trader_profile: profile_pda(&self.trader.pubkey()),
                 trader: self.trader.pubkey(),
                 config: config_pda(),
                 mandate: self.mandate,
@@ -358,6 +388,7 @@ impl Nox {
         let user_account = Env::user_pda(&self.signer);
 
         let mut metas = noxfunds::accounts::ObserveMandateEquity {
+            trader_profile: profile_pda(&self.trader.pubkey()),
             observer: observer.pubkey(),
             config: config_pda(),
             mandate: self.mandate,
@@ -441,6 +472,7 @@ impl Nox {
         let ix = Instruction {
             program_id: noxfunds::ID,
             accounts: noxfunds::accounts::ClaimSettlement {
+                trader_profile: profile_pda(&self.trader.pubkey()),
                 settler: settler.pubkey(),
                 config: config_pda(),
                 mandate: self.mandate,

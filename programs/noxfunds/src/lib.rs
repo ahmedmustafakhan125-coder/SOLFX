@@ -74,6 +74,21 @@ pub mod noxfunds {
         instructions::admin::set_paused(ctx, paused)
     }
 
+    // --- the track record ------------------------------------------------------------------
+
+    /// Open a trader's record. Anyone may pay for it; the profile confers nothing until trades
+    /// land on it, and a mandate cannot be funded for a trader without one.
+    pub fn initialize_trader_profile(ctx: Context<InitializeTraderProfile>) -> Result<()> {
+        instructions::profile::initialize_trader_profile(ctx)
+    }
+
+    /// Set a trader's tier to whatever their record currently earns — **in both directions**.
+    /// Permissionless, because an investor should not have to ask a trader to refresh a
+    /// listing that flatters them.
+    pub fn recompute_tier(ctx: Context<RecomputeTier>) -> Result<()> {
+        instructions::profile::recompute_tier(ctx)
+    }
+
     // --- investor ------------------------------------------------------------------------
 
     /// Fix the rules and create the mandate. The trader does not sign — an investor funds a

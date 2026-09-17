@@ -64,6 +64,14 @@ pub enum NoxError {
     ZeroAmount,
     #[msg("Arithmetic overflow")]
     MathOverflow,
+
+    // --- tiers and the track record (Stage 4) --------------------------------------------
+    #[msg("This mandate is larger than the trader's tier permits")]
+    MandateExceedsTierLimit,
+    #[msg("The trader already holds as many mandates as their tier permits")]
+    TooManyActiveMandates,
+    #[msg("This profile does not belong to the mandate's trader")]
+    ProfileMismatch,
 }
 
 /// Map `solfx-math`'s errors onto this program's. Total and explicit, so adding a variant

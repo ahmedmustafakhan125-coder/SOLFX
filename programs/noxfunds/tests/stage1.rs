@@ -61,6 +61,32 @@ fn mandate_pda(investor: &Pubkey, trader: &Pubkey, seq: u8) -> Pubkey {
     .0
 }
 
+fn profile_pda(trader: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[noxfunds::constants::TRADER_SEED, trader.as_ref()],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+/// A trader needs a record before anyone can fund them: `fund_mandate` reads the tier to bound
+/// the mandate's size and the trader's concurrent count. Anyone may pay for it, which is why
+/// the admin does here.
+fn create_profile(env: &mut Env, payer: &solana_keypair::Keypair, trader: &Pubkey) {
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::InitializeTraderProfile {
+            payer: payer.pubkey(),
+            authority: *trader,
+            profile: profile_pda(trader),
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::InitializeTraderProfile {}.data(),
+    };
+    env.send(ix, &[payer]).expect("create the trader profile");
+}
+
 fn signer_pda(mandate: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(
         &[noxfunds::constants::MANDATE_SIGNER_SEED, mandate.as_ref()],
@@ -138,6 +164,8 @@ fn setup() -> Nox {
     let admin = env.admin.insecure_clone();
     env.send(ix, &[&admin]).unwrap();
 
+    create_profile(&mut env, &admin, &trader.pubkey());
+
     let mandate = mandate_pda(&investor.pubkey(), &trader.pubkey(), 0);
     let signer = signer_pda(&mandate);
     let solfx_user = Env::user_pda(&signer);
@@ -145,6 +173,7 @@ fn setup() -> Nox {
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
+            trader_profile: profile_pda(&trader.pubkey()),
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader.pubkey(),
@@ -441,9 +470,14 @@ fn a_daily_loss_looser_than_the_total_drawdown_is_refused() {
     let mut rules = default_rules();
     rules.max_daily_loss_bps = 900; // looser than the 300 bps total: can never bind
 
+    // A different trader needs their own record, since the profile is keyed by trader.
+    let admin = nox.env.admin.insecure_clone();
+    create_profile(&mut nox.env, &admin, &trader2.pubkey());
+
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
+            trader_profile: profile_pda(&trader2.pubkey()),
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader2.pubkey(),
@@ -716,6 +750,7 @@ fn closing_frees_a_slot_and_the_stop_can_be_cancelled() {
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundedClosePosition {
+            trader_profile: profile_pda(&nox.trader.pubkey()),
             trader: nox.trader.pubkey(),
             config: config_pda(),
             mandate: nox.mandate,
