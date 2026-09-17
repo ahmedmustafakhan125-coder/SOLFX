@@ -25,6 +25,40 @@ pub struct NoxConfig {
     pub _reserved: [u8; 64],
 }
 
+/// How many positions one mandate can track at once. `MandateRules::validate` caps
+/// `max_concurrent_positions` at this, so the rule and the storage cannot disagree.
+pub const MAX_SLOTS: usize = 8;
+
+/// One open position, as NOXFUNDS booked it.
+///
+/// # Why the mandate tracks positions individually
+///
+/// A counter and a running notional total were not enough, and three bugs proved it:
+///
+/// - **A stop-out never came back.** A stop fires through `solfx-core`'s own
+///   `execute_trigger_order`, which never enters NOXFUNDS, so the counter stayed high forever.
+///   Settlement needs it at zero and the equity crank needs a triple per counted position that
+///   no longer exists — a stopped-out mandate could never settle or be observed again.
+/// - **The book drifted.** Opens booked notional at the oracle price; closes unbooked core's
+///   `entry_notional`, which is at the fill price after spread. A short left a residue on every
+///   round trip until the book refused trades it had room for.
+/// - **The crank could be fooled.** It checked only the *count* of triples, so the same
+///   profitable position supplied twice inflated equity and hid a breach.
+///
+/// A slot records exactly what was booked and where, so each close releases the exact figure it
+/// added, a stop-out can be reconciled against the chain, and the crank can demand each open
+/// position once.
+#[derive(
+    AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, Default, PartialEq, Eq, Debug,
+)]
+pub struct PositionSlot {
+    pub open: bool,
+    pub market_index: u16,
+    pub nonce: u8,
+    /// Notional as NOXFUNDS booked it at open, in USDC. Released at this exact figure.
+    pub notional: u64,
+}
+
 /// Where a mandate is in its life. `Breached` is deliberately distinct from `WindingDown`: it
 /// records *why* the mandate ended, permanently, and that is exactly what an investor choosing
 /// a trader is reading. Collapsing the two would make a rule violation indistinguishable from
@@ -114,6 +148,9 @@ pub struct Mandate {
     /// When that observation happened. The crank cadence is the honesty of the drawdown rule,
     /// so it is recorded rather than implied.
     pub last_observed_at: i64,
+    /// The positions currently open, one slot each. `open_positions` and `open_notional` are
+    /// kept equal to what these slots sum to; they are stored for cheap reads by the rules.
+    pub slots: [PositionSlot; MAX_SLOTS],
     pub opened_at: i64,
     pub bump: u8,
     pub _reserved: [u8; 64],
@@ -130,6 +167,54 @@ impl Mandate {
             return false;
         }
         self.allowed_markets & (1u128 << market_index) != 0
+    }
+
+    /// Record a newly opened position. Fails if every slot is taken.
+    pub fn book(&mut self, market_index: u16, nonce: u8, notional: u64) -> Result<()> {
+        // A slot already open at this address means a position there closed without NOXFUNDS
+        // seeing it — a stop-out — and was never reconciled. Booking a second would leave the
+        // stale one stranded forever, so the open is refused until `reconcile_position` runs.
+        require!(
+            !self
+                .slots
+                .iter()
+                .any(|s| s.open && s.market_index == market_index && s.nonce == nonce),
+            crate::errors::NoxError::SlotNotReconciled
+        );
+        let slot = self
+            .slots
+            .iter_mut()
+            .find(|s| !s.open)
+            .ok_or(crate::errors::NoxError::TooManyOpenPositions)?;
+        *slot = PositionSlot {
+            open: true,
+            market_index,
+            nonce,
+            notional,
+        };
+        self.open_positions = self.open_positions.saturating_add(1);
+        self.open_notional = self
+            .open_notional
+            .checked_add(notional)
+            .ok_or(crate::errors::NoxError::MathOverflow)?;
+        Ok(())
+    }
+
+    /// Release a position, returning the notional it was booked at.
+    ///
+    /// Releases the **booked** figure, not anything recomputed at close, so the book returns
+    /// exactly to where it was before the position opened.
+    pub fn unbook(&mut self, market_index: u16, nonce: u8) -> Result<u64> {
+        let slot = self
+            .slots
+            .iter_mut()
+            .find(|s| s.open && s.market_index == market_index && s.nonce == nonce)
+            .ok_or(crate::errors::NoxError::PositionNotTracked)?;
+        let notional = slot.notional;
+        *slot = PositionSlot::default();
+        self.open_positions = self.open_positions.saturating_sub(1);
+        self.open_notional = self.open_notional.saturating_sub(notional);
+        Ok(notional)
     }
 
     /// Equity, in USDC, as the drawdown rule measures it.

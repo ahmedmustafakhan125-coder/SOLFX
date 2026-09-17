@@ -34,7 +34,7 @@ use crate::SolfxCore;
 /// `None` here instead would emit an account meta with no backing `AccountInfo` in the
 /// `invoke_signed` slice — `ToAccountMetas for Option<T>` writes `crate::ID`, `ToAccountInfos`
 /// writes nothing.
-fn leg<'info>(
+pub(crate) fn leg<'info>(
     opt: &Option<Box<Account<'info, PriceUpdateV2>>>,
     fallback: &Program<'info, SolfxCore>,
 ) -> AccountInfo<'info> {
@@ -290,11 +290,7 @@ pub fn funded_open_position(
     cpi_place_stop(&ctx, seeds, order_id, stop_loss_price, size_base)?;
 
     let m = &mut ctx.accounts.mandate;
-    m.open_positions = m.open_positions.saturating_add(1);
-    m.open_notional = m
-        .open_notional
-        .checked_add(margins.notional)
-        .ok_or(NoxError::MathOverflow)?;
+    m.book(market_index, nonce, margins.notional)?;
 
     emit!(FundedTradeOpened {
         mandate: mandate_key,
@@ -493,20 +489,44 @@ pub fn funded_close_position(
         held >= ctx.accounts.mandate.min_hold_slots,
         NoxError::MinimumHoldNotMet
     );
-    let booked = ctx.accounts.position.entry_notional;
 
     let mandate_key = ctx.accounts.mandate.key();
     let bump = ctx.accounts.mandate.signer_bump;
     let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];
 
-    cpi_close(&ctx, seeds, price_limit)?;
+    let a = &ctx.accounts;
+    close_via_cpi(
+        a.solfx_core_program.key(),
+        solfx_core::cpi::accounts::ClosePosition {
+            authority: a.mandate_signer.to_account_info(),
+            protocol: a.protocol.to_account_info(),
+            user_account: a.user_account.to_account_info(),
+            market: a.market.to_account_info(),
+            position: a.position.to_account_info(),
+            collateral_vault: a.collateral_vault.to_account_info(),
+            lp_pool: a.lp_pool.to_account_info(),
+            lp_vault: a.lp_vault.to_account_info(),
+            insurance_fund: a.insurance_fund.to_account_info(),
+            insurance_vault: a.insurance_vault.to_account_info(),
+            fee_vault: a.fee_vault.to_account_info(),
+            price_update: a.price_update.to_account_info(),
+            secondary_price_update: Some(leg(&a.secondary_price_update, &a.solfx_core_program)),
+            quote_conversion_price_update: Some(leg(
+                &a.quote_conversion_price_update,
+                &a.solfx_core_program,
+            )),
+            token_program: a.token_program.to_account_info(),
+        },
+        seeds,
+        price_limit,
+    )?;
 
+    // Released at the exact figure `book` recorded, which is the oracle-priced notional the
+    // rules were judged against. An earlier version released core's `entry_notional` instead,
+    // which is priced at the fill *after* spread — so every close unbooked a slightly different
+    // number than its open had booked, and the book drifted.
     let m = &mut ctx.accounts.mandate;
-    m.open_positions = m.open_positions.saturating_sub(1);
-    // Removed at the figure it was added at. Recomputing from the current price would make
-    // the book drift on a mandate that merely held — the same reason SolFX stores
-    // `entry_notional` rather than re-deriving open interest at close.
-    m.open_notional = m.open_notional.saturating_sub(booked);
+    m.unbook(market_index, nonce)?;
 
     emit!(FundedTradeClosed {
         mandate: mandate_key,
@@ -519,40 +539,20 @@ pub fn funded_close_position(
     Ok(())
 }
 
+/// Close a SolFX position by CPI, signed by the mandate signer.
+///
+/// Takes the pass-through accounts already assembled rather than a `Context`, so the trader's
+/// voluntary close and the permissionless wind-down share one CPI path. `#[inline(never)]` keeps
+/// its by-value `CpiContext` in its own stack frame.
 #[inline(never)]
-fn cpi_close(
-    ctx: &Context<FundedClosePosition>,
+pub(crate) fn close_via_cpi<'info>(
+    program: Pubkey,
+    accounts: solfx_core::cpi::accounts::ClosePosition<'info>,
     seeds: &[&[&[u8]]],
     price_limit: i64,
 ) -> Result<()> {
     solfx_core::cpi::close_position(
-        CpiContext::new_with_signer(
-            ctx.accounts.solfx_core_program.key(),
-            solfx_core::cpi::accounts::ClosePosition {
-                authority: ctx.accounts.mandate_signer.to_account_info(),
-                protocol: ctx.accounts.protocol.to_account_info(),
-                user_account: ctx.accounts.user_account.to_account_info(),
-                market: ctx.accounts.market.to_account_info(),
-                position: ctx.accounts.position.to_account_info(),
-                collateral_vault: ctx.accounts.collateral_vault.to_account_info(),
-                lp_pool: ctx.accounts.lp_pool.to_account_info(),
-                lp_vault: ctx.accounts.lp_vault.to_account_info(),
-                insurance_fund: ctx.accounts.insurance_fund.to_account_info(),
-                insurance_vault: ctx.accounts.insurance_vault.to_account_info(),
-                fee_vault: ctx.accounts.fee_vault.to_account_info(),
-                price_update: ctx.accounts.price_update.to_account_info(),
-                secondary_price_update: Some(leg(
-                    &ctx.accounts.secondary_price_update,
-                    &ctx.accounts.solfx_core_program,
-                )),
-                quote_conversion_price_update: Some(leg(
-                    &ctx.accounts.quote_conversion_price_update,
-                    &ctx.accounts.solfx_core_program,
-                )),
-                token_program: ctx.accounts.token_program.to_account_info(),
-            },
-            seeds,
-        ),
+        CpiContext::new_with_signer(program, accounts, seeds),
         price_limit,
     )
 }

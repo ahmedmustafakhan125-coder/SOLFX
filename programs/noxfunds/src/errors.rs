@@ -45,6 +45,18 @@ pub enum NoxError {
     PositionsStillOpen,
     #[msg("Mandate is not winding down or breached, so it cannot be settled")]
     MandateNotSettleable,
+    #[msg("This mandate is not tracking a position at that market and nonce")]
+    PositionNotTracked,
+    #[msg("That position still exists on SolFX, so there is nothing to reconcile")]
+    PositionStillOpen,
+    #[msg("Equity observation must supply every open position exactly once")]
+    IncompleteObservation,
+    #[msg("Only a breached or winding-down mandate may be wound down by a third party")]
+    MandateNotWindingDown,
+    #[msg(
+        "A position at this market and nonce closed without being reconciled; reconcile it first"
+    )]
+    SlotNotReconciled,
 
     #[msg("Mandate rules are not internally consistent")]
     InvalidMandateRules,

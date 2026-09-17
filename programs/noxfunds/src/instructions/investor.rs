@@ -51,8 +51,11 @@ impl MandateRules {
                 && self.max_stop_distance_bps as u64 <= crate::constants::BPS,
             NoxError::InvalidMandateRules
         );
+        // Capped at the slot count, so the rule can never promise more positions than the
+        // mandate has room to track.
         require!(
-            self.max_concurrent_positions > 0,
+            self.max_concurrent_positions > 0
+                && usize::from(self.max_concurrent_positions) <= crate::state::MAX_SLOTS,
             NoxError::InvalidMandateRules
         );
         require!(self.allowed_markets != 0, NoxError::InvalidMandateRules);
@@ -133,6 +136,8 @@ pub fn fund_mandate(
     m.trader_split_bps = DEFAULT_TRADER_SPLIT_BPS;
     m.state = MandateState::Active;
     m.open_positions = 0;
+    m.open_notional = 0;
+    m.slots = Default::default();
     m.opened_at = Clock::get()?.unix_timestamp;
     m.bump = ctx.bumps.mandate;
 

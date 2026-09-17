@@ -127,3 +127,26 @@ pub struct MandateSettled {
     pub settled_by: Pubkey,
     pub ts: i64,
 }
+
+/// A third party closed a position on a stopped mandate.
+#[event]
+pub struct PositionWoundDown {
+    pub mandate: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub open_positions: u8,
+    pub closer: Pubkey,
+    pub ts: i64,
+}
+
+/// A position that closed outside NOXFUNDS — a stop-out — was released from the mandate's book.
+#[event]
+pub struct PositionReconciled {
+    pub mandate: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub notional_released: u64,
+    pub open_positions: u8,
+    pub caller: Pubkey,
+    pub ts: i64,
+}

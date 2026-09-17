@@ -162,6 +162,27 @@ pub mod noxfunds {
         instructions::keeper::observe_mandate_equity(ctx)
     }
 
+    /// Close one position of a breached or winding-down mandate. **Permissionless**, with the
+    /// slippage bound derived from the position rather than chosen by the caller.
+    pub fn wind_down_position(ctx: Context<WindDownPosition>) -> Result<()> {
+        instructions::keeper::wind_down_position(ctx)
+    }
+
+    /// Release a slot whose position closed without NOXFUNDS seeing it — a stop-out.
+    /// **Permissionless**, and only if the derived position account is genuinely gone.
+    pub fn reconcile_position(
+        ctx: Context<ReconcilePosition>,
+        market_index: u16,
+        nonce: u8,
+    ) -> Result<()> {
+        instructions::keeper::reconcile_position(ctx, market_index, nonce)
+    }
+
+    /// Cancel a resting stop on a stopped mandate. **Permissionless.**
+    pub fn wind_down_cancel_stop(ctx: Context<WindDownCancelStop>) -> Result<()> {
+        instructions::keeper::wind_down_cancel_stop(ctx)
+    }
+
     /// Reclaim a resting stop's rent after a voluntary close. Without this a mandate bleeds
     /// ~0.002 SOL per closed trade with no recovery path.
     pub fn funded_cancel_stop(

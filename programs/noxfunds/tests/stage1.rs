@@ -496,6 +496,7 @@ fn the_market_bitmap_does_not_wrap() {
         open_notional: 0,
         last_equity: 0,
         last_observed_at: 0,
+        slots: Default::default(),
         opened_at: 0,
         bump: 0,
         _reserved: [0; 64],
