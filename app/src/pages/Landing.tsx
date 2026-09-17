@@ -40,6 +40,12 @@ function Nav() {
             Verification
           </a>
           <a
+            href="#scope"
+            className="uppercase tracking-wider text-ink-muted hover:text-ink"
+          >
+            Scope
+          </a>
+          <a
             href="#status"
             className="uppercase tracking-wider text-ink-muted hover:text-ink"
           >
@@ -122,7 +128,7 @@ function Feature({
  * the second. The numbers are good enough not to need help.
  */
 /** Reproduces every figure in the verification band, in order. */
-const CHECK_COMMANDS = `cargo test --workspace          # 555 passing, 0 ignored
+const CHECK_COMMANDS = `cargo test --workspace          # 635 passing, 0 ignored
 npm --prefix clients/js test    # 211
 npm --prefix app run test       # 22
 
@@ -138,9 +144,9 @@ const PROOF_STATS: readonly {
   detail: string;
 }[] = [
   {
-    figure: "788",
+    figure: "868",
     label: "tests passing",
-    detail: "555 Rust · 211 SDK · 22 app · none ignored",
+    detail: "635 Rust · 211 SDK · 22 app · none ignored",
   },
   {
     figure: "97.14%",
@@ -175,7 +181,7 @@ const PROOF_GROUPS: readonly {
     title: "Solvency is checked, not assumed",
     items: [
       "Seven accounting invariants are re-asserted after individual instructions in the test suite — vault balances against the sum of accounts, open interest against live positions, LP supply against assets under management.",
-      "Compute and packet ceilings are enforced by tests, so a regression fails CI rather than a transaction: open_position runs at 55,584 units against a 120,000 ceiling, and a liquidation is 758 bytes against Solana's 1,232 limit.",
+      "Compute and packet ceilings are enforced by tests, so a regression fails CI rather than a transaction: open_position runs at 57,102 units against a 120,000 ceiling, and a liquidation is 758 bytes against Solana's 1,232 limit.",
       "Refusal is tested as heavily as success. A venue that accepts everything is not a venue.",
     ],
   },
@@ -186,6 +192,98 @@ const PROOF_GROUPS: readonly {
       "Each one asserts the documented order of absorption — insurance fund, then socialised loss — and that the venue refuses new risk without ever bricking.",
       "21.7 million fuzzing executions have found zero crashes.",
     ],
+  },
+];
+
+/// Measured ceilings for both programs. Every figure is asserted by a test, so a regression
+/// fails the build rather than turning this page into a lie.
+const CEILINGS: readonly {
+  metric: string;
+  solfx: string;
+  nox: string;
+  limit: string;
+}[] = [
+  {
+    metric: "Compute, heaviest instruction",
+    solfx: "60,353",
+    nox: "116,736",
+    limit: "200,000 default",
+  },
+  {
+    metric: "Transaction size",
+    solfx: "758 bytes",
+    nox: "863 bytes",
+    limit: "1,232 bytes",
+  },
+  {
+    metric: "Account locks",
+    solfx: "18",
+    nox: "21",
+    limit: "64",
+  },
+  {
+    metric: "Opens per second, structural",
+    solfx: "~497",
+    nox: "~265",
+    limit: "12M CU per account, per block",
+  },
+];
+
+/// What is deliberately devnet-shaped, and what mainnet would actually require. Written down
+/// because the gap is the interesting part: a demo that claims to be production-ready is
+/// telling you it has not looked.
+const MAINNET_PATH: readonly {
+  area: string;
+  now: string;
+  mainnet: string;
+}[] = [
+  {
+    area: "Audit",
+    now: "None. Zero external audits of either program.",
+    mainnet:
+      "Two independent audits covering both programs and the cross-program call between them, plus a funded bug bounty, before any real capital.",
+  },
+  {
+    area: "Fuzzing",
+    now: "21.7 million executions, zero crashes — but the Trident campaign has not run to its exit criterion.",
+    mainnet:
+      "Trident to completion against the stated criterion, then running continuously in CI rather than as a one-off.",
+  },
+  {
+    area: "Price feeds",
+    now: "Only 8 of 33 markets have a sponsored Pyth feed on devnet, so the protocol posts its own guardian-signed updates.",
+    mainnet:
+      "Pyth carries the mainnet aggregate for all 33. The self-posting path exists because devnet is thin, and it retires on mainnet — the on-chain verification requirement does not change.",
+  },
+  {
+    area: "Redundancy",
+    now: "One price-poster, one keeper, one RPC gateway. If the poster stops, every market halts within 60 seconds on the staleness gate.",
+    mainnet:
+      "Leader-elected posters across regions. Naively running two is measurably worse, not better: each pass is 10 sends against a 1-per-second limit, so a second instance roughly quadruples pass time.",
+  },
+  {
+    area: "Throughput",
+    now: "The RPC gateway is rate-limited to 9 requests per second.",
+    mainnet:
+      "A paid provider with failover. The gateway is the binding limit today and sits roughly 55× below what the programs themselves support.",
+  },
+  {
+    area: "Collateral",
+    now: "A test USDC mint.",
+    mainnet:
+      "Circle's USDC. The 6-decimal check already refuses anything else at the program level, so this is configuration rather than code.",
+  },
+  {
+    area: "Keys",
+    now: "A single hot key holds upgrade authority over both programs and receives protocol fees.",
+    mainnet:
+      "A Squads multisig as upgrade authority with a timelock, a separate treasury address, and hardware signing. One signature should never control both the code and the revenue.",
+  },
+  {
+    area: "Scaling",
+    now: "Every trade write-locks one shared LP pool, which caps the venue at the per-account compute limit.",
+    mainnet:
+      "Per-market pools if volume ever approaches that ceiling. This is a v2 redesign rather than a parameter, which is exactly why it is named now and not discovered later.",
   },
 ];
 
@@ -470,6 +568,110 @@ export function Landing() {
               never been upgraded since the markets you can trade here were
               listed — the extensibility claim was tested by listing two new
               markets against a byte-identical binary.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="scope" className="border-t border-line px-4 py-20 md:px-8">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-brand">
+              Scope
+            </div>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">
+              Built for devnet.{" "}
+              <span className="text-brand">Designed for mainnet.</span>
+            </h2>
+            <p className="mt-3 text-sm text-ink-muted">
+              This is a devnet deployment, and some of what you see is shaped by
+              that. The gap is written down below rather than glossed over —
+              knowing precisely what separates a working protocol from a
+              production one is the difference between a demo and a plan.
+            </p>
+          </div>
+
+          <div className="mt-12 panel p-6">
+            <h3 className="text-base font-bold uppercase tracking-wide">
+              The ceilings, measured
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+              These do not change between devnet and mainnet — they are
+              properties of the programs and of Solana, and every one is
+              asserted by a test so a regression fails the build.
+            </p>
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-[10px] uppercase tracking-[0.15em] text-ink-dim">
+                    <th className="py-3 pr-4 font-bold">Metric</th>
+                    <th className="py-3 pr-4 text-right font-bold">SolFX</th>
+                    <th className="py-3 pr-4 text-right font-bold">NOXFUNDS</th>
+                    <th className="py-3 text-right font-bold">Limit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {CEILINGS.map((c) => (
+                    <tr key={c.metric} className="border-b border-line/50">
+                      <td className="py-3 pr-4 text-ink-muted">{c.metric}</td>
+                      <td className="py-3 pr-4 text-right font-mono text-brand">
+                        {c.solfx}
+                      </td>
+                      <td className="py-3 pr-4 text-right font-mono text-brand">
+                        {c.nox}
+                      </td>
+                      <td className="py-3 text-right font-mono text-xs text-ink-dim">
+                        {c.limit}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-4 text-xs leading-relaxed text-ink-dim">
+              Throughput is bounded by the 12,000,000 compute units Solana
+              allows a single writable account per block, not by the 100,000,000
+              block limit — every trade touches the same LP pool, so the hot
+              account tops out at 12% of the block. NOXFUNDS costs roughly twice
+              a bare trade because it prices the market, then makes two
+              cross-program calls that each price it again: that is what
+              guarantees a funded position can never exist without its stop.
+            </p>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {MAINNET_PATH.map((m) => (
+              <div key={m.area} className="panel p-6">
+                <h3 className="text-base font-bold uppercase tracking-wide">
+                  {m.area}
+                </h3>
+                <dl className="mt-4 space-y-3 text-sm leading-relaxed">
+                  <div>
+                    <dt className="text-[10px] uppercase tracking-[0.15em] text-ink-dim">
+                      On devnet today
+                    </dt>
+                    <dd className="mt-1 text-ink-muted">{m.now}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase tracking-[0.15em] text-brand">
+                      For mainnet
+                    </dt>
+                    <dd className="mt-1 text-ink-muted">{m.mainnet}</dd>
+                  </div>
+                </dl>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 panel p-6">
+            <p className="text-sm leading-relaxed text-ink-muted">
+              <span className="font-bold text-ink">What this list is not:</span>{" "}
+              a roadmap of features. Every item is a thing that must be true
+              before somebody else&rsquo;s money is at risk, and none of it is
+              blocked on the protocol working — the protocol works. It is
+              blocked on the review, the redundancy and the key management that
+              a devnet deployment does not need and a mainnet one cannot open
+              without.
             </p>
           </div>
         </div>
