@@ -13,12 +13,12 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -f "$ROOT/.env" ]] && { set -a; . "$ROOT/.env"; set +a; }
 
-OPERATOR="${SOLFX_OPERATOR_KEYPAIR:-$SOLFX_OPERATOR_KEYPAIR}"
+OPERATOR="${SOLFX_OPERATOR_KEYPAIR:-}"
 RPC="${SOLFX_RPC_URL:-https://api.devnet.solana.com}"
 SOL_FLOOR="${SOLFX_MIN_SOL:-0.5}"
 API="${SOLFX_HEALTH_URL:-http://127.0.0.1:8787/healthz}"
 PUBLIC="${SOLFX_PUBLIC_URL:-https://solfx.cloud/healthz}"
-SOLANA_BIN="${SOLANA_BIN:-solana}"
+SOLANA_BIN="${SOLANA_BIN:-$(command -v solana 2>/dev/null || true)}"
 
 problems=()
 note() { problems+=("$1"); }

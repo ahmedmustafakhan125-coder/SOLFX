@@ -39,7 +39,7 @@ flag and a restart, and it reverts the same way.
 browser here, because step 4 needs numbers you can diff, not a screenshot:
 
 ```bash
-cd . && set -a && . ./.env && set +a
+set -a && . ./.env && set +a
 ./target/debug/trade open --market BTC/USD --direction long --notional 500 --collateral 100
 ./target/debug/trade status          # record collateral, entry, size, funding — this is the baseline
 ```

@@ -79,7 +79,7 @@ checks it and exits non-zero if anything is open or held by another key. Measure
 | SolFX guardian | unset (all-zero key) — only the admin can pause |
 | `ReferralConfig` | **open** — never initialised, and `initialize_referral` takes *any* signer |
 | `NoxConfig` | **open** — NOXFUNDS live since slot 499,915,146, not yet initialised |
-| Poster and keeper key, `EyvqeDSh…` (`$SOLFX_OPERATOR_KEYPAIR`) | holds **none** of the above |
+| Poster and keeper key (operator keypair, off-repo) | holds **none** of the above |
 
 What changed, and what did not:
 
@@ -126,7 +126,7 @@ the new market list. They have to be regenerated on the box.
 two new markets exactly as it does now.**
 
 ```bash
-cd . && git pull
+git pull
 set -a && . ./.env && set +a
 
 # 1. Regenerate deployment.json for eight markets. Signs nothing without --activate,
@@ -606,8 +606,8 @@ consumes the SDK as TypeScript source. Install only in `app/` and `tsc -b` fails
 
 | Path | What it is |
 |---|---|
-| `.` | the clone — note the doubled directory |
-| `$SOLFX_OPERATOR_KEYPAIR` | operator keypair, `EyvqeDSh2Y4ZhobJY4bF8ueEZAjRx2V3r2GDf35ktPyo` |
+| clone directory | the SolFX checkout on the operator host |
+| operator keypair | path from `SOLFX_OPERATOR_KEYPAIR`; not in git |
 | `services/api/server.mjs` | serves `app/dist`, proxies `/hermes` and `/pythpro` with the bearer |
 | `scripts/vps-health.sh` | the probe behind `solfx-health.timer` |
 | `/docker/solfx/docker-compose.yml` | the web tier — a compose project of its own |

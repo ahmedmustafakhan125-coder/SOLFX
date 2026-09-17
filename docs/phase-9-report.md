@@ -961,8 +961,8 @@ setting can hold it, because the limit is not a rate.**
 ### What was deployed
 
 The venue is at **11 markets on chain**, 8 in `deployment.json` after regenerating it here
-(`init-protocol --markets …` needs `--keypair $SOLFX_OPERATOR_KEYPAIR`; it defaults to
-`~/.config/solana/id.json`, which does not exist on the VPS). ETH/USD is index 9, SOL/USD is
+(`init-protocol --markets …` needs `--keypair` pointing at the operator keypair; it defaults to
+`~/.config/solana/id.json`). ETH/USD is index 9, SOL/USD is
 index 10, and the batched code is confirmed live — the log carries `shared VAA:
 init_encoded_vaa`, which only the new path emits.
 
