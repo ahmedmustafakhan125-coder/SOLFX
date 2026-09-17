@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Deploy (or verify) solfx-core on devnet.
+# Deploy (or verify) a program on devnet.
+#
+#   ./scripts/deploy-devnet.sh              # solfx_core, the default
+#   ./scripts/deploy-devnet.sh noxfunds
+#
+# Two programs share this because the verification below is the hard part, and a second copy
+# of it is a second place for the bytecode comparison to be subtly wrong.
 #
 # Claude never runs `solana program deploy` — this script does not either. It works out what
 # the cluster needs, prints the exact command for you to run, and then *verifies* the result.
@@ -33,11 +39,30 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+PROGRAM="${1:-solfx_core}"
+
+# Which sources actually compile into each .so. The keeper is a separate binary and its churn
+# must not look like a stale program build.
+case "$PROGRAM" in
+  solfx_core)
+    SO_SOURCES=(programs/solfx-core/src crates/solfx-math/src)
+    ;;
+  noxfunds)
+    # noxfunds links solfx-core as a library for its CPI bindings, so a change there makes
+    # this build stale too.
+    SO_SOURCES=(programs/noxfunds/src programs/solfx-core/src crates/solfx-math/src)
+    ;;
+  *)
+    echo "error: unknown program '$PROGRAM' (expected solfx_core or noxfunds)" >&2
+    exit 1
+    ;;
+esac
+
 RPC_URL="${SOLFX_RPC_URL:-}"
 KEYPAIR="${SOLFX_KEYPAIR:-$HOME/.config/solana/id.json}"
-SO="$ROOT/target/deploy/solfx_core.so"
-PROGRAM_KEYPAIR="$ROOT/target/deploy/solfx_core-keypair.json"
-IDL="$ROOT/target/idl/solfx_core.json"
+SO="$ROOT/target/deploy/$PROGRAM.so"
+PROGRAM_KEYPAIR="$ROOT/target/deploy/$PROGRAM-keypair.json"
+IDL="$ROOT/target/idl/$PROGRAM.json"
 
 # SIMD-0431. An extend for fewer bytes than this is rejected outright, which is the
 # `ExtendProgram requires a minimum of 10240 additional bytes` failure we hit by hand.
@@ -58,9 +83,6 @@ PROGRAM_ID="$(python3 -c "import json;print(json.load(open('$IDL'))['address'])"
 
 # A build older than the sources it came from is the failure this whole script exists to
 # catch, one level earlier. Refuse rather than deploy something stale.
-# Only what actually compiles into the .so: the program and the math crate it depends on.
-# The keeper is a separate binary and its churn must not look like a stale program build.
-SO_SOURCES=(programs/solfx-core/src crates/solfx-math/src)
 if [[ -n "$(find "${SO_SOURCES[@]}" -name '*.rs' -newer "$SO" -print -quit 2>/dev/null)" ]]; then
   echo "error: $SO is older than at least one source file it is built from." >&2
   echo "       run \`anchor build\` first (and not while a validator is running)." >&2
@@ -68,7 +90,7 @@ if [[ -n "$(find "${SO_SOURCES[@]}" -name '*.rs' -newer "$SO" -print -quit 2>/de
   exit 1
 fi
 
-echo "==> program $PROGRAM_ID"
+echo "==> $PROGRAM $PROGRAM_ID"
 echo "    cluster $RPC_URL"
 echo "    local   $(wc -c < "$SO") bytes"
 
@@ -94,7 +116,7 @@ if [[ "$AUTHORITY" == "none" ]]; then
 fi
 
 # --- does the deployed bytecode already match the local build? --------------------------
-DUMP="$(mktemp -t solfx-onchain-XXXXXX.so)"
+DUMP="$(mktemp -t "$PROGRAM"-onchain-XXXXXX.so)"
 trap 'rm -f "$DUMP"' EXIT
 solana program dump "$PROGRAM_ID" "$DUMP" -u "$RPC_URL" >/dev/null
 
@@ -148,7 +170,7 @@ fi
 # Only reached when the bytecode is confirmed current, so publishing here can never advertise
 # an interface the deployed program does not have.
 echo "==> checking the on-chain IDL"
-FETCHED="$(mktemp -t solfx-idl-XXXXXX.json)"
+FETCHED="$(mktemp -t "$PROGRAM"-idl-XXXXXX.json)"
 trap 'rm -f "$DUMP" "$FETCHED"' EXIT
 
 if anchor idl fetch -o "$FETCHED" "$PROGRAM_ID" --provider.cluster "$RPC_URL" >/dev/null 2>&1 \
