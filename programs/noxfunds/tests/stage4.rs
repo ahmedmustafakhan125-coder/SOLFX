@@ -29,6 +29,8 @@
 
 #[path = "../../solfx-core/tests/common/mod.rs"]
 mod common;
+#[allow(dead_code)]
+mod support;
 
 use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
 use anchor_lang::{prelude::Pubkey, InstructionData, ToAccountMetas};
@@ -144,6 +146,10 @@ fn mandate_of(principal: u64) -> Nox {
     let mut env = Env::new();
     let so = std::fs::read(nox_so_path()).expect("build noxfunds.so first");
     env.svm.add_program(noxfunds::ID, &so).unwrap();
+    // Loaded the way a real deploy leaves it: the deployer holds the upgrade authority, which
+    // is what `initialize_config` checks.
+    let upgrade_authority = env.admin.pubkey();
+    support::set_upgrade_authority(&mut env, Some(upgrade_authority));
 
     env.init_protocol();
     env.list_and_activate(0, &MarketSpec::eur_usd());
@@ -160,6 +166,8 @@ fn mandate_of(principal: u64) -> Nox {
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::InitializeConfig {
+            program: noxfunds::ID,
+            program_data: support::program_data_address(),
             admin: admin.pubkey(),
             config: config_pda(),
             system_program: anchor_lang::system_program::ID,

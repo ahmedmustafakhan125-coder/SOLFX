@@ -72,6 +72,12 @@ pub enum NoxError {
     TooManyActiveMandates,
     #[msg("This profile does not belong to the mandate's trader")]
     ProfileMismatch,
+
+    // --- initialisation --------------------------------------------------------------------
+    // Appended rather than grouped with the admin errors: the program is deployed and its IDL
+    // published, so inserting a variant earlier would renumber every error after it.
+    #[msg("Only the program's upgrade authority may initialise the configuration")]
+    NotTheUpgradeAuthority,
 }
 
 /// Map `solfx-math`'s errors onto this program's. Total and explicit, so adding a variant
