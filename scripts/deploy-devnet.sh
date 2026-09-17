@@ -173,17 +173,10 @@ echo "==> checking the on-chain IDL"
 FETCHED="$(mktemp -t "$PROGRAM"-idl-XXXXXX.json)"
 trap 'rm -f "$DUMP" "$FETCHED"' EXIT
 
+# Compared by shape — accounts, arguments, discriminators, errors, types — not by instruction
+# names. See scripts/idl-compare.py for the upgrade that a names-only check would have missed.
 if anchor idl fetch -o "$FETCHED" "$PROGRAM_ID" --provider.cluster "$RPC_URL" >/dev/null 2>&1 \
-   && python3 - "$FETCHED" "$IDL" <<'PY'
-import json, sys
-
-on_chain = {i["name"] for i in json.load(open(sys.argv[1]))["instructions"]}
-local = {i["name"] for i in json.load(open(sys.argv[2]))["instructions"]}
-if on_chain != local:
-    print(f"  stale: missing={sorted(local - on_chain)} extra={sorted(on_chain - local)}")
-    raise SystemExit(1)
-print(f"  on-chain IDL matches the build: {len(local)} instructions")
-PY
+   && python3 "$ROOT/scripts/idl-compare.py" "$FETCHED" "$IDL"
 then
   echo "==> everything is current"
 else

@@ -141,19 +141,7 @@ FETCHED="$(mktemp -t "$PROGRAM"-idl-fetched-XXXXXX.json)"
 trap 'rm -f "$SLIM" "$FETCHED"' EXIT
 anchor idl fetch -o "$FETCHED" "$PROGRAM_ID" --provider.cluster "$RPC_URL" >/dev/null
 
-python3 - "$FETCHED" "$IDL" <<'PY'
-import json, sys
-
-on_chain = json.load(open(sys.argv[1]))
-local = json.load(open(sys.argv[2]))
-mine = {i["name"] for i in on_chain["instructions"]}
-theirs = {i["name"] for i in local["instructions"]}
-if mine != theirs:
-    missing = theirs - mine
-    extra = mine - theirs
-    print(f"  MISMATCH  missing={sorted(missing)} extra={sorted(extra)}")
-    raise SystemExit(1)
-print(f"  on-chain IDL matches the build: {len(mine)} instructions")
-PY
+# Verified by shape, not names: a write that landed an older interface must not pass.
+python3 "$ROOT/scripts/idl-compare.py" "$FETCHED" "$IDL"
 
 echo "==> done"
