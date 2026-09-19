@@ -100,12 +100,17 @@ const PUBLIC_PRICE_MAP: &str = "https://solfx.cloud/price-accounts.json";
     about = "Run a NOXFUNDS mandate end to end on a live cluster"
 )]
 struct Args {
-    #[arg(long, env = "SOLFX_RPC_URL", default_value = "http://127.0.0.1:8899")]
+    #[arg(
+        long,
+        env = "SOLFX_RPC_URL",
+        default_value = "http://127.0.0.1:8899",
+        global = true
+    )]
     rpc_url: String,
     /// The funding wallet: pays the setup fees and supplies the principal, by minting it if it
     /// holds the mint authority and transferring it otherwise. Usually the deployer, which is
     /// also NOXFUNDS' treasury.
-    #[arg(long, default_value = "~/.config/solana/id.json")]
+    #[arg(long, default_value = "~/.config/solana/id.json", global = true)]
     keypair: String,
     /// The investor.
     ///
@@ -114,15 +119,15 @@ struct Args {
     /// separate writable `Account<TokenAccount>`s. Anchor refuses two mutable accounts with the
     /// same key, so paying an investor who *is* the treasury cannot work. Three wallets is also
     /// the honest picture: you can watch principal, profit share and fee land in three places.
-    #[arg(long, default_value = "keys/nox-investor.json")]
+    #[arg(long, default_value = "keys/nox-investor.json", global = true)]
     investor_keypair: PathBuf,
     /// The trader. Created on first use and reused after, so a re-run builds on the same
     /// record rather than a fresh one.
-    #[arg(long, default_value = "keys/nox-trader.json")]
+    #[arg(long, default_value = "keys/nox-trader.json", global = true)]
     trader_keypair: PathBuf,
-    #[arg(long, default_value = "deployment.json")]
+    #[arg(long, default_value = "deployment.json", global = true)]
     deployment: PathBuf,
-    #[arg(long, default_value = "price-accounts.json")]
+    #[arg(long, default_value = "price-accounts.json", global = true)]
     price_accounts: PathBuf,
     /// Ignore the local map and use the one the poster publishes.
     ///
@@ -130,20 +135,20 @@ struct Args {
     /// regenerates its accounts — and a stale copy names an address nobody posts to, which
     /// reads as "the price is 5.8 days old" rather than as a wrong file.
     ///
-    /// `global` so it works on either side of the subcommand — typing it after `lifecycle` is
-    /// the natural thing to do, and an "unexpected argument" there would be a silly way to
-    /// lose a minute.
+    /// Like every other option here, `global` so it works on either side of the subcommand.
+    /// Typing `lifecycle --seq 1` is the natural thing to do, and "unexpected argument" is a
+    /// silly way to lose a minute — which it was, twice, before they were all made global.
     #[arg(long, global = true)]
     refresh_prices: bool,
     /// Which market to trade. Must be listed, `Active`, and inside its session.
-    #[arg(long, default_value = "BTC/USD")]
+    #[arg(long, default_value = "BTC/USD", global = true)]
     market: String,
     /// The mandate's principal, in whole USDC. Moved from the investor into the mandate's vault
     /// by `fund_mandate` itself.
-    #[arg(long, default_value_t = 200)]
+    #[arg(long, default_value_t = 200, global = true)]
     principal: u64,
     /// Distinguishes several mandates from the same investor to the same trader.
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = 0, global = true)]
     seq: u8,
     #[command(subcommand)]
     cmd: Cmd,
