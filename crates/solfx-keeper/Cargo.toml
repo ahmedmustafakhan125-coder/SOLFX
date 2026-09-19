@@ -48,6 +48,12 @@ path = "src/bin/admin.rs"
 name = "authority"
 path = "src/bin/authority.rs"
 
+# Runs a whole NOXFUNDS mandate against a live cluster: profile, funded mandate, a trade with
+# its stop, the equity crank, close and settlement. What turns "deployed" into "works here".
+[[bin]]
+name = "nox"
+path = "src/bin/nox.rs"
+
 [dependencies]
 solfx-math = { path = "../solfx-math" }
 solfx-core = { path = "../../programs/solfx-core", features = ["no-entrypoint"] }

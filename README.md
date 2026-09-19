@@ -74,6 +74,15 @@ Live on devnet and initialised. What is built, and tested by 77 of the tests bel
 | Settlement | Principal first, 5 % of gross, then 70/30 — and **permissionless**, so an investor never waits on the trader or the operator |
 | Wind-down | A breached mandate reaches settlement with neither the trader nor the operator cooperating |
 
+Run a whole mandate against devnet — profile, funded mandate, a trade with its stop, the
+equity crank, close and settlement — and read the accounts it leaves behind:
+
+```bash
+cargo run -p solfx-keeper --bin nox -- lifecycle             # plan and simulate, send nothing
+cargo run -p solfx-keeper --bin nox -- lifecycle --execute
+cargo run -p solfx-keeper --bin nox -- status
+```
+
 **Not built yet:** the evaluation engine (paper-trading challenge before funding) and the web
 surfaces. Traders are funded directly for now.
 
