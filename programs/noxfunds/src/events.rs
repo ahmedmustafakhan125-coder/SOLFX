@@ -261,3 +261,53 @@ pub struct OfferAccepted {
     pub principal: u64,
     pub timestamp: i64,
 }
+
+/// A trader said no to an offer. The reason is on the offer, in `reply`.
+#[event]
+pub struct OfferDeclined {
+    pub offer: Pubkey,
+    pub investor: Pubkey,
+    pub trader: Pubkey,
+    pub timestamp: i64,
+}
+
+/// An investor advertised capital, or edited the advertisement.
+#[event]
+pub struct InvestorListingPosted {
+    pub investor: Pubkey,
+    pub listing: Pubkey,
+    pub min_principal: u64,
+    pub max_principal: u64,
+    pub allowed_markets: u128,
+    pub offered_split_bps: u16,
+    pub timestamp: i64,
+}
+
+/// An investor stopped advertising. No new requests can reach them until they reopen.
+#[event]
+pub struct InvestorListingClosed {
+    pub investor: Pubkey,
+    pub listing: Pubkey,
+    pub timestamp: i64,
+}
+
+/// A trader asked an investor for capital.
+#[event]
+pub struct RequestPosted {
+    pub request: Pubkey,
+    pub trader: Pubkey,
+    pub investor: Pubkey,
+    pub wanted_principal: u64,
+    pub wanted_split_bps: u16,
+    pub timestamp: i64,
+}
+
+/// A request was withdrawn by the trader or dismissed by the investor. `closed_by` says which.
+#[event]
+pub struct RequestClosed {
+    pub request: Pubkey,
+    pub trader: Pubkey,
+    pub investor: Pubkey,
+    pub closed_by: Pubkey,
+    pub timestamp: i64,
+}

@@ -262,4 +262,41 @@ pub mod noxfunds {
     pub fn accept_offer(ctx: Context<AcceptOffer>) -> Result<()> {
         instructions::marketplace::accept_offer(ctx)
     }
+
+    /// Say no to an offer, with a reason. Moves no money; the investor revokes to reclaim it.
+    pub fn decline_offer(ctx: Context<DeclineOffer>, reason: String) -> Result<()> {
+        instructions::marketplace::decline_offer(ctx, reason)
+    }
+
+    /// Advertise capital, so traders can find an investor and send a request.
+    pub fn post_investor_listing(
+        ctx: Context<PostInvestorListing>,
+        terms: InvestorListingTerms,
+    ) -> Result<()> {
+        instructions::marketplace::post_investor_listing(ctx, terms)
+    }
+
+    /// Edit an investor's advertisement, or open and close it.
+    pub fn update_investor_listing(
+        ctx: Context<UpdateInvestorListing>,
+        terms: InvestorListingTerms,
+        open: bool,
+    ) -> Result<()> {
+        instructions::marketplace::update_investor_listing(ctx, terms, open)
+    }
+
+    /// Ask an investor with an open listing for capital. Carries no money.
+    pub fn post_request(
+        ctx: Context<PostRequest>,
+        wanted_principal: u64,
+        wanted_split_bps: u16,
+        note: String,
+    ) -> Result<()> {
+        instructions::marketplace::post_request(ctx, wanted_principal, wanted_split_bps, note)
+    }
+
+    /// Withdraw (trader) or dismiss (investor) a request. The rent goes back to the trader.
+    pub fn close_request(ctx: Context<CloseRequest>) -> Result<()> {
+        instructions::marketplace::close_request(ctx)
+    }
 }

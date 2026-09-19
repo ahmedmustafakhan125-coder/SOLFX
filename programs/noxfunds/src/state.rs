@@ -789,6 +789,12 @@ pub enum OfferState {
     Accepted,
     /// The investor took it back. Terminal.
     Revoked,
+    /// The trader said no, with a reason in `MandateOffer::reply`. The principal is still in
+    /// escrow and the investor revokes to take it back — declining never moves money, so a
+    /// trader cannot use it to strand or redirect anyone's capital.
+    ///
+    /// Appended rather than inserted: the variant order is the on-chain discriminant.
+    Declined,
 }
 
 /// An investor's escrowed proposal to one trader, at `["offer", investor, trader, seq]`.
@@ -835,6 +841,13 @@ pub struct MandateOffer {
     pub created_at: i64,
     pub bump: u8,
     pub vault_bump: u8,
+
+    /// The trader's answer when they decline. Empty otherwise.
+    ///
+    /// On the offer rather than in an account of its own, so the reason is read in the same
+    /// place as the terms it refers to, and so declining costs the trader no rent.
+    pub reply: [u8; MAX_NOTE_LEN],
+    pub reply_len: u8,
     pub _reserved: [u8; 32],
 }
 
@@ -851,4 +864,56 @@ impl MandateOffer {
             None => "",
         }
     }
+}
+
+/// An investor advertising capital, at `["inv_listing", investor]`.
+///
+/// The mirror of `TraderListing`. It commits nothing and escrows nothing — the binding step is
+/// still an offer with the capital locked behind it. It exists so a trader browsing the
+/// marketplace can find investors, and so a trader has a legitimate address to send a
+/// `FundingRequest` to: requests are only accepted by an investor with an open listing.
+#[account]
+#[derive(InitSpace)]
+pub struct InvestorListing {
+    pub investor: Pubkey,
+
+    /// The band of principal this investor is prepared to put behind one trader.
+    pub min_principal: u64,
+    pub max_principal: u64,
+
+    // --- the terms on offer. Advisory: the binding numbers are on the offer itself. --------
+    pub max_drawdown_bps: u16,
+    pub max_risk_per_trade_bps: u16,
+    pub allowed_markets: u128,
+    pub offered_split_bps: u16,
+
+    pub note: [u8; MAX_NOTE_LEN],
+    pub note_len: u8,
+    pub open: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub bump: u8,
+    pub _reserved: [u8; 32],
+}
+
+/// A trader asking one investor for capital, at `["request", trader, investor]`.
+///
+/// The trader-initiated half of the conversation. It carries no money; the investor answers by
+/// posting a `MandateOffer`, which is the only thing that can bind either of them. One open
+/// request per pair — the seeds make a second one impossible, so a trader cannot flood an
+/// investor's inbox with copies.
+///
+/// The trader pays the rent and always gets it back, whichever side closes it.
+#[account]
+#[derive(InitSpace)]
+pub struct FundingRequest {
+    pub trader: Pubkey,
+    pub investor: Pubkey,
+    pub wanted_principal: u64,
+    pub wanted_split_bps: u16,
+    pub note: [u8; MAX_NOTE_LEN],
+    pub note_len: u8,
+    pub created_at: i64,
+    pub bump: u8,
+    pub _reserved: [u8; 16],
 }

@@ -69,6 +69,10 @@ pub const LISTING_SEED: &[u8] = b"listing";
 pub const OFFER_SEED: &[u8] = b"offer";
 /// The offer's USDC escrow — `["offer_vault", offer]`.
 pub const OFFER_VAULT_SEED: &[u8] = b"offer_vault";
+/// `InvestorListing` — `["inv_listing", investor]`. An investor advertising capital.
+pub const INVESTOR_LISTING_SEED: &[u8] = b"inv_listing";
+/// `FundingRequest` — `["request", trader, investor]`. A trader asking one investor for capital.
+pub const REQUEST_SEED: &[u8] = b"request";
 
 /// How long a note on a listing or an offer may be, in bytes.
 ///

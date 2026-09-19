@@ -127,6 +127,24 @@ fn terms() -> ListingTerms {
     }
 }
 
+/// Assert a refusal, and that it is refused for the right reason.
+///
+/// `expect_err` alone passes on *any* failure — a missing account or a wrong seed would look
+/// exactly like the rule working. Each refusal here names the one code it actually produces.
+///
+/// Measured, not assumed: where the signer's key is part of an account's seeds, a stranger is
+/// stopped by `ConstraintSeeds` and the named check behind it (`NotTheOfferTrader`,
+/// `NotTheListingInvestor`) never runs. Those checks stay as a second layer, but the tests assert
+/// the layer that does the work. Likewise a second acceptance dies on the mandate account already
+/// existing, before `OfferNotOpen` is reached.
+fn refused(r: TestResult, any_of: &[&str]) {
+    let err = r.expect_err("expected a refusal");
+    assert!(
+        any_of.iter().any(|c| err.contains(c)),
+        "refused, but not for {any_of:?}:\n{err}"
+    );
+}
+
 struct Market {
     env: Env,
     investor: solana_keypair::Keypair,
@@ -339,8 +357,9 @@ fn a_listing_cannot_ask_for_the_entire_profit() {
     let mut m = setup();
     let mut t = terms();
     t.wanted_split_bps = 10_000;
-    m.post_listing(t)
-        .expect_err("a 100% split leaves the investor bearing loss for no gain");
+    // a 100% split leaves the investor bearing loss for no gain
+
+    refused(m.post_listing(t), &["InvalidListingTerms"]);
 }
 
 #[test]
@@ -349,7 +368,9 @@ fn a_listing_cannot_invert_its_own_principal_band() {
     let mut t = terms();
     t.min_principal = 50_000 * ONE_USDC;
     t.max_principal = 1_000 * ONE_USDC;
-    m.post_listing(t).expect_err("max below min is incoherent");
+    // max below min is incoherent
+
+    refused(m.post_listing(t), &["InvalidListingTerms"]);
 }
 
 #[test]
@@ -357,8 +378,9 @@ fn a_note_longer_than_the_field_is_refused_rather_than_truncated() {
     let mut m = setup();
     let mut t = terms();
     t.note = "x".repeat(noxfunds::constants::MAX_NOTE_LEN + 1);
-    m.post_listing(t)
-        .expect_err("truncating could cut a multi-byte character in half");
+    // truncating could cut a multi-byte character in half
+
+    refused(m.post_listing(t), &["NoteTooLong"]);
 }
 
 // --- the escrow --------------------------------------------------------------------------
@@ -411,7 +433,9 @@ fn an_expired_offer_can_still_be_revoked_but_not_accepted() {
 
     m.env.advance_clock(HOUR + 1);
 
-    m.accept(0).expect_err("the offer has expired");
+    // the offer has expired
+
+    refused(m.accept(0), &["OfferExpired"]);
     // The other half matters more: expiry must never be a way to strand an investor's money.
     m.revoke(0).expect("expiry does not trap the capital");
     assert_eq!(m.offer(0).state, OfferState::Revoked);
@@ -423,16 +447,18 @@ fn a_revoked_offer_cannot_be_revoked_twice() {
     let expiry = m.env.now + HOUR;
     m.post_offer(0, PRINCIPAL, expiry, "").unwrap();
     m.revoke(0).unwrap();
-    m.revoke(0)
-        .expect_err("a second revoke would drain an empty vault");
+    // a second revoke would drain an empty vault
+
+    refused(m.revoke(0), &["OfferNotOpen"]);
 }
 
 #[test]
 fn an_offer_cannot_be_posted_with_an_expiry_already_in_the_past() {
     let mut m = setup();
     let past = m.env.now - 1;
-    m.post_offer(0, PRINCIPAL, past, "")
-        .expect_err("an offer nobody could ever accept is not an offer");
+    // an offer nobody could ever accept is not an offer
+
+    refused(m.post_offer(0, PRINCIPAL, past, ""), &["OfferExpired"]);
 }
 
 #[test]
@@ -440,8 +466,12 @@ fn an_investor_cannot_offer_capital_they_do_not_hold() {
     let mut m = setup();
     let expiry = m.env.now + HOUR;
     let too_much = support::INVESTOR_START + 1;
-    m.post_offer(0, too_much, expiry, "")
-        .expect_err("the principal has to actually exist");
+    // the principal has to actually exist
+
+    refused(
+        m.post_offer(0, too_much, expiry, ""),
+        &["InsufficientPrincipal"],
+    );
 }
 
 // --- acceptance --------------------------------------------------------------------------
@@ -521,8 +551,9 @@ fn only_the_addressed_trader_may_accept() {
     let admin = m.env.admin.insecure_clone();
     create_profile(&mut m.env, &admin, &interloper.pubkey());
 
-    m.accept_as(&interloper, 0)
-        .expect_err("an offer is addressed, not open to whoever gets there first");
+    // an offer is addressed, not open to whoever gets there first
+
+    refused(m.accept_as(&interloper, 0), &["ConstraintSeeds"]);
 
     assert_eq!(m.offer(0).state, OfferState::Open);
 }
@@ -534,8 +565,9 @@ fn an_accepted_offer_cannot_then_be_revoked() {
     m.post_offer(0, PRINCIPAL, expiry, "").unwrap();
     m.accept(0).unwrap();
 
-    m.revoke(0)
-        .expect_err("the trader has signed; the capital is committed");
+    // the trader has signed; the capital is committed
+
+    refused(m.revoke(0), &["OfferNotOpen"]);
 }
 
 #[test]
@@ -544,8 +576,9 @@ fn an_offer_cannot_be_accepted_twice() {
     let expiry = m.env.now + HOUR;
     m.post_offer(0, PRINCIPAL, expiry, "").unwrap();
     m.accept(0).unwrap();
-    m.accept(0)
-        .expect_err("the mandate already exists and the escrow is empty");
+    // the mandate already exists and the escrow is empty
+
+    refused(m.accept(0), &["already in use"]);
 }
 
 #[test]
@@ -553,8 +586,12 @@ fn an_offer_above_the_traders_tier_ceiling_is_refused() {
     let mut m = setup();
     let expiry = m.env.now + HOUR;
     // Bronze tops out at $10,000, and a new profile is Bronze.
-    m.post_offer(0, 20_000 * ONE_USDC, expiry, "")
-        .expect_err("the tier bounds the mandate before the capital moves");
+    // the tier bounds the mandate before the capital moves
+
+    refused(
+        m.post_offer(0, 20_000 * ONE_USDC, expiry, ""),
+        &["MandateExceedsTierLimit"],
+    );
 }
 
 // --- the griefing regression ---------------------------------------------------------------
@@ -590,4 +627,344 @@ fn a_stranger_cannot_brick_an_offer_by_paying_into_its_vault() {
     // to `PRINCIPAL`, so `PRINCIPAL` is what the trader gets to trade.
     assert_eq!(m.env.token_balance(&vault), dust);
     let _ = before;
+}
+
+// --- the conversation -------------------------------------------------------------------------
+
+fn investor_listing_pda(investor: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            noxfunds::constants::INVESTOR_LISTING_SEED,
+            investor.as_ref(),
+        ],
+        &noxfunds::ID,
+    )
+    .0
+}
+fn request_pda(trader: &Pubkey, investor: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            noxfunds::constants::REQUEST_SEED,
+            trader.as_ref(),
+            investor.as_ref(),
+        ],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+fn investor_terms() -> noxfunds::instructions::marketplace::InvestorListingTerms {
+    noxfunds::instructions::marketplace::InvestorListingTerms {
+        min_principal: 1_000 * ONE_USDC,
+        max_principal: 25_000 * ONE_USDC,
+        max_drawdown_bps: 600,
+        max_risk_per_trade_bps: 100,
+        allowed_markets: MARKET_0,
+        offered_split_bps: 7_000,
+        note: "Looking for patient FX swing traders.".to_string(),
+    }
+}
+
+impl Market {
+    fn decline_as(&mut self, who: &solana_keypair::Keypair, seq: u8, reason: &str) -> TestResult {
+        let offer = offer_pda(&self.investor.pubkey(), &self.trader.pubkey(), seq);
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::DeclineOffer {
+                trader: who.pubkey(),
+                offer,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::DeclineOffer {
+                reason: reason.to_string(),
+            }
+            .data(),
+        };
+        self.env.send(ix, &[who])
+    }
+
+    fn decline(&mut self, seq: u8, reason: &str) -> TestResult {
+        let trader = self.trader.insecure_clone();
+        self.decline_as(&trader, seq, reason)
+    }
+
+    fn post_investor_listing(
+        &mut self,
+        t: noxfunds::instructions::marketplace::InvestorListingTerms,
+    ) -> TestResult {
+        let investor = self.investor.insecure_clone();
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::PostInvestorListing {
+                investor: investor.pubkey(),
+                config: config_pda(),
+                listing: investor_listing_pda(&investor.pubkey()),
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::PostInvestorListing { terms: t }.data(),
+        };
+        self.env.send(ix, &[&investor])
+    }
+
+    fn update_investor_listing_as(
+        &mut self,
+        who: &solana_keypair::Keypair,
+        t: noxfunds::instructions::marketplace::InvestorListingTerms,
+        open: bool,
+    ) -> TestResult {
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::UpdateInvestorListing {
+                investor: who.pubkey(),
+                config: config_pda(),
+                listing: investor_listing_pda(&self.investor.pubkey()),
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::UpdateInvestorListing { terms: t, open }.data(),
+        };
+        self.env.send(ix, &[who])
+    }
+
+    fn post_request(&mut self, principal: u64, note: &str) -> TestResult {
+        let trader = self.trader.insecure_clone();
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::PostRequest {
+                trader: trader.pubkey(),
+                config: config_pda(),
+                trader_profile: profile_pda(&trader.pubkey()),
+                investor_listing: investor_listing_pda(&self.investor.pubkey()),
+                request: request_pda(&trader.pubkey(), &self.investor.pubkey()),
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::PostRequest {
+                wanted_principal: principal,
+                wanted_split_bps: 7_000,
+                note: note.to_string(),
+            }
+            .data(),
+        };
+        self.env.send(ix, &[&trader])
+    }
+
+    fn close_request_as(&mut self, who: &solana_keypair::Keypair) -> TestResult {
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::CloseRequest {
+                closer: who.pubkey(),
+                trader: self.trader.pubkey(),
+                request: request_pda(&self.trader.pubkey(), &self.investor.pubkey()),
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::CloseRequest {}.data(),
+        };
+        self.env.send(ix, &[who])
+    }
+
+    fn lamports(&self, key: &Pubkey) -> u64 {
+        self.env.svm.get_account(key).map_or(0, |a| a.lamports)
+    }
+
+    fn stranger(&mut self) -> solana_keypair::Keypair {
+        let k = solana_keypair::Keypair::new();
+        self.env
+            .svm
+            .airdrop(&k.pubkey(), 10 * 1_000_000_000)
+            .unwrap();
+        k
+    }
+}
+
+#[test]
+fn a_trader_can_decline_with_a_reason_and_the_investor_still_gets_every_unit_back() {
+    let mut m = setup();
+    let before = m.env.token_balance(&m.investor_token);
+    let expiry = m.env.now + HOUR;
+    m.post_offer(0, PRINCIPAL, expiry, "10k, EUR/USD only")
+        .unwrap();
+
+    m.decline(0, "EUR/USD only is too narrow; I trade the yen crosses")
+        .expect("the addressed trader may refuse");
+
+    let o = m.offer(0);
+    assert_eq!(o.state, OfferState::Declined);
+    let len = usize::from(o.reply_len);
+    assert_eq!(
+        core::str::from_utf8(&o.reply[..len]).unwrap(),
+        "EUR/USD only is too narrow; I trade the yen crosses"
+    );
+    // Declining is a message, not a movement: the capital is still in escrow.
+    let offer = offer_pda(&m.investor.pubkey(), &m.trader.pubkey(), 0);
+    assert_eq!(m.env.token_balance(&offer_vault_pda(&offer)), PRINCIPAL);
+
+    m.revoke(0)
+        .expect("a declined offer must never strand the capital");
+    assert_eq!(m.env.token_balance(&m.investor_token), before);
+    assert_eq!(m.offer(0).state, OfferState::Revoked);
+}
+
+#[test]
+fn a_declined_offer_cannot_then_be_accepted() {
+    let mut m = setup();
+    let expiry = m.env.now + HOUR;
+    m.post_offer(0, PRINCIPAL, expiry, "").unwrap();
+    m.decline(0, "no thanks").unwrap();
+    // a refusal is final for that offer; the investor revises with a new one
+
+    refused(m.accept(0), &["OfferNotOpen"]);
+}
+
+#[test]
+fn only_the_addressed_trader_may_decline() {
+    let mut m = setup();
+    let expiry = m.env.now + HOUR;
+    m.post_offer(0, PRINCIPAL, expiry, "").unwrap();
+    let stranger = m.stranger();
+    // a stranger must not be able to kill someone else's offer
+
+    refused(m.decline_as(&stranger, 0, "griefing"), &["ConstraintSeeds"]);
+    assert_eq!(m.offer(0).state, OfferState::Open);
+}
+
+#[test]
+fn the_full_negotiation_loop_ends_in_a_funded_mandate() {
+    // offer → decline with reason → revised offer → accept. The conversation, end to end.
+    let mut m = setup();
+    let expiry = m.env.now + HOUR;
+    m.post_offer(0, PRINCIPAL, expiry, "first terms").unwrap();
+    m.decline(0, "split too low").unwrap();
+    m.revoke(0).unwrap();
+    m.post_offer(1, PRINCIPAL, expiry, "revised: see the split")
+        .unwrap();
+    m.accept(1).expect("the revised offer is accepted");
+
+    let mandate = mandate_pda(&m.investor.pubkey(), &m.trader.pubkey(), 1);
+    assert_eq!(
+        m.env.token_balance(&support::vault_pda(&mandate)),
+        PRINCIPAL
+    );
+}
+
+#[test]
+fn an_investor_advertises_and_the_terms_are_readable_by_anyone() {
+    let mut m = setup();
+    m.post_investor_listing(investor_terms()).unwrap();
+    let l: noxfunds::state::InvestorListing =
+        m.env.read(&investor_listing_pda(&m.investor.pubkey()));
+    assert_eq!(l.investor, m.investor.pubkey());
+    assert_eq!(l.max_principal, 25_000 * ONE_USDC);
+    assert_eq!(l.offered_split_bps, 7_000);
+    assert!(l.open);
+}
+
+#[test]
+fn an_investor_listing_cannot_allow_more_risk_per_trade_than_total_drawdown() {
+    let mut m = setup();
+    let mut t = investor_terms();
+    t.max_risk_per_trade_bps = 700; // above the 600 drawdown: one stop-out would breach
+                                    // incoherent terms are refused while they can still be edited
+
+    refused(m.post_investor_listing(t), &["InvalidListingTerms"]);
+}
+
+#[test]
+fn only_the_investor_may_edit_their_listing() {
+    let mut m = setup();
+    m.post_investor_listing(investor_terms()).unwrap();
+    let stranger = m.stranger();
+    // someone else's listing is not yours to close
+
+    refused(
+        m.update_investor_listing_as(&stranger, investor_terms(), false),
+        &["ConstraintSeeds"],
+    );
+}
+
+#[test]
+fn a_trader_can_request_capital_from_an_investor_who_is_listed() {
+    let mut m = setup();
+    m.post_investor_listing(investor_terms()).unwrap();
+    m.post_request(10_000 * ONE_USDC, "4 years EUR/USD, see my profile")
+        .expect("a listed investor can be asked");
+
+    let r: noxfunds::state::FundingRequest = m
+        .env
+        .read(&request_pda(&m.trader.pubkey(), &m.investor.pubkey()));
+    assert_eq!(r.trader, m.trader.pubkey());
+    assert_eq!(r.investor, m.investor.pubkey());
+    assert_eq!(r.wanted_principal, 10_000 * ONE_USDC);
+}
+
+#[test]
+fn a_trader_cannot_message_an_investor_who_has_not_listed() {
+    let mut m = setup();
+    // No listing exists. This is the anti-spam rule: no wallet can be messaged merely for
+    // existing.
+    // requests only reach investors who said they are looking
+
+    refused(
+        m.post_request(10_000 * ONE_USDC, "hi"),
+        &["AccountNotInitialized"],
+    );
+}
+
+#[test]
+fn closing_a_listing_shuts_the_door_to_new_requests() {
+    let mut m = setup();
+    m.post_investor_listing(investor_terms()).unwrap();
+    let investor = m.investor.insecure_clone();
+    m.update_investor_listing_as(&investor, investor_terms(), false)
+        .unwrap();
+    // a closed listing accepts no requests
+
+    refused(m.post_request(10_000 * ONE_USDC, "hi"), &["ListingNotOpen"]);
+}
+
+#[test]
+fn a_trader_cannot_send_the_same_investor_two_requests() {
+    let mut m = setup();
+    m.post_investor_listing(investor_terms()).unwrap();
+    m.post_request(10_000 * ONE_USDC, "first").unwrap();
+    // one open request per pair — no flooding an inbox with copies
+
+    refused(
+        m.post_request(10_000 * ONE_USDC, "again"),
+        &["already in use"],
+    );
+}
+
+#[test]
+fn an_investor_dismissing_a_request_returns_the_rent_to_the_trader() {
+    let mut m = setup();
+    m.post_investor_listing(investor_terms()).unwrap();
+    m.post_request(10_000 * ONE_USDC, "hi").unwrap();
+
+    let request = request_pda(&m.trader.pubkey(), &m.investor.pubkey());
+    let rent = m.lamports(&request);
+    let trader_before = m.lamports(&m.trader.pubkey());
+
+    let investor = m.investor.insecure_clone();
+    m.close_request_as(&investor)
+        .expect("the investor may dismiss a request made to them");
+
+    // The investor paid the fee for this transaction, so the trader's gain is exactly the rent.
+    assert_eq!(m.lamports(&m.trader.pubkey()), trader_before + rent);
+    // Closed: gone, or left with nothing in it.
+    assert_eq!(m.lamports(&request), 0);
+
+    // And the pair can talk again.
+    m.post_request(12_000 * ONE_USDC, "second try").unwrap();
+}
+
+#[test]
+fn a_stranger_cannot_close_someone_elses_request() {
+    let mut m = setup();
+    m.post_investor_listing(investor_terms()).unwrap();
+    m.post_request(10_000 * ONE_USDC, "hi").unwrap();
+    let stranger = m.stranger();
+    // only the two parties may end the exchange
+
+    refused(m.close_request_as(&stranger), &["NotARequestParty"]);
 }

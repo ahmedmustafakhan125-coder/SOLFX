@@ -100,6 +100,12 @@ pub enum NoxError {
     OfferNotOpen,
     #[msg("Offer has expired")]
     OfferExpired,
+    #[msg("Signer is not this listing's investor")]
+    NotTheListingInvestor,
+    #[msg("That listing is closed; it is not accepting requests")]
+    ListingNotOpen,
+    #[msg("Signer is neither the trader nor the investor on this request")]
+    NotARequestParty,
 }
 
 /// Map `solfx-math`'s errors onto this program's. Total and explicit, so adding a variant

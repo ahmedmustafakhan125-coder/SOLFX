@@ -38,16 +38,18 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
-    CONFIG_SEED, LISTING_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, MANDATE_VAULT_SEED, MAX_NOTE_LEN,
-    OFFER_SEED, OFFER_VAULT_SEED, TRADER_SEED,
+    CONFIG_SEED, INVESTOR_LISTING_SEED, LISTING_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED,
+    MANDATE_VAULT_SEED, MAX_NOTE_LEN, OFFER_SEED, OFFER_VAULT_SEED, REQUEST_SEED, TRADER_SEED,
 };
 use crate::errors::NoxError;
 use crate::events::{
-    ListingClosed, ListingPosted, MandateFunded, OfferAccepted, OfferPosted, OfferRevoked,
+    InvestorListingClosed, InvestorListingPosted, ListingClosed, ListingPosted, MandateFunded,
+    OfferAccepted, OfferDeclined, OfferPosted, OfferRevoked, RequestClosed, RequestPosted,
 };
 use crate::instructions::investor::MandateRules;
 use crate::state::{
-    Mandate, MandateOffer, MandateState, NoxConfig, OfferState, TraderListing, TraderProfile,
+    FundingRequest, InvestorListing, Mandate, MandateOffer, MandateState, NoxConfig, OfferState,
+    TraderListing, TraderProfile,
 };
 
 /// Copy a caller-supplied note into a fixed-size field.
@@ -396,8 +398,12 @@ pub struct RevokeOffer<'info> {
 /// theirs until a trader has actually signed for it. Deliberately not gated on the pause flag:
 /// a paused protocol must never be able to strand an investor's money in an escrow.
 pub fn revoke_offer(ctx: Context<RevokeOffer>) -> Result<()> {
+    // `Declined` as well as `Open`: a trader saying no must never leave the capital stuck.
     require!(
-        ctx.accounts.offer.state == OfferState::Open,
+        matches!(
+            ctx.accounts.offer.state,
+            OfferState::Open | OfferState::Declined
+        ),
         NoxError::OfferNotOpen
     );
 
@@ -636,4 +642,313 @@ fn release_escrow(ctx: &Context<AcceptOffer>, amount: u64) -> Result<()> {
         amount,
         ctx.accounts.usdc_mint.decimals,
     )
+}
+
+// --- the conversation: declining, investor listings, and requests ------------------------
+//
+// Every message below is a typed object tied to a real step, never free text on its own:
+//
+//   investor → trader   an offer (escrowed)         → accept, or decline with a reason
+//   trader → investor   a request (to a listing)    → answered with an offer, or closed
+//
+// That closes the loop — offer, decline with reason, revised offer, accept — without a channel
+// anyone can write arbitrary text into, and every object here is bounded, attributable and
+// closable by the side that paid for it.
+
+#[derive(Accounts)]
+pub struct DeclineOffer<'info> {
+    pub trader: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [OFFER_SEED, offer.investor.as_ref(), trader.key().as_ref(), &[offer.seq]],
+        bump = offer.bump,
+        constraint = offer.trader == trader.key() @ NoxError::NotTheOfferTrader,
+    )]
+    pub offer: Box<Account<'info, MandateOffer>>,
+}
+
+/// Say no to an offer, and say why.
+///
+/// Moves no money: the principal stays in escrow until the investor revokes, which they always
+/// can. So declining is a message and nothing more, and a trader cannot use it to strand or
+/// redirect anyone's capital.
+///
+/// Not gated on the pause flag. A pause stops new commitments; a refusal only removes one.
+pub fn decline_offer(ctx: Context<DeclineOffer>, reason: String) -> Result<()> {
+    require!(
+        ctx.accounts.offer.state == OfferState::Open,
+        NoxError::OfferNotOpen
+    );
+
+    let now = Clock::get()?.unix_timestamp;
+    let o = &mut ctx.accounts.offer;
+    o.reply_len = store_note(&reason, &mut o.reply)?;
+    o.state = OfferState::Declined;
+
+    emit!(OfferDeclined {
+        offer: o.key(),
+        investor: o.investor,
+        trader: o.trader,
+        timestamp: now,
+    });
+    Ok(())
+}
+
+/// What an investor advertises. Advisory throughout: the binding numbers are on the offer.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct InvestorListingTerms {
+    pub min_principal: u64,
+    pub max_principal: u64,
+    pub max_drawdown_bps: u16,
+    pub max_risk_per_trade_bps: u16,
+    pub allowed_markets: u128,
+    pub offered_split_bps: u16,
+    pub note: String,
+}
+
+fn validate_investor_terms(t: &InvestorListingTerms) -> Result<()> {
+    require!(t.min_principal > 0, NoxError::InvalidListingTerms);
+    require!(
+        t.max_principal >= t.min_principal,
+        NoxError::InvalidListingTerms
+    );
+    require!(t.allowed_markets != 0, NoxError::InvalidListingTerms);
+    require!(
+        t.max_drawdown_bps > 0 && u64::from(t.max_drawdown_bps) <= crate::constants::BPS,
+        NoxError::InvalidListingTerms
+    );
+    // Risk per trade above the drawdown limit is incoherent — one stop-out would breach it —
+    // the same rule `MandateRules::validate` applies to the binding version.
+    require!(
+        t.max_risk_per_trade_bps > 0 && t.max_risk_per_trade_bps <= t.max_drawdown_bps,
+        NoxError::InvalidListingTerms
+    );
+    require!(
+        t.offered_split_bps > 0 && u64::from(t.offered_split_bps) < crate::constants::BPS,
+        NoxError::InvalidListingTerms
+    );
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct PostInvestorListing<'info> {
+    #[account(mut)]
+    pub investor: Signer<'info>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, NoxConfig>>,
+
+    #[account(
+        init,
+        payer = investor,
+        space = 8 + InvestorListing::INIT_SPACE,
+        seeds = [INVESTOR_LISTING_SEED, investor.key().as_ref()],
+        bump,
+    )]
+    pub listing: Box<Account<'info, InvestorListing>>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn post_investor_listing(
+    ctx: Context<PostInvestorListing>,
+    terms: InvestorListingTerms,
+) -> Result<()> {
+    require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
+    validate_investor_terms(&terms)?;
+
+    let now = Clock::get()?.unix_timestamp;
+    let l = &mut ctx.accounts.listing;
+    l.investor = ctx.accounts.investor.key();
+    write_investor_terms(l, &terms)?;
+    l.open = true;
+    l.created_at = now;
+    l.updated_at = now;
+    l.bump = ctx.bumps.listing;
+
+    emit!(InvestorListingPosted {
+        investor: l.investor,
+        listing: l.key(),
+        min_principal: l.min_principal,
+        max_principal: l.max_principal,
+        allowed_markets: l.allowed_markets,
+        offered_split_bps: l.offered_split_bps,
+        timestamp: now,
+    });
+    Ok(())
+}
+
+fn write_investor_terms(l: &mut InvestorListing, t: &InvestorListingTerms) -> Result<()> {
+    l.min_principal = t.min_principal;
+    l.max_principal = t.max_principal;
+    l.max_drawdown_bps = t.max_drawdown_bps;
+    l.max_risk_per_trade_bps = t.max_risk_per_trade_bps;
+    l.allowed_markets = t.allowed_markets;
+    l.offered_split_bps = t.offered_split_bps;
+    l.note_len = store_note(&t.note, &mut l.note)?;
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct UpdateInvestorListing<'info> {
+    pub investor: Signer<'info>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, NoxConfig>>,
+
+    #[account(
+        mut,
+        seeds = [INVESTOR_LISTING_SEED, investor.key().as_ref()],
+        bump = listing.bump,
+        has_one = investor @ NoxError::NotTheListingInvestor,
+    )]
+    pub listing: Box<Account<'info, InvestorListing>>,
+}
+
+/// Edit the terms, or open and close the listing. Closing keeps the account, as for traders.
+pub fn update_investor_listing(
+    ctx: Context<UpdateInvestorListing>,
+    terms: InvestorListingTerms,
+    open: bool,
+) -> Result<()> {
+    require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
+    validate_investor_terms(&terms)?;
+
+    let now = Clock::get()?.unix_timestamp;
+    let l = &mut ctx.accounts.listing;
+    let was_open = l.open;
+    write_investor_terms(l, &terms)?;
+    l.open = open;
+    l.updated_at = now;
+
+    if was_open && !open {
+        emit!(InvestorListingClosed {
+            investor: l.investor,
+            listing: l.key(),
+            timestamp: now,
+        });
+    } else {
+        emit!(InvestorListingPosted {
+            investor: l.investor,
+            listing: l.key(),
+            min_principal: l.min_principal,
+            max_principal: l.max_principal,
+            allowed_markets: l.allowed_markets,
+            offered_split_bps: l.offered_split_bps,
+            timestamp: now,
+        });
+    }
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct PostRequest<'info> {
+    #[account(mut)]
+    pub trader: Signer<'info>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, NoxConfig>>,
+
+    /// Required, so the investor reading the request can read a real track record beside it.
+    #[account(
+        seeds = [TRADER_SEED, trader.key().as_ref()],
+        bump = trader_profile.bump,
+        constraint = trader_profile.authority == trader.key() @ NoxError::ProfileMismatch,
+    )]
+    pub trader_profile: Box<Account<'info, TraderProfile>>,
+
+    /// The investor's listing, which must be open.
+    ///
+    /// This is the anti-spam rule. A request can only go to an investor who has publicly said
+    /// they are looking, so no wallet can be messaged merely for existing — and closing the
+    /// listing is how an investor shuts the door.
+    #[account(
+        seeds = [INVESTOR_LISTING_SEED, investor_listing.investor.as_ref()],
+        bump = investor_listing.bump,
+    )]
+    pub investor_listing: Box<Account<'info, InvestorListing>>,
+
+    /// One open request per pair. The seeds make a duplicate impossible, so a trader cannot
+    /// flood an inbox with copies of the same ask.
+    #[account(
+        init,
+        payer = trader,
+        space = 8 + FundingRequest::INIT_SPACE,
+        seeds = [REQUEST_SEED, trader.key().as_ref(), investor_listing.investor.as_ref()],
+        bump,
+    )]
+    pub request: Box<Account<'info, FundingRequest>>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn post_request(
+    ctx: Context<PostRequest>,
+    wanted_principal: u64,
+    wanted_split_bps: u16,
+    note: String,
+) -> Result<()> {
+    require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
+    require!(ctx.accounts.investor_listing.open, NoxError::ListingNotOpen);
+    require!(wanted_principal > 0, NoxError::ZeroAmount);
+    require!(
+        wanted_split_bps > 0 && u64::from(wanted_split_bps) < crate::constants::BPS,
+        NoxError::InvalidListingTerms
+    );
+
+    let now = Clock::get()?.unix_timestamp;
+    let r = &mut ctx.accounts.request;
+    r.trader = ctx.accounts.trader.key();
+    r.investor = ctx.accounts.investor_listing.investor;
+    r.wanted_principal = wanted_principal;
+    r.wanted_split_bps = wanted_split_bps;
+    r.note_len = store_note(&note, &mut r.note)?;
+    r.created_at = now;
+    r.bump = ctx.bumps.request;
+
+    emit!(RequestPosted {
+        request: r.key(),
+        trader: r.trader,
+        investor: r.investor,
+        wanted_principal,
+        wanted_split_bps,
+        timestamp: now,
+    });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct CloseRequest<'info> {
+    /// Either party. The trader withdraws the ask; the investor dismisses it.
+    pub closer: Signer<'info>,
+
+    /// Where the rent goes: always back to the trader who paid it, whoever closes. An investor
+    /// dismissing a request must not be able to pocket the trader's deposit.
+    #[account(mut, address = request.trader @ NoxError::NotARequestParty)]
+    pub trader: SystemAccount<'info>,
+
+    #[account(
+        mut,
+        close = trader,
+        seeds = [REQUEST_SEED, request.trader.as_ref(), request.investor.as_ref()],
+        bump = request.bump,
+        constraint = closer.key() == request.trader || closer.key() == request.investor
+            @ NoxError::NotARequestParty,
+    )]
+    pub request: Box<Account<'info, FundingRequest>>,
+}
+
+/// Withdraw or dismiss a request. Not gated on the pause flag: it only removes a commitment.
+pub fn close_request(ctx: Context<CloseRequest>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let r = &ctx.accounts.request;
+    emit!(RequestClosed {
+        request: r.key(),
+        trader: r.trader,
+        investor: r.investor,
+        closed_by: ctx.accounts.closer.key(),
+        timestamp: now,
+    });
+    Ok(())
 }
