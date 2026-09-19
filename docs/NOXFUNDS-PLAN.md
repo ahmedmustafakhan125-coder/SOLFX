@@ -146,6 +146,8 @@ This is what makes custody safe with no new code in SolFX:
 Two consequences to budget for:
 - `position` is `init, payer = authority`, so the signing PDA must hold SOL. **Corrected
   (C3):** rent is `(128 + len) × 6,960` lamports — verified against `solana-rent 4.3.0`, and
+  *(superseded 2026-09-19: Agave 4.2 cuts rent in stages; devnet measured 5,080 lamports per
+  byte via `getMinimumBalanceForRentExemption`. The ratios below hold; the SOL figures shrink.)*
   invariant to SIMD-0194. `Position` is 245 data bytes → **2,596,080 lamports**;
   `TriggerOrder` is 165 → **2,039,280**. Because the stop-loss is mandatory, an open position
   costs **both**: **4,635,360 lamports (0.0046354 SOL)**, and a mandate at the three-position

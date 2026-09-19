@@ -21,7 +21,7 @@
 //!
 //! The terms are the message. What words remain ride in a bounded `note` on an account that
 //! already exists. Chat as account state would be public forever, unencrypted, individually
-//! rent-bearing at `(128 + len) × 6,960` lamports, and spammable by anyone willing to pay for an
+//! rent-bearing per message, and spammable by anyone willing to pay for an
 //! account — and none of that would make the binding part any more binding than the escrow
 //! already makes it.
 //!

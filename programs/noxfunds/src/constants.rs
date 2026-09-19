@@ -78,6 +78,7 @@ pub const REQUEST_SEED: &[u8] = b"request";
 ///
 /// Bounded, and deliberately short. A note is the one place the two sides put words on chain, and
 /// 180 bytes is enough for "EUR/JPY session trader, London hours, happy to start smaller" and far
-/// too little to be a chat log. Rent on a loader-v3 account is `(128 + len) × 6,960` lamports, so
-/// every byte offered here is a byte someone pays for permanently.
+/// too little to be a chat log. Every byte offered here is a byte someone deposits rent for, at
+/// `(128 + len) × rate` — the rate being cut in stages under Agave 4.2's rent reduction: 5,080
+/// lamports per byte on devnet as measured on 2026-09-19, down from 6,960.
 pub const MAX_NOTE_LEN: usize = 180;
