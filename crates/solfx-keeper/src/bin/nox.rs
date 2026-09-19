@@ -68,7 +68,8 @@ use solana_transaction::Transaction;
 use noxfunds::instructions::investor::MandateRules;
 use noxfunds::instructions::marketplace::ListingTerms;
 use noxfunds::state::{
-    Mandate, MandateOffer, MandateState, NoxConfig, OfferState, TraderListing, TraderProfile,
+    Evaluation, EvaluationState, Mandate, MandateOffer, MandateState, NoxConfig, OfferState,
+    TraderListing, TraderProfile, VirtualPosition,
 };
 use solfx_core::constants::{
     COLLATERAL_VAULT_SEED, FEE_VAULT_SEED, INSURANCE_FUND_SEED, INSURANCE_VAULT_SEED, LP_POOL_SEED,
@@ -183,6 +184,25 @@ enum Cmd {
     },
     /// What is on chain right now for this investor and trader.
     Status,
+    /// Stake $50 and trade a simulated account priced by SolFX's own code.
+    ///
+    /// Resumable: each run reads the evaluation and does the next thing it can — stake, open,
+    /// mark, and close once the ten-minute hold has passed on the **cluster's** clock. Sends
+    /// nothing without `--execute`. `--seq` numbers evaluations, separately from mandates.
+    Eval {
+        #[arg(long)]
+        execute: bool,
+        /// The simulated balance, in whole USDC. The program accepts 10,000 to 200,000.
+        #[arg(long, default_value_t = 10_000)]
+        account_size: u64,
+        /// Wait on the cluster clock for the minimum hold and then close. Without it, the run
+        /// reports how long is left and stops, so it can be re-run later.
+        #[arg(long)]
+        wait: bool,
+        /// Walk away: fail the evaluation, then send the stake to the treasury.
+        #[arg(long)]
+        abandon: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -598,6 +618,20 @@ async fn run(args: Args) -> Result<()> {
 
     match args.cmd {
         Cmd::Status => status(&rpc, &dep, &investor, &trader, &nox).await,
+        Cmd::Eval {
+            execute,
+            account_size,
+            wait,
+            abandon,
+        } => {
+            let opts = EvalOpts {
+                execute,
+                account_size,
+                wait,
+                abandon,
+            };
+            eval(&rpc, &args, &dep, &funder, &trader, &nox, opts).await
+        }
         Cmd::Lifecycle {
             execute,
             as_funder,
@@ -702,68 +736,13 @@ async fn lifecycle(
         );
     }
 
-    let entry = dep
-        .markets
-        .iter()
-        .find(|m| m.symbol.eq_ignore_ascii_case(&args.market))
-        .ok_or_else(|| {
-            anyhow!(
-                "{} is not in {}. Listed: {}",
-                args.market,
-                args.deployment.display(),
-                dep.markets
-                    .iter()
-                    .map(|m| m.symbol.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        })?;
-    let market_key = market_pda(entry.market_index);
-    let market = maybe::<Market>(rpc, &market_key)
-        .await?
-        .ok_or_else(|| anyhow!("market {} is not listed on this cluster", entry.symbol))?;
-    if market.status != MarketStatus::Active {
-        bail!(
-            "{} is {:?}, not Active — a trade would be refused",
-            entry.symbol,
-            market.status
-        );
-    }
-    if !session_is_open(&market, now()?) {
-        bail!(
-            "{} is outside its session. Only the continuous markets trade at the weekend.",
-            entry.symbol
-        );
-    }
-    // `lifecycle` plans, opens and cranks from one oracle account. A synthetic market's price is
-    // composed from two feeds, and a non-USD-quoted one needs a conversion leg, so neither can be
-    // priced — or marked — from a single account. Refused here, before step 1, because the
-    // alternative is worse than an error: steps 1–5 would fund a real mandate, and the open at
-    // step 6 would then fail and leave it stranded. The program marks these markets correctly;
-    // this client does not yet build their extra legs.
-    if matches!(market.price_source, PriceSource::Synthetic { .. })
-        || market.needs_quote_conversion()
-    {
-        bail!(
-            "{} needs more than one oracle leg (synthetic, or not quoted in USD). `nox lifecycle` \
-             builds single-leg trades only — use a direct USD market such as BTC/USD.",
-            entry.symbol
-        );
-    }
-
-    let prices = price_accounts(&args.price_accounts, args.refresh_prices).await?;
-    let price_update = *prices.get(&entry.symbol).ok_or_else(|| {
-        anyhow!(
-            "no price account for {} in the map — the poster has not published it",
-            entry.symbol
-        )
-    })?;
-    let price = oracle_price(rpc, &price_update).await.map_err(|e| {
-        anyhow!(
-            "{e}\n         the price account is {price_update}. If that is not the one the \
-             poster publishes, the local map is stale — re-run with --refresh-prices."
-        )
-    })?;
+    let Selected {
+        entry,
+        key: market_key,
+        market,
+        price_update,
+        price,
+    } = select_market(rpc, args, dep).await?;
 
     let plan = plan_trade(
         entry.market_index,
@@ -1210,6 +1189,523 @@ async fn lifecycle(
         "\n  mandate {} is on chain and readable by anyone.\n",
         nox.mandate
     );
+    Ok(())
+}
+
+/// A market this tool can trade, checked, with the oracle price it read.
+struct Selected<'a> {
+    entry: &'a MarketEntry,
+    key: Pubkey,
+    market: Market,
+    price_update: Pubkey,
+    price: i64,
+}
+
+/// Find `--market`, and refuse it here — before anything is sent — if a trade on it would be
+/// refused on chain: not `Active`, outside its session, or needing more than one oracle leg.
+///
+/// Shared by `lifecycle` and `eval`, so the two cannot disagree about what is tradeable.
+async fn select_market<'a>(
+    rpc: &RpcClient,
+    args: &Args,
+    dep: &'a Deployment,
+) -> Result<Selected<'a>> {
+    let entry = dep
+        .markets
+        .iter()
+        .find(|m| m.symbol.eq_ignore_ascii_case(&args.market))
+        .ok_or_else(|| {
+            anyhow!(
+                "{} is not in {}. Listed: {}",
+                args.market,
+                args.deployment.display(),
+                dep.markets
+                    .iter()
+                    .map(|m| m.symbol.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
+    let market_key = market_pda(entry.market_index);
+    let market = maybe::<Market>(rpc, &market_key)
+        .await?
+        .ok_or_else(|| anyhow!("market {} is not listed on this cluster", entry.symbol))?;
+    if market.status != MarketStatus::Active {
+        bail!(
+            "{} is {:?}, not Active — a trade would be refused",
+            entry.symbol,
+            market.status
+        );
+    }
+    if !session_is_open(&market, now()?) {
+        bail!(
+            "{} is outside its session. Only the continuous markets trade at the weekend.",
+            entry.symbol
+        );
+    }
+    // This tool plans, opens and cranks from one oracle account. A synthetic market's price is
+    // composed from two feeds, and a non-USD-quoted one needs a conversion leg, so neither can be
+    // priced — or marked — from a single account. Refused here, before step 1, because the
+    // alternative is worse than an error: steps 1–5 would fund a real mandate, and the open at
+    // step 6 would then fail and leave it stranded. An evaluation refuses them outright. The program marks these markets correctly;
+    // this client does not yet build their extra legs.
+    if matches!(market.price_source, PriceSource::Synthetic { .. })
+        || market.needs_quote_conversion()
+    {
+        bail!(
+            "{} needs more than one oracle leg (synthetic, or not quoted in USD). this tool \
+             builds single-leg trades only — use a direct USD market such as BTC/USD.",
+            entry.symbol
+        );
+    }
+
+    let prices = price_accounts(&args.price_accounts, args.refresh_prices).await?;
+    let price_update = *prices.get(&entry.symbol).ok_or_else(|| {
+        anyhow!(
+            "no price account for {} in the map — the poster has not published it",
+            entry.symbol
+        )
+    })?;
+    let price = oracle_price(rpc, &price_update).await.map_err(|e| {
+        anyhow!(
+            "{e}\n         the price account is {price_update}. If that is not the one the \
+             poster publishes, the local map is stale — re-run with --refresh-prices."
+        )
+    })?;
+
+    Ok(Selected {
+        entry,
+        key: market_key,
+        market,
+        price_update,
+        price,
+    })
+}
+
+// --- the evaluation: a stake and a simulated account -------------------------------------------
+
+/// The Clock sysvar. Named rather than imported so this binary needs no extra SDK crate for one
+/// address.
+const CLOCK_SYSVAR: Pubkey = solana_pubkey::pubkey!("SysvarC1ock11111111111111111111111111111111");
+
+/// The simulated trade's notional, in whole USDC: a tenth of the smallest account the program
+/// allows. Leverage 0.1x against BTC's 20x, and with the stop 100 bps below, risk of about 10 bps
+/// of the balance against the 100 bps limit — so a price that moves between planning and landing
+/// cannot take it over a limit, which is exactly what refused the first funded marketplace trade.
+const EVAL_NOTIONAL_USDC: u64 = 1_000;
+
+/// Every evaluation run trades one position, at nonce 0.
+const EVAL_NONCE: u8 = 0;
+
+struct EvalOpts {
+    execute: bool,
+    account_size: u64,
+    wait: bool,
+    abandon: bool,
+}
+
+fn eval_pda(trader: &Pubkey, seq: u8) -> Pubkey {
+    Pubkey::find_program_address(
+        &[noxfunds::constants::EVAL_SEED, trader.as_ref(), &[seq]],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+fn eval_vault_pda(evaluation: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[noxfunds::constants::EVAL_VAULT_SEED, evaluation.as_ref()],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+fn vpos_pda(evaluation: &Pubkey, market_index: u16, nonce: u8) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            noxfunds::constants::VPOS_SEED,
+            evaluation.as_ref(),
+            &market_index.to_le_bytes(),
+            &[nonce],
+        ],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+/// `unix_timestamp` out of the Clock sysvar's data: the fifth 8-byte field, at offset 32.
+///
+/// The layout is `slot, epoch_start_timestamp, epoch, leader_schedule_epoch, unix_timestamp`,
+/// 40 bytes, per the SDK's `Clock` and the Agave sysvar docs (both via the Solana MCP).
+fn clock_unix_timestamp(data: &[u8]) -> Result<i64> {
+    let bytes: [u8; 8] = data
+        .get(32..40)
+        .and_then(|b| b.try_into().ok())
+        .ok_or_else(|| anyhow!("the Clock sysvar is {} bytes, not 40", data.len()))?;
+    Ok(i64::from_le_bytes(bytes))
+}
+
+/// The cluster's time — what `Clock::get()` will return to the program — never the local clock.
+///
+/// The minimum hold is judged on chain against `Clock::unix_timestamp`, which is a stake-weighted
+/// estimate that may run ahead of or behind wall time (slots are bounded between 0.3 s and 1.0 s,
+/// not fixed at 0.4). A client that waited ten minutes by its own clock could close a few seconds
+/// early by the cluster's and be refused. Read at `confirmed`, which trails the bank a transaction
+/// executes in, so a hold that has elapsed here has elapsed there.
+async fn cluster_time(rpc: &RpcClient) -> Result<i64> {
+    let acct = rpc
+        .get_account(&CLOCK_SYSVAR)
+        .await
+        .context("reading the Clock sysvar")?;
+    clock_unix_timestamp(&acct.data)
+}
+
+fn eval_state_line(e: &Evaluation) -> String {
+    format!(
+        "{:?}, stage {}, balance {} of {}, {} trades ({}W/{}L), {} open",
+        e.state,
+        e.stage,
+        usdc(u64::try_from(e.balance.max(0)).unwrap_or(0)),
+        usdc(e.account_size),
+        e.trades,
+        e.wins,
+        e.losses,
+        e.open_positions
+    )
+}
+
+/// Stake, open a simulated position, mark it, and close it once the hold has passed.
+///
+/// ```text
+/// 1  funding           the trader gets the $50 stake and the rent
+/// 2  stake             start_evaluation — the only real money in an evaluation
+/// 3  simulated open    priced by SolFX's execution_price_for; nothing is filled
+/// 4  mark              eval_observe_equity, the permissionless crank
+/// 5  close             after 600 s on the cluster clock (--wait to wait for it)
+/// ```
+///
+/// `--abandon` instead fails the evaluation and sends the stake to the treasury.
+#[allow(clippy::too_many_lines)]
+async fn eval(
+    rpc: &RpcClient,
+    args: &Args,
+    dep: &Deployment,
+    funder: &Keypair,
+    trader: &Keypair,
+    nox: &Nox,
+    opts: EvalOpts,
+) -> Result<()> {
+    use noxfunds::constants::{EVAL_MAX_ACCOUNT, EVAL_MIN_ACCOUNT, EVAL_MIN_HOLD_SECS, EVAL_STAKE};
+
+    let config = maybe::<NoxConfig>(rpc, &nox.config)
+        .await?
+        .ok_or_else(|| anyhow!("NOXFUNDS is not initialised"))?;
+    if config.paused {
+        bail!("NOXFUNDS is paused");
+    }
+    let account_size = opts
+        .account_size
+        .checked_mul(ONE_USDC)
+        .ok_or_else(|| anyhow!("--account-size overflows"))?;
+    if !(EVAL_MIN_ACCOUNT..=EVAL_MAX_ACCOUNT).contains(&account_size) {
+        bail!(
+            "--account-size {} is outside the program's {}..={}",
+            opts.account_size,
+            usdc(EVAL_MIN_ACCOUNT),
+            usdc(EVAL_MAX_ACCOUNT)
+        );
+    }
+
+    let Selected {
+        entry,
+        key: market_key,
+        market,
+        price_update,
+        price,
+    } = select_market(rpc, args, dep).await?;
+
+    // The plan, from the same arithmetic as the program: size from notional at the oracle, stop
+    // 100 bps below.
+    let price_u = u128::try_from(price).map_err(|_| anyhow!("negative price"))?;
+    let size_base = u128::from(EVAL_NOTIONAL_USDC)
+        .checked_mul(u128::from(ONE_USDC))
+        .and_then(|v| v.checked_mul(NOTIONAL_DIVISOR))
+        .and_then(|v| v.checked_div(price_u))
+        .and_then(|v| u64::try_from(v).ok())
+        .ok_or_else(|| anyhow!("size overflows"))?;
+    if size_base < market.min_position_size || size_base > market.max_position_size {
+        bail!(
+            "{size_base} base units is outside {}'s bounds of {}..={}",
+            entry.symbol,
+            market.min_position_size,
+            market.max_position_size
+        );
+    }
+    let stop_price = price
+        .checked_sub(price.saturating_mul(100).checked_div(10_000).unwrap_or(0))
+        .ok_or_else(|| anyhow!("stop underflows"))?;
+
+    let evaluation = eval_pda(&trader.pubkey(), args.seq);
+    let stake_vault = eval_vault_pda(&evaluation);
+    let vpos = vpos_pda(&evaluation, entry.market_index, EVAL_NONCE);
+    let trader_token = ata(&trader.pubkey(), &dep.usdc_mint);
+
+    println!("\n  NOXFUNDS    {}", noxfunds::ID);
+    println!("  trader      {}", trader.pubkey());
+    println!("  evaluation  {evaluation}  (seq {})", args.seq);
+    println!(
+        "  market      {} (index {})",
+        entry.symbol, entry.market_index
+    );
+    println!("  oracle      {}", price_1e9(price));
+    println!(
+        "  plan        simulated account {}, one long of {} notional, stop {} (100 bps below)",
+        usdc(account_size),
+        usdc(EVAL_NOTIONAL_USDC.saturating_mul(ONE_USDC)),
+        price_1e9(stop_price)
+    );
+
+    let existing = maybe::<Evaluation>(rpc, &evaluation).await?;
+    if let Some(e) = &existing {
+        println!("  on chain    {}", eval_state_line(e));
+    }
+    if !opts.execute {
+        println!("\n  nothing sent. Re-run with --execute.\n");
+        return Ok(());
+    }
+
+    // --- 1 and 2: the stake --------------------------------------------------------------------
+    if existing.is_none() {
+        let held = token_balance(rpc, &trader_token).await;
+        let short = EVAL_STAKE.saturating_sub(held);
+        let mut setup = vec![create_ata_idempotent(
+            &funder.pubkey(),
+            &trader.pubkey(),
+            &dep.usdc_mint,
+        )];
+        if short > 0 {
+            let authority = read_mint_authority(rpc, &dep.usdc_mint).await?;
+            let funder_token = ata(&funder.pubkey(), &dep.usdc_mint);
+            if authority == Some(funder.pubkey()) {
+                setup.push(mint_to_ix(
+                    &dep.usdc_mint,
+                    &trader_token,
+                    &funder.pubkey(),
+                    short,
+                ));
+            } else if token_balance(rpc, &funder_token).await >= short {
+                setup.push(transfer_checked_ix(
+                    &funder_token,
+                    &dep.usdc_mint,
+                    &trader_token,
+                    &funder.pubkey(),
+                    short,
+                    USDC_DECIMALS,
+                ));
+            } else {
+                bail!(
+                    "the trader is {} short of the stake and the funder can neither mint nor cover it",
+                    usdc(short)
+                );
+            }
+        }
+        // Rent for the evaluation, its stake vault and the position, read from the cluster.
+        const TOKEN_ACCOUNT_LEN: usize = 165;
+        const FEE_MARGIN: u64 = 5_000_000;
+        let need = rpc
+            .get_minimum_balance_for_rent_exemption(8 + Evaluation::INIT_SPACE)
+            .await?
+            .saturating_add(
+                rpc.get_minimum_balance_for_rent_exemption(TOKEN_ACCOUNT_LEN)
+                    .await?,
+            )
+            .saturating_add(
+                rpc.get_minimum_balance_for_rent_exemption(8 + VirtualPosition::INIT_SPACE)
+                    .await?,
+            )
+            .saturating_add(FEE_MARGIN);
+        if rpc.get_balance(&trader.pubkey()).await? < need {
+            setup.push(transfer_ix(&funder.pubkey(), &trader.pubkey(), need));
+        }
+        simulate(rpc, &funder.pubkey(), &setup, "1 funding").await?;
+        step(rpc, funder, setup, 120_000, "1 funding").await?;
+
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::StartEvaluation {
+                trader: trader.pubkey(),
+                config: nox.config,
+                trader_profile: nox.profile,
+                evaluation,
+                usdc_mint: dep.usdc_mint,
+                trader_token,
+                stake_vault,
+                token_program: TOKEN_PROGRAM,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::StartEvaluation {
+                seq: args.seq,
+                account_size,
+            }
+            .data(),
+        };
+        checked_step(rpc, trader, ix, 80_000, "2 stake").await?;
+        println!(
+            "       stake vault holds {} — the only real money in an evaluation",
+            usdc(token_balance(rpc, &stake_vault).await)
+        );
+    } else {
+        println!("  1–2 stake       already held");
+    }
+
+    let e = maybe::<Evaluation>(rpc, &evaluation)
+        .await?
+        .ok_or_else(|| anyhow!("the evaluation {evaluation} is not on chain"))?;
+    if e.state != EvaluationState::Active {
+        println!("\n  finished: {}\n", eval_state_line(&e));
+        return Ok(());
+    }
+
+    // --- walking away ---------------------------------------------------------------------------
+    if opts.abandon {
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::AbandonEvaluation {
+                trader: trader.pubkey(),
+                evaluation,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::AbandonEvaluation {}.data(),
+        };
+        checked_step(rpc, trader, ix, 40_000, "abandon").await?;
+        let treasury_token = ata(&config.treasury, &dep.usdc_mint);
+        let before = token_balance(rpc, &treasury_token).await;
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::ForfeitStake {
+                caller: trader.pubkey(),
+                config: nox.config,
+                evaluation,
+                usdc_mint: dep.usdc_mint,
+                stake_vault,
+                treasury_token,
+                token_program: TOKEN_PROGRAM,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::ForfeitStake {}.data(),
+        };
+        checked_step(rpc, trader, ix, 60_000, "forfeit stake").await?;
+        println!(
+            "       treasury +{}, stake vault {}",
+            usdc(
+                token_balance(rpc, &treasury_token)
+                    .await
+                    .saturating_sub(before)
+            ),
+            usdc(token_balance(rpc, &stake_vault).await)
+        );
+        if let Some(e) = maybe::<Evaluation>(rpc, &evaluation).await? {
+            println!("\n  finished: {}\n", eval_state_line(&e));
+        }
+        return Ok(());
+    }
+
+    // --- 3. the simulated open ------------------------------------------------------------------
+    if maybe::<VirtualPosition>(rpc, &vpos).await?.is_none() {
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::EvalOpenPosition {
+                trader: trader.pubkey(),
+                config: nox.config,
+                evaluation,
+                virtual_position: vpos,
+                market: market_key,
+                price_update,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::EvalOpenPosition {
+                market_index: entry.market_index,
+                nonce: EVAL_NONCE,
+                direction: Direction::Long,
+                size_base,
+                stop_loss_price: stop_price,
+            }
+            .data(),
+        };
+        checked_step(rpc, trader, ix, 120_000, "3 simulated open").await?;
+    } else {
+        println!("  3 simulated open  already open");
+    }
+    let p = maybe::<VirtualPosition>(rpc, &vpos)
+        .await?
+        .ok_or_else(|| anyhow!("the simulated position {vpos} is not on chain"))?;
+    println!(
+        "       entry {}, notional {}, fee {} — priced by SolFX's own code, nothing filled",
+        price_1e9(p.entry_price),
+        usdc(p.entry_notional),
+        usdc(p.open_fee)
+    );
+
+    // --- 4. mark it ----------------------------------------------------------------------------
+    let mut metas = noxfunds::accounts::EvalObserveEquity {
+        observer: trader.pubkey(),
+        evaluation,
+    }
+    .to_account_metas(None);
+    metas.push(AccountMeta::new_readonly(vpos, false));
+    metas.push(AccountMeta::new_readonly(market_key, false));
+    metas.push(AccountMeta::new_readonly(price_update, false));
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: metas,
+        data: noxfunds::instruction::EvalObserveEquity {}.data(),
+    };
+    checked_step(rpc, trader, ix, 80_000, "4 mark").await?;
+    if let Some(e) = maybe::<Evaluation>(rpc, &evaluation).await? {
+        println!(
+            "       equity {} against a peak of {}",
+            usdc(e.last_equity),
+            usdc(e.peak_equity)
+        );
+    }
+
+    // --- 5. close, once the hold has passed on the cluster's clock ------------------------------
+    loop {
+        let held = cluster_time(rpc).await?.saturating_sub(p.opened_at);
+        if held >= EVAL_MIN_HOLD_SECS {
+            break;
+        }
+        let left = EVAL_MIN_HOLD_SECS.saturating_sub(held);
+        if !opts.wait {
+            println!(
+                "\n  held {held} s of {EVAL_MIN_HOLD_SECS} on the cluster clock. Re-run in {left} s \
+                 to close, or pass --wait.\n"
+            );
+            return Ok(());
+        }
+        println!("  5 close         waiting — {held}/{EVAL_MIN_HOLD_SECS} s on the cluster clock");
+        let pause = u64::try_from(left.clamp(1, 30)).unwrap_or(30);
+        tokio::time::sleep(std::time::Duration::from_secs(pause)).await;
+    }
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::EvalClosePosition {
+            trader: trader.pubkey(),
+            evaluation,
+            virtual_position: vpos,
+            market: market_key,
+            price_update,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::EvalClosePosition {}.data(),
+    };
+    checked_step(rpc, trader, ix, 120_000, "5 close").await?;
+    if let Some(e) = maybe::<Evaluation>(rpc, &evaluation).await? {
+        println!("\n  after close: {}", eval_state_line(&e));
+        println!("  evaluation {evaluation} is on chain and readable by anyone.\n");
+    }
     Ok(())
 }
 
@@ -1745,6 +2241,64 @@ fn price_1e9(price: i64) -> String {
 )]
 mod tests {
     use super::*;
+
+    /// The cluster's time comes from the right bytes.
+    ///
+    /// The input is the example Clock account from the Solana SDK's own documentation
+    /// (`solana-sdk/sysvar/src/clock.rs`, found through the Solana MCP), not bytes made up here —
+    /// so the offset is checked against the layout the SDK ships, not against itself.
+    #[test]
+    fn the_cluster_clock_is_read_from_the_sdks_own_layout() {
+        let sdk_example: [u8; 40] = [
+            240, 153, 233, 7, 0, 0, 0, 0, // slot
+            11, 115, 118, 98, 0, 0, 0, 0, // epoch_start_timestamp
+            51, 1, 0, 0, 0, 0, 0, 0, // epoch
+            52, 1, 0, 0, 0, 0, 0, 0, // leader_schedule_epoch
+            121, 50, 119, 98, 0, 0, 0, 0, // unix_timestamp
+        ];
+        let t = clock_unix_timestamp(&sdk_example).unwrap();
+        assert_eq!(t, 1_651_978_873, "0x62773279, little-endian at offset 32");
+        // And not a neighbouring field: the slot's own timestamp is after its epoch's start.
+        let epoch_start = i64::from_le_bytes(sdk_example[8..16].try_into().unwrap());
+        assert!(t > epoch_start);
+    }
+
+    #[test]
+    fn a_short_clock_account_is_an_error_not_a_panic() {
+        assert!(clock_unix_timestamp(&[0u8; 39]).is_err());
+    }
+
+    /// The simulated trade clears the evaluation's risk limit with room to spare, so a price that
+    /// moves between planning and landing cannot take it over — the failure that refused the first
+    /// funded marketplace trade. Checked at the smallest account the program allows, where the
+    /// margin is thinnest.
+    #[test]
+    fn the_evaluation_trade_sits_well_inside_the_risk_limit() {
+        use noxfunds::constants::{EVAL_MAX_RISK_BPS, EVAL_MIN_ACCOUNT};
+        let notional = EVAL_NOTIONAL_USDC * ONE_USDC;
+        // Stop 100 bps away: risk is 1% of notional, as bps of the balance.
+        let risk_bps = notional / 100 * 10_000 / EVAL_MIN_ACCOUNT;
+        assert_eq!(risk_bps, 10);
+        // Even if the price ran 5% away from the stop before landing, risk would be 60 bps.
+        let after_a_run = notional * 600 / 10_000 * 10_000 / EVAL_MIN_ACCOUNT;
+        assert!(after_a_run <= u64::from(EVAL_MAX_RISK_BPS));
+    }
+
+    #[test]
+    fn evaluation_addresses_follow_the_programs_seeds() {
+        let trader = Pubkey::new_unique();
+        let e0 = eval_pda(&trader, 0);
+        assert_ne!(e0, eval_pda(&trader, 1), "seq separates evaluations");
+        assert_ne!(e0, eval_pda(&Pubkey::new_unique(), 0), "and traders");
+        // Market index is little-endian in the seed; indices 1 and 256 must not collide.
+        assert_ne!(vpos_pda(&e0, 1, 0), vpos_pda(&e0, 256, 0));
+        assert_ne!(
+            vpos_pda(&e0, 5, 0),
+            vpos_pda(&e0, 5, 1),
+            "nonce separates positions"
+        );
+        assert_ne!(eval_vault_pda(&e0), e0);
+    }
 
     /// **A declined offer can never sit where an accepted one must.**
     ///
