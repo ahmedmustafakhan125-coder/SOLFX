@@ -105,7 +105,10 @@ body {
 }
 
 /*
- * The glow. Strong from the left, faint from the top right — the shape in both references.
+ * The glow. Strong from the right, faint from the top left.
+ *
+ * On the right because that is the empty half of the hero — the headline and copy sit left, so
+ * a glow behind them washes out the text it is meant to set off.
  *
  * Tinted only. There is no white layer: a white wash over a dark surface greys the grid out
  * and reads as fog rather than as light, which is exactly what the earlier hero gradient did.
@@ -113,12 +116,12 @@ body {
 .glowfield {
   background:
     radial-gradient(
-      55% 65% at 0% 32%,
+      55% 65% at 100% 32%,
       rgb(var(--sf-accent-rgb) / 0.16),
       transparent 70%
     ),
     radial-gradient(
-      45% 55% at 100% 0%,
+      45% 55% at 0% 0%,
       rgb(var(--sf-accent-rgb) / 0.09),
       transparent 70%
     );
