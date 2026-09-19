@@ -1846,8 +1846,6 @@ mod tests {
         }
     }
 
-    /// $200 of principal at a BTC-like price: half deployed, a quarter as margin.
-    #[test]
     /// **The planned trade still fits its ceiling after the price moves.**
     ///
     /// The program measures notional at the oracle price when the transaction lands; the plan
@@ -1889,6 +1887,8 @@ mod tests {
         assert!(at(300) > ceiling, "a 3% rise should exceed a 2% headroom");
     }
 
+    /// $200 of principal at a BTC-like price: half of it the per-trade ceiling, the trade 2%
+    /// under that, a quarter as margin.
     #[test]
     fn the_plan_sizes_the_trade_from_the_principal() {
         let price = 80_000 * 1_000_000_000_i64; // $80,000 at PRICE_PRECISION
