@@ -133,9 +133,9 @@ function Feature({
  * the second. The numbers are good enough not to need help.
  */
 /** Reproduces every figure in the verification band, in order. */
-const CHECK_COMMANDS = `cargo test --workspace          # 635 passing, 0 ignored
-npm --prefix clients/js test    # 211
-npm --prefix app run test       # 22
+const CHECK_COMMANDS = `cargo test --workspace          # 721 passing, 0 ignored
+npm --prefix clients/js test    # 224
+npm --prefix app run test       # 43
 
 anchor coverage                 # 97.14% of programs/solfx-core/src/instructions
 cargo test -p solfx-math --test properties   # the 56 laws
@@ -149,9 +149,9 @@ const PROOF_STATS: readonly {
   detail: string;
 }[] = [
   {
-    figure: "868",
+    figure: "988",
     label: "tests passing",
-    detail: "635 Rust · 211 SDK · 22 app · none ignored",
+    detail: "721 Rust · 224 SDK · 43 app · none ignored",
   },
   {
     figure: "97.14%",
@@ -186,7 +186,7 @@ const PROOF_GROUPS: readonly {
     title: "Solvency is checked, not assumed",
     items: [
       "Seven accounting invariants are re-asserted after individual instructions in the test suite — vault balances against the sum of accounts, open interest against live positions, LP supply against assets under management.",
-      "Compute and packet ceilings are enforced by tests, so a regression fails CI rather than a transaction: open_position runs at 57,102 units against a 120,000 ceiling, and a liquidation is 758 bytes against Solana's 1,232 limit.",
+      "Compute and packet ceilings are enforced by tests, so a regression fails CI rather than a transaction: open_position runs at about 55,000–59,000 units — the figure moves in 1,500-unit steps as the address search varies — against asserted ceilings of 120,000 and 140,000, and a liquidation is 758 bytes against Solana's 1,232 limit.",
       "Refusal is tested as heavily as success. A venue that accepts everything is not a venue.",
     ],
   },

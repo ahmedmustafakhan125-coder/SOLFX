@@ -5,7 +5,7 @@ pip-denominated P&L, transparent swap rates, and a verifiable partner-rebate led
 the emerging-market pairs no venue on any chain lists, with collateral that never leaves your
 own account.
 
-**Status: all nine phases complete, live on devnet, 889 tests green.** Three on-chain
+**Status: all nine phases complete, live on devnet, 988 tests green.** Three on-chain
 programs, an off-chain keeper, a browser terminal, and **NOXFUNDS** — a decentralized prop firm
 built on top of it, also live. Devnet only; no real funds involved, and no external audit.
 
@@ -107,7 +107,7 @@ behaviours someone thought to test behave as expected — nothing more.
 
 | | |
 |---|---|
-| **889 tests, 0 failures** | 651 Rust · 216 SDK · 22 app, none ignored |
+| **988 tests, 0 failures** | 721 Rust · 224 SDK · 43 app, none ignored (measured 2026-09-19) |
 | **97.14 %** | SBF line coverage of `programs/solfx-core/src/instructions` |
 | **56 property tests** | laws over the money paths, not examples — a round trip at an unchanged price always loses; fee splits conserve every unit |
 | **24-hour fuzz run, 0 crashes** | 14,255,080 executions, 9/9 actions reached, asserting invariants I1, I2, I4–I8 rather than "no panic" |
