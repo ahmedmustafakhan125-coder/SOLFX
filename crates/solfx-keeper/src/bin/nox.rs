@@ -124,6 +124,17 @@ struct Args {
     deployment: PathBuf,
     #[arg(long, default_value = "price-accounts.json")]
     price_accounts: PathBuf,
+    /// Ignore the local map and use the one the poster publishes.
+    ///
+    /// The map is generated, not committed, so a local copy goes stale the moment the poster
+    /// regenerates its accounts — and a stale copy names an address nobody posts to, which
+    /// reads as "the price is 5.8 days old" rather than as a wrong file.
+    ///
+    /// `global` so it works on either side of the subcommand — typing it after `lifecycle` is
+    /// the natural thing to do, and an "unexpected argument" there would be a silly way to
+    /// lose a minute.
+    #[arg(long, global = true)]
+    refresh_prices: bool,
     /// Which market to trade. Must be listed, `Active`, and inside its session.
     #[arg(long, default_value = "BTC/USD")]
     market: String,
@@ -315,11 +326,12 @@ async fn token_balance(rpc: &RpcClient, account: &Pubkey) -> u64 {
 /// Derived addresses are wrong here: the poster's accounts are per-feed keypairs, not the
 /// canonical `[shard, feed_id]` PDAs, and anything that derives looks in the wrong place. If
 /// there is no local copy this fetches the one the web tier serves rather than guessing.
-async fn price_accounts(path: &Path) -> Result<HashMap<String, Pubkey>> {
-    if path.exists() {
+async fn price_accounts(path: &Path, refresh: bool) -> Result<HashMap<String, Pubkey>> {
+    if path.exists() && !refresh {
+        println!("  price map   {}", path.display());
         return Ok(price_map::by_symbol(&price_map::load(path)?));
     }
-    println!("  no {} — fetching {PUBLIC_PRICE_MAP}", path.display());
+    println!("  price map   {PUBLIC_PRICE_MAP}");
     let body = reqwest::get(PUBLIC_PRICE_MAP)
         .await
         .with_context(|| format!("fetching {PUBLIC_PRICE_MAP}"))?
@@ -681,14 +693,19 @@ async fn lifecycle(
         );
     }
 
-    let prices = price_accounts(&args.price_accounts).await?;
+    let prices = price_accounts(&args.price_accounts, args.refresh_prices).await?;
     let price_update = *prices.get(&entry.symbol).ok_or_else(|| {
         anyhow!(
             "no price account for {} in the map — the poster has not published it",
             entry.symbol
         )
     })?;
-    let price = oracle_price(rpc, &price_update).await?;
+    let price = oracle_price(rpc, &price_update).await.map_err(|e| {
+        anyhow!(
+            "{e}\n         the price account is {price_update}. If that is not the one the \
+             poster publishes, the local map is stale — re-run with --refresh-prices."
+        )
+    })?;
 
     let plan = plan_trade(
         entry.market_index,
