@@ -150,6 +150,17 @@ Build output is redirected to native Linux disk by [`.cargo/config.toml`](.cargo
 Source lives on `/mnt/e`, which is a Windows drive mounted through WSL and roughly 200x slower
 for the small-file I/O cargo does constantly. See [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
 
+**This repository is public.** Before committing from a new clone, turn on the secret guard:
+
+```bash
+git config core.hooksPath .githooks     # once per clone
+```
+
+Every commit and every push is then scanned by [`scripts/check-secrets.py`](scripts/check-secrets.py)
+for RPC URLs carrying an API key, Solana keypairs, private keys and token formats, and for files
+that are secrets by name (`.env`, `keys/`, program keypairs). A match is refused and printed
+masked. Secrets live in `.env`, which is ignored; `.env.example` is the template.
+
 ## The three claims worth checking
 
 Two properties are asserted across the full parameter space by
