@@ -1,6 +1,6 @@
 # Phase 5 — Test Cases (42 tests)
 
-**Guide:** [`../guides/phase-5-guide.md`](../guides/phase-5-guide.md) · **Flowchart:** [`../diagrams/phase-5.png`](../diagrams/phase-5.png)
+**Guide:** [`../guides/phase-5-guide.md`](../guides/phase-5-guide.md) · **Flowchart:** [`../diagrams/phase-5.dot`](../diagrams/phase-5.dot)
 
 Phase 5's exit criterion is *"LP accounting exact under adversarial sequences"*, so
 the suite is built around the adversary: threat T6 attempted from both directions (deposit

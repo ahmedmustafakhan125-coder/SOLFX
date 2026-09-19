@@ -1,6 +1,6 @@
 # Phase 6 — Test Cases (30 tests)
 
-**Guide:** [`../guides/phase-6-guide.md`](../guides/phase-6-guide.md) · **Flowchart:** [`../diagrams/phase-6.png`](../diagrams/phase-6.png)
+**Guide:** [`../guides/phase-6-guide.md`](../guides/phase-6-guide.md) · **Flowchart:** [`../diagrams/phase-6.dot`](../diagrams/phase-6.dot)
 
 Phase 6's suite runs **both programs together** in LiteSVM — `solfx-referral` reading
 core's real `UserAccount` and claiming through the real CPI. Mocking either side would test

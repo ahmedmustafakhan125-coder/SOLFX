@@ -1,6 +1,6 @@
 # Phase 0 Guide — Explainer & Oracle Feasibility
 
-**Flowchart:** [`../diagrams/phase-0.png`](../diagrams/phase-0.png)
+**Flowchart:** [`../diagrams/phase-0.dot`](../diagrams/phase-0.dot)
 **Deliverables:** `docs/FOREX-EXPLAINED.md` (0a) · `scratch/feed-probe/` + `docs/oracle-feasibility.md` (0b)
 **Exit criteria:** a reader with no FX background can evaluate the trade-offs; the listable-market set is decided from live data; go/no-go on the EM and weekend theses.
 **Result:** both met. The weekend thesis got a **no** — which is the phase working, not failing.

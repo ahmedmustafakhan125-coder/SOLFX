@@ -1,6 +1,6 @@
 # Phase 2 Guide — Vault, Markets & the Validated Pyth Read Path
 
-**Flowchart:** [`../diagrams/phase-2.png`](../diagrams/phase-2.png)
+**Flowchart:** [`../diagrams/phase-2.dot`](../diagrams/phase-2.dot)
 **Deliverable:** the first on-chain program (`programs/solfx-core`): protocol config, market
 listing, collateral custody, and the single oracle choke point (ADR-006).
 **Exit criteria:** direct, synthetic, EM and non-USD-quoted feeds all price correctly on

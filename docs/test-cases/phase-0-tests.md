@@ -1,7 +1,7 @@
 # Phase 0 — Test Cases (the probe's measurement criteria)
 
 **Guide:** [`../guides/phase-0-guide.md`](../guides/phase-0-guide.md) ·
-**Flowchart:** [`../diagrams/phase-0.png`](../diagrams/phase-0.png)
+**Flowchart:** [`../diagrams/phase-0.dot`](../diagrams/phase-0.dot)
 
 Phase 0 has no `#[test]` functions — its "tests" are the **PASS/FAIL criteria the probe
 applied to live oracle data**, and the cross-checks that validated the instrument itself.

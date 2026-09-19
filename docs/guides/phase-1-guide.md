@@ -1,6 +1,6 @@
 # Phase 1 Guide — `solfx-math`: the Financial Engine
 
-**Flowchart:** [`../diagrams/phase-1.png`](../diagrams/phase-1.png)
+**Flowchart:** [`../diagrams/phase-1.dot`](../diagrams/phase-1.dot)
 **Deliverable:** `crates/solfx-math/` — a pure Rust crate: no floats, no panics, no I/O, no
 Anchor. Every value that ever touches a trader's money is computed here.
 **Exit criteria:** `cargo test` green; CI on PR; 100% function coverage on the math;

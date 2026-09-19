@@ -1,6 +1,6 @@
 # Phase 3 Guide — the Position Engine
 
-**Flowchart:** [`../diagrams/phase-3.png`](../diagrams/phase-3.png)
+**Flowchart:** [`../diagrams/phase-3.dot`](../diagrams/phase-3.dot)
 **Deliverable:** the full trade lifecycle — open, increase, decrease, close, margin
 adjustment — plus the four-vault settlement layer and (early) `add_liquidity`.
 **Exit criteria:** the lifecycle works on a direct pair **and** a non-USD-quoted pair;

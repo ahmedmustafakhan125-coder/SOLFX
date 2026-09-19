@@ -1,6 +1,6 @@
 # Phase 2 — Test Cases (131 tests)
 
-**Guide:** [`../guides/phase-2-guide.md`](../guides/phase-2-guide.md) · **Flowchart:** [`../diagrams/phase-2.png`](../diagrams/phase-2.png)
+**Guide:** [`../guides/phase-2-guide.md`](../guides/phase-2-guide.md) · **Flowchart:** [`../diagrams/phase-2.dot`](../diagrams/phase-2.dot)
 
 Phase 2's suite moves from pure maths to the **real BPF binary**: every integration
 test runs the built program in-process via LiteSVM, and the harness re-asserts the

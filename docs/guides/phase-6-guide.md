@@ -1,6 +1,6 @@
 # Phase 6 Guide — the IB Programme (`solfx-referral`)
 
-**Flowchart:** [`../diagrams/phase-6.png`](../diagrams/phase-6.png)
+**Flowchart:** [`../diagrams/phase-6.dot`](../diagrams/phase-6.dot)
 **Deliverable:** a **second on-chain program** holding the introducing-broker ledger, plus
 the `solfx-math::referral` tier arithmetic and the two counters in core that feed it.
 **Exit criteria:** *"Rebates accrue and claim correctly; every rebate emits a verifiable

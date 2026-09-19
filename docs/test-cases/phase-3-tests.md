@@ -1,6 +1,6 @@
 # Phase 3 — Test Cases (31 tests)
 
-**Guide:** [`../guides/phase-3-guide.md`](../guides/phase-3-guide.md) · **Flowchart:** [`../diagrams/phase-3.png`](../diagrams/phase-3.png)
+**Guide:** [`../guides/phase-3-guide.md`](../guides/phase-3-guide.md) · **Flowchart:** [`../diagrams/phase-3.dot`](../diagrams/phase-3.dot)
 
 Phase 3's suite drives the full position lifecycle through the real binary: open,
 increase, decrease, close, margin adjustment — on a direct pair, a synthetic cross and a
