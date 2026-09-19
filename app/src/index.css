@@ -21,6 +21,8 @@
   --sf-accent-rgb: 152 67 254;
   --sf-purple-dim: #7b2fd6;
   --sf-purple-soft: #d8b9ff;
+  /* Text on a solid brand fill. White on purple; dark on cyan, where white fails contrast. */
+  --sf-on-brand: #ffffff;
   --sf-green: #00ffa3;
   --sf-red: #ffb4ab;
   --sf-amber: #fed639;
@@ -143,12 +145,13 @@ body {
   --sf-purple-dim: #00b4cc;
   --sf-purple-soft: #7df3ff;
   --sf-accent-rgb: 0 229 255;
+  --sf-on-brand: #04080a;
 }
 
 /* Solid accent call to action with dark text — the primary button in both references. */
 .cta-solid {
   background: var(--sf-purple);
-  color: #04080a;
+  color: var(--sf-on-brand);
   border: 1px solid var(--sf-purple);
   transition: background 150ms ease;
 }
@@ -159,8 +162,14 @@ body {
 /*
  * Diagram tokens. Named apart from the theme tokens because an SVG needs them resolved as
  * paint values, and because the flow diagram should keep its meaning if the accent moves.
+ *
+ * Declared on the NOXFUNDS scope as well as the root, and that is not redundant. A custom
+ * property's `var()` is resolved where it is *declared* and the resolved colour is what
+ * inherits — so declared on `:root` alone, `--nox-brand` was root's purple everywhere,
+ * including inside `[data-product="nox"]`, and the NOXFUNDS diagram drew in SolFX's colour.
  */
-:root {
+:root,
+[data-product="nox"] {
   --nox-brand: var(--sf-purple);
   --nox-long: var(--sf-green);
   --nox-short: var(--sf-red);

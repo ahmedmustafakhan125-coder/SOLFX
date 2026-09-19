@@ -11,7 +11,9 @@ export function ProductSwitcher({ active }: { active: "solfx" | "nox" }) {
   const seg = (on: boolean) =>
     [
       "px-5 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] transition-colors",
-      on ? "bg-brand text-[#04080a]" : "text-ink-dim hover:text-ink-muted",
+      on
+        ? "bg-brand text-[var(--sf-on-brand)]"
+        : "text-ink-dim hover:text-ink-muted",
     ].join(" ");
 
   return (

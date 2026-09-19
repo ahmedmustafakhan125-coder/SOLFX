@@ -8,9 +8,21 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
+    alias: [
+      // Same as vite.config.ts: the SDK is consumed as TypeScript source. Missing here, any test
+      // importing `@solfx/client` failed to load — which went unnoticed only because no app test
+      // did until the NOXFUNDS marketplace.
+      {
+        find: /^@solfx\/client$/,
+        replacement: fileURLToPath(
+          new URL("../clients/js/src/index.ts", import.meta.url)
+        ),
+      },
+      {
+        find: "@",
+        replacement: fileURLToPath(new URL("./src", import.meta.url)),
+      },
+    ],
   },
   test: {
     include: ["src/**/*.test.ts"],
