@@ -15,8 +15,11 @@
 //!
 //! # What is built
 //!
-//! Stage 1 of `docs/NOXFUNDS-PLAN.md` Part 10: the mandate primitive and the CPI wrappers.
-//! Evaluation, tiers, investor settlement and the keeper are Stages 3–6.
+//! Stages 1, 2 and 4–6 of `docs/NOXFUNDS-PLAN.md` Part 10: the mandate primitive and the CPI
+//! wrappers, the full rulebook, tiers and the track record, investor settlement, and the
+//! permissionless cranks. **Stage 3, the evaluation engine (`Evaluation`, `VirtualPosition`),
+//! is not written** — a mandate is funded directly today rather than earned by passing a
+//! simulated phase. Stage 7, the marketplace, is frontend work and lives in `app/`.
 //!
 //! # Two structural facts, both found by measurement rather than assumed
 //!

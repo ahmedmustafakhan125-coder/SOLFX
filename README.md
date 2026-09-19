@@ -27,7 +27,8 @@ Read in this order:
 | [`docs/test-cases/`](docs/test-cases/README.md) | The full test catalogue — automated tests documented per phase |
 | [`docs/test-cases/localnet-manual.md`](docs/test-cases/localnet-manual.md) | **100 manual cases** against a live validator — what LiteSVM cannot cover |
 | [`architecture/`](architecture/) | Flowcharts, one per phase (PNG + editable Graphviz sources) |
-| [`docs/NOXFUNDS-PLAN.md`](docs/NOXFUNDS-PLAN.md) | **NOXFUNDS** — the prop-firm product built on top of SolFX. Design and economics |
+| [`docs/NOXFUNDS.md`](docs/NOXFUNDS.md) | **NOXFUNDS explained in plain English** — how it works, the rulebook, the money, and what is not built. Start here |
+| [`docs/NOXFUNDS-PLAN.md`](docs/NOXFUNDS-PLAN.md) | NOXFUNDS — the full internal design and economics, 752 lines |
 | [`docs/noxfunds-budgets.md`](docs/noxfunds-budgets.md) | NOXFUNDS compute, packet size and account locks, measured and asserted in CI |
 
 ## Progress
@@ -62,6 +63,9 @@ Every other prop firm watches trades after they execute and punishes violations,
 contracts cannot see an order before the venue fills it. NOXFUNDS owns the venue, so a trade
 that breaks the mandate **is not detected and punished — it fails as a transaction.** It never
 existed, and the investor never took the loss.
+
+**[Read the full explanation in plain English →](docs/NOXFUNDS.md)** — no trading or Solana
+knowledge assumed, with the three settled devnet mandates you can go and read yourself.
 
 Live on devnet and initialised. What is built, and tested by 77 of the tests below:
 
