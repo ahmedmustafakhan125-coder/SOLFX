@@ -99,6 +99,36 @@ There are three parties.
 The unit of the whole system is a **mandate**: one investor funding one trader with one pot of
 money under one rule set.
 
+### Before any of this — a trader earns a record
+
+A trader can prove themselves before anyone risks money on them. They put down a **$50 stake**
+and trade a **simulated account** of $10,000 to $200,000 through two phases:
+
+| Rule | Phase 1 | Phase 2 |
+|---|---|---|
+| Profit target | 8% | 5% |
+| Loss in one UTC day | at most 3% | at most 3% |
+| Loss from the peak | at most 6% | at most 6% |
+| Risk at the stop, per trade | at most 1% | at most 1% |
+| Stop-loss | mandatory | mandatory |
+| Trades, over distinct days | 10, over 5 | 10, over 5 |
+| Hold per voluntary close / on average | 10 min / 45 min | 10 min / 45 min |
+| Any single day | at most half the target | at most half the target |
+| Time limit | none | none |
+
+Pass both and the **stake comes back in full** — the protocol earns from traders succeeding,
+not failing. Break a loss limit, or walk away, and it goes to the treasury.
+
+The simulated trades are not an approximation. Each one is priced by **the exchange's own code**
+— the same functions a real trade on SolFX runs — so on the same price and market state, a
+simulated fill and a real one agree to the last unit. The tests open both and compare. No real
+money moves in the simulation; only the stake is ever held.
+
+Two things differ from a live account, stated here rather than left for someone to find: a
+simulated trade does not move the market for anyone else, and the whole simulated balance counts
+as margin, so there is no simulated liquidation — the 6% rule ends an evaluation long before one
+could happen.
+
 ### Step 0 — the two sides find each other, and agree
 
 There is no chat, on purpose. Anything written on a public chain is public forever and
@@ -413,6 +443,9 @@ depends on SolFX, SolFX knows nothing about NOXFUNDS. This is enforced in CI.
 | `MandateOffer` | `["offer", investor, trader, seq]` | an escrowed proposal: terms, note, expiry, the trader's reply |
 | offer vault | `["offer_vault", offer]` | the escrowed USDC until acceptance or revocation |
 | `FundingRequest` | `["request", trader, investor]` | a trader's ask, with a note; the trader's rent, always returned |
+| `Evaluation` | `["eval", trader, seq]` | a simulated balance, its stage, its record, its loss limits |
+| evaluation vault | `["eval_vault", evaluation]` | the $50 stake, until it is refunded or forfeited |
+| `VirtualPosition` | `["vpos", evaluation, market_index (LE), nonce]` | one simulated position, priced as a real one |
 
 The `seq` on a mandate lets one investor fund the same trader more than once. The signer is
 derived from the *mandate*, not the trader, so a trader holding several mandates from different
@@ -429,7 +462,7 @@ These are recorded because they are non-obvious and cost real time to discover:
    are 840 and 552 bytes held by value; against Solana's 4,096-byte stack frame they cannot be
    allowed to share a frame.
 
-### Instructions — 26
+### Instructions — 34
 
 **Admin:** `initialize_config`, `set_paused`
 **Trader:** `initialize_trader_profile`, `recompute_tier`, `create_solfx_account`,
@@ -440,20 +473,25 @@ These are recorded because they are non-obvious and cost real time to discover:
 **Marketplace:** `post_listing`, `update_listing`, `post_investor_listing`,
 `update_investor_listing`, `post_offer`, `revoke_offer`, `accept_offer`, `decline_offer`,
 `post_request`, `close_request`
+**Evaluation:** `start_evaluation`, `eval_open_position`, `eval_close_position`,
+`eval_trigger_stop`, `eval_observe_equity`, `claim_stage_pass`, `forfeit_stake`,
+`abandon_evaluation`
 
 `initialize_config` can only be called by the program's **upgrade authority** — enforced on
 chain by checking the program's own `ProgramData` account, not by a stored address that a
 first caller could claim. A first-caller-wins initialiser is a standard way to lose a protocol
 on deployment day.
 
-### Events — 24
+### Events — 32
 
 `ConfigInitialized`, `MandateFunded`, `FundedTradeOpened`, `FundedTradeClosed`,
 `StopCancelled`, `EquityObserved`, `MandateBreached`, `SettlementRequested`, `MandateSettled`,
 `PositionWoundDown`, `PositionReconciled`, `TraderProfileCreated`, `TradeRecorded`,
 `TierChanged`, `ListingPosted`, `ListingClosed`, `InvestorListingPosted`,
 `InvestorListingClosed`, `OfferPosted`, `OfferRevoked`, `OfferAccepted`, `OfferDeclined`,
-`RequestPosted`, `RequestClosed`.
+`RequestPosted`, `RequestClosed`, `EvaluationStarted`, `EvaluationTradeOpened`,
+`EvaluationTradeClosed`, `EvaluationEquityObserved`, `StagePassed`, `EvaluationFailed`,
+`StakeRefunded`, `StakeForfeited`.
 
 Events are the point, not decoration. **Every statistic NOXFUNDS displays must be
 re-derivable from these events by a third party** who trusts none of our infrastructure.
@@ -549,13 +587,15 @@ This section exists because a document that only lists what works is marketing.
 
 **Not built:**
 
-- **The evaluation stage.** The design has a simulated-trading phase a trader passes before
-  receiving real capital (`Evaluation`, `VirtualPosition`). None of it is written. Today a
-  mandate is funded directly.
-- **The marketplace is written but not yet on devnet.** The program side (listings, escrowed
-  offers, decline with a reason, requests — 30 tests) and the browser page are built; the
-  program upgrade that carries them has not been deployed as of 19 Sep 2026. Until it is, the
-  page reads everything and refuses to send.
+- **The marketplace and the evaluation are written but not yet on devnet.** Both are built and
+  tested (the marketplace 31 tests, the evaluation 20); the program upgrade that carries them
+  has not been deployed as of 19 Sep 2026. Until it is, the marketplace page reads everything
+  and refuses to send.
+- **The evaluation's simplifications.** A simulated trade does not move open interest; the
+  whole simulated balance is the margin, so there is no simulated liquidation; fees are the
+  entry tier's; only single-leg markets can be traded; and the $50 stake is flat — the plan says
+  it rises for larger evaluations but never says by how much. Passing records no tier: tiers
+  come from funded trading, as they always have.
 - **The public verification page.** The claim in Part 8 that every statistic is re-derivable
   from events is true of the event data; the page that does the re-deriving does not exist.
 - **The off-chain keeper.** The cranks are public instructions, but nothing runs them

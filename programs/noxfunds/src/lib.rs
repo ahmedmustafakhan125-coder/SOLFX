@@ -15,11 +15,11 @@
 //!
 //! # What is built
 //!
-//! Stages 1, 2 and 4–6 of `docs/NOXFUNDS-PLAN.md` Part 10: the mandate primitive and the CPI
-//! wrappers, the full rulebook, tiers and the track record, investor settlement, and the
-//! permissionless cranks. **Stage 3, the evaluation engine (`Evaluation`, `VirtualPosition`),
-//! is not written** — a mandate is funded directly today rather than earned by passing a
-//! simulated phase. Stage 7, the marketplace, is frontend work and lives in `app/`.
+//! Stages 1–7 of `docs/NOXFUNDS-PLAN.md` Part 10 on the program side: the mandate primitive and
+//! the CPI wrappers, the full rulebook, the evaluation (Stage 3 — a simulated account priced by
+//! SolFX's own functions, with a refundable stake), tiers and the track record, investor
+//! settlement, the permissionless cranks, and the marketplace (listings, escrowed offers,
+//! decline with a reason, requests). The marketplace and evaluation screens live in `app/`.
 //!
 //! # Two structural facts, both found by measurement rather than assumed
 //!

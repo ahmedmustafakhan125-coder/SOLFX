@@ -53,7 +53,7 @@ Read in this order:
 |---|---|
 | `solfx_core` | `2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi` — 9 markets listed, 6 active, 38 instructions |
 | `solfx_referral` | `J7dwkNcyPjHtRyqkpnqq3wgE6XmYCaENhYZozX2MHsyt` |
-| `noxfunds` | `9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx` — 16 instructions |
+| `noxfunds` | `9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx` — 16 instructions deployed; 34 built (marketplace + evaluation pending an upgrade) |
 
 The off-chain half runs 24/7: price poster, keeper, RPC gateway and web tier.
 
@@ -67,7 +67,7 @@ existed, and the investor never took the loss.
 **[Read the full explanation in plain English →](docs/NOXFUNDS.md)** — no trading or Solana
 knowledge assumed, with the three settled devnet mandates you can go and read yourself.
 
-Live on devnet and initialised. What is built, and tested by 77 of the tests below:
+Live on devnet and initialised. What is built and tested:
 
 | | |
 |---|---|
@@ -77,6 +77,8 @@ Live on devnet and initialised. What is built, and tested by 77 of the tests bel
 | Track record and tiers | Realised P&L taken from the venue's own arithmetic, not recomputed. Drawdown cannot be hidden by refusing to close a loser |
 | Settlement | Principal first, 5 % of gross, then 70/30 — and **permissionless**, so an investor never waits on the trader or the operator |
 | Wind-down | A breached mandate reaches settlement with neither the trader nor the operator cooperating |
+| Evaluation | A $50 refundable stake and two simulated phases. Simulated fills are priced by SolFX's own functions and match a real fill **to the unit** — the test opens both and compares |
+| Marketplace | Listings on both sides, escrowed offers, decline with a reason, funding requests. **No chat** — every message is a typed on-chain object tied to a real step. In the browser at `/nox/market` |
 
 Run a whole mandate against devnet — profile, funded mandate, a trade with its stop, the
 equity crank, close and settlement — and read the accounts it leaves behind:
@@ -87,8 +89,9 @@ cargo run -p solfx-keeper --bin nox -- lifecycle --execute
 cargo run -p solfx-keeper --bin nox -- status
 ```
 
-**Not built yet:** the evaluation engine (paper-trading challenge before funding) and the web
-surfaces. Traders are funded directly for now.
+**Not deployed yet:** the evaluation and the marketplace are built and tested but await a program
+upgrade on devnet. **Not built:** a screen for the evaluation, and a page that re-derives every
+statistic from events. See [`docs/NOXFUNDS.md`](docs/NOXFUNDS.md) Part 10 for the full list.
 
 ## What is deliberately *not* trusted to the operator
 
