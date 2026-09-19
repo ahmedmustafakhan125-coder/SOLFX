@@ -60,3 +60,20 @@ pub const PLATINUM_MIN_PROFIT_FACTOR_BPS: u64 = 18_000;
 /// Two mandates that were **settled** in profit — a live result, not a statistic derived from
 /// the trades inside one still-open mandate.
 pub const PLATINUM_MIN_PROFITABLE_MANDATES: u32 = 2;
+
+// --- the marketplace ------------------------------------------------------------------------
+
+/// `TraderListing` — `["listing", trader]`. A trader advertising for capital.
+pub const LISTING_SEED: &[u8] = b"listing";
+/// `MandateOffer` — `["offer", investor, trader, seq]`. An investor's escrowed proposal.
+pub const OFFER_SEED: &[u8] = b"offer";
+/// The offer's USDC escrow — `["offer_vault", offer]`.
+pub const OFFER_VAULT_SEED: &[u8] = b"offer_vault";
+
+/// How long a note on a listing or an offer may be, in bytes.
+///
+/// Bounded, and deliberately short. A note is the one place the two sides put words on chain, and
+/// 180 bytes is enough for "EUR/JPY session trader, London hours, happy to start smaller" and far
+/// too little to be a chat log. Rent on a loader-v3 account is `(128 + len) × 6,960` lamports, so
+/// every byte offered here is a byte someone pays for permanently.
+pub const MAX_NOTE_LEN: usize = 180;

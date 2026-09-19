@@ -82,6 +82,24 @@ pub enum NoxError {
     // --- funding -------------------------------------------------------------------------
     #[msg("The investor's token account holds less than the principal")]
     InsufficientPrincipal,
+
+    // --- the marketplace -------------------------------------------------------------------
+    // Appended for the same reason as the block above: the IDL is published, so a variant
+    // inserted earlier would renumber every error after it.
+    #[msg("Note is longer than the on-chain field allows")]
+    NoteTooLong,
+    #[msg("Listing terms are not internally consistent")]
+    InvalidListingTerms,
+    #[msg("Signer is not this listing's trader")]
+    NotTheListingTrader,
+    #[msg("Signer is not the investor who posted this offer")]
+    NotTheOfferInvestor,
+    #[msg("Signer is not the trader this offer is addressed to")]
+    NotTheOfferTrader,
+    #[msg("Offer is not open; it has already been accepted or revoked")]
+    OfferNotOpen,
+    #[msg("Offer has expired")]
+    OfferExpired,
 }
 
 /// Map `solfx-math`'s errors onto this program's. Total and explicit, so adding a variant

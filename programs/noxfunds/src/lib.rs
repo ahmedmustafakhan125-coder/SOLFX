@@ -211,4 +211,55 @@ pub mod noxfunds {
     ) -> Result<()> {
         instructions::trading::funded_cancel_stop(ctx, market_index, nonce, order_id)
     }
+
+    // --- the marketplace -------------------------------------------------------------------
+    //
+    // Where the two sides find each other. The binding step is an escrow, not a conversation:
+    // an investor publishes terms and locks the capital behind them, and the trader's signature
+    // on `accept_offer` creates the mandate and moves the money in the same transaction.
+
+    /// Advertise for capital. Carries no money and takes no custody.
+    pub fn post_listing(ctx: Context<PostListing>, terms: ListingTerms) -> Result<()> {
+        instructions::marketplace::post_listing(ctx, terms)
+    }
+
+    /// Edit an advertisement, or open and close it.
+    pub fn update_listing(
+        ctx: Context<UpdateListing>,
+        terms: ListingTerms,
+        open: bool,
+    ) -> Result<()> {
+        instructions::marketplace::update_listing(ctx, terms, open)
+    }
+
+    /// Escrow capital and publish a rule set to one trader.
+    pub fn post_offer(
+        ctx: Context<PostOffer>,
+        seq: u8,
+        principal: u64,
+        rules: MandateRules,
+        trader_split_bps: u16,
+        expires_at: i64,
+        note: String,
+    ) -> Result<()> {
+        instructions::marketplace::post_offer(
+            ctx,
+            seq,
+            principal,
+            rules,
+            trader_split_bps,
+            expires_at,
+            note,
+        )
+    }
+
+    /// Take the escrowed capital back. Available while nobody has accepted, expired or not.
+    pub fn revoke_offer(ctx: Context<RevokeOffer>) -> Result<()> {
+        instructions::marketplace::revoke_offer(ctx)
+    }
+
+    /// Accept an offer. Creates the mandate and moves the capital in one transaction.
+    pub fn accept_offer(ctx: Context<AcceptOffer>) -> Result<()> {
+        instructions::marketplace::accept_offer(ctx)
+    }
 }

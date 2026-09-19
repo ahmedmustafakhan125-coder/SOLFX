@@ -78,11 +78,20 @@ body {
   border-color: var(--sf-purple);
 }
 
-/* The faint engineering grid behind the hero. */
+/*
+ * The engineering grid. It backs the whole page, not just the hero.
+ *
+ * Fixed rather than absolute, so one layer covers any scroll height: an absolute grid inside
+ * each section would restart its 64px rhythm at every section boundary and show a seam wherever
+ * a section's height was not a multiple of the cell.
+ *
+ * Page content sits in a `relative z-10` wrapper above it. Panels are opaque, so the grid reads
+ * in the gutters between them rather than through them.
+ */
 .gridwork {
   background-image:
-    linear-gradient(rgba(76, 69, 70, 0.35) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(76, 69, 70, 0.35) 1px, transparent 1px);
+    linear-gradient(rgba(76, 69, 70, 0.55) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(76, 69, 70, 0.55) 1px, transparent 1px);
   background-size: 64px 64px;
 }
 
@@ -113,11 +122,9 @@ body {
  */
 .nox-grid {
   background-image:
-    linear-gradient(rgba(0, 229, 255, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 229, 255, 0.07) 1px, transparent 1px);
+    linear-gradient(rgba(0, 229, 255, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.11) 1px, transparent 1px);
   background-size: 56px 56px;
-  /* Lightning CSS adds the -webkit- prefix from browserslist; verified in the built bundle. */
-  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
 }
 
 .nox-glow {

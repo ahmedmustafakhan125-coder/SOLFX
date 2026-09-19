@@ -197,3 +197,67 @@ pub struct TierChanged {
     pub max_drawdown_bps: u16,
     pub ts: i64,
 }
+
+// --- the marketplace ---------------------------------------------------------------------
+//
+// These are the marketplace's only output. A third party indexing NOXFUNDS must be able to
+// rebuild the whole order flow — who advertised, who offered what to whom, what was accepted and
+// what was withdrawn — from these alone, without reading any account and without trusting any
+// server we run.
+
+/// A trader advertised for capital, or edited the terms of an existing advertisement.
+#[event]
+pub struct ListingPosted {
+    pub trader: Pubkey,
+    pub listing: Pubkey,
+    pub min_principal: u64,
+    pub max_principal: u64,
+    pub wanted_markets: u128,
+    pub wanted_split_bps: u16,
+    pub timestamp: i64,
+}
+
+/// A trader withdrew their advertisement. The account remains; only the flag changed.
+#[event]
+pub struct ListingClosed {
+    pub trader: Pubkey,
+    pub listing: Pubkey,
+    pub timestamp: i64,
+}
+
+/// An investor escrowed capital and published terms to one trader.
+#[event]
+pub struct OfferPosted {
+    pub offer: Pubkey,
+    pub investor: Pubkey,
+    pub trader: Pubkey,
+    pub seq: u8,
+    pub principal: u64,
+    pub trader_split_bps: u16,
+    pub expires_at: i64,
+    pub timestamp: i64,
+}
+
+/// An investor took their capital back before any trader accepted.
+#[event]
+pub struct OfferRevoked {
+    pub offer: Pubkey,
+    pub investor: Pubkey,
+    pub trader: Pubkey,
+    pub principal: u64,
+    pub timestamp: i64,
+}
+
+/// A trader accepted, and the offer became a funded mandate in the same transaction.
+///
+/// `MandateFunded` is emitted alongside this, so a consumer watching only for funded mandates
+/// does not have to know the marketplace exists.
+#[event]
+pub struct OfferAccepted {
+    pub offer: Pubkey,
+    pub mandate: Pubkey,
+    pub investor: Pubkey,
+    pub trader: Pubkey,
+    pub principal: u64,
+    pub timestamp: i64,
+}

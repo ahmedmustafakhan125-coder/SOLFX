@@ -11,12 +11,17 @@ const ME = {
   name: "Ahmed Mustafa Khan",
   email: "ahmedmustafakhan125@gmail.com",
   // --- fill these in ---
-  role: "", // e.g. "Computer science student · building SolFX solo"
-  location: "", // e.g. "Karachi, Pakistan"
-  bio: [
+  role: "Founder & Lead AI Engineer at Noxyra AI | Agentic AI & Solana Developer", // e.g. "Computer science student · building SolFX solo"
+  location: "Islamabad, Pakistan", // e.g. "Karachi, Pakistan"
+  bio: ["Passionate about agentic AI designing systems that learn, decide, and execute autonomously. Currently exploring decentralized finance with a Solana based forex brokerage platform.",
+    "Solana blockchain developer building the next generation of DeFi applications. Computer Science student at COMSATS University Islamabad.",
+    "Focused on bridging AI capabilities with business automation and Web3 technologies."
     // One paragraph per entry. Left empty deliberately — see the note above.
   ] as string[],
   links: [
+    { label: "GitHub", href: "https://github.com/ahmedmustafakhan125-coder" },
+  
+    { label: "LinkedIn", href: "https://www.linkedin.com/in/mustafa-khan-7653a0304/" }
     // { label: "GitHub", href: "https://github.com/..." },
     // { label: "X", href: "https://x.com/..." },
     // { label: "LinkedIn", href: "https://linkedin.com/in/..." },
@@ -97,7 +102,7 @@ export function About() {
                 reject your order are the same ones anyone else can read.
               </p>
               <p>
-                Built from the arithmetic up: a dependency-free maths crate with
+                Built from the arithmetic up: a dependency free maths crate with
                 property tests, then the vault, then positions, risk,
                 liquidations, an LP vault and an introducing-broker programme —
                 each with exit criteria rather than a deadline.

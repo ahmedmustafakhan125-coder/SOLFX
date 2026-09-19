@@ -5,6 +5,8 @@
 
 use anchor_lang::prelude::*;
 
+use crate::constants::MAX_NOTE_LEN;
+
 /// Protocol configuration. One per deployment, at `["config"]`.
 #[account]
 #[derive(InitSpace)]
@@ -715,6 +717,138 @@ mod tier_tests {
             };
             assert!(higher.max_mandate() > lower.max_mandate());
             assert!(higher.max_concurrent_mandates() > lower.max_concurrent_mandates());
+        }
+    }
+}
+
+// --- the marketplace ---------------------------------------------------------------------
+//
+// # Why the marketplace is an escrow and not a chat
+//
+// Two parties who do not trust each other need to agree terms and then have those terms bind.
+// Solana's canonical answer to exactly that shape is the escrow: a **maker** locks value and
+// publishes terms, a **taker** fulfils them atomically, and the maker can refund while nobody
+// has taken. Three reference implementations converge on it — `anchor/tests/escrow`,
+// `solana-bootcamp-2026/04-escrow` and `program-examples/tokens/escrow` — and every listing
+// venue on Solana is a variation of it.
+//
+// So `MandateOffer` *is* the negotiation. The investor's terms are the message, the escrowed
+// USDC is the proof the message is serious, and the trader's acceptance is the signature on the
+// contract. Nothing needs to be said in words for the binding part, which is why there is no
+// messaging protocol here: a chat would be public forever, unencrypted, individually
+// rent-bearing, and spammable by anyone who can afford an account.
+//
+// What is left for words is a single bounded `note` on each side. It rides on an account that
+// already exists and already pays rent, so it adds no new surface.
+
+/// A trader advertising for capital, at `["listing", trader]`.
+///
+/// Carries no money and takes no custody. It is an index entry: it exists so an investor
+/// browsing the marketplace can find a trader, read their terms, and cross-reference the
+/// `TraderProfile` at `["trader", trader]` — which the trader does not control and cannot
+/// curate.
+#[account]
+#[derive(InitSpace)]
+pub struct TraderListing {
+    pub trader: Pubkey,
+
+    /// The band of principal this trader will accept. An investor offering outside it is not
+    /// refused on chain — the listing is advertising, not a rule — but the frontend can grey
+    /// the offer form out, and a mismatch is visible to both sides before anyone signs.
+    pub min_principal: u64,
+    pub max_principal: u64,
+
+    /// The markets the trader is asking to be allowed. Bitmap over `market_index`, same shape
+    /// as `Mandate::allowed_markets`.
+    pub wanted_markets: u128,
+
+    /// The split the trader is asking for, in bps of net profit. Advisory: the binding number
+    /// is the one on the offer the investor actually signs.
+    pub wanted_split_bps: u16,
+
+    pub note: [u8; MAX_NOTE_LEN],
+    pub note_len: u8,
+
+    /// Closed listings stay on chain rather than being deleted, so a trader cannot quietly
+    /// withdraw a listing an investor is midway through responding to and leave a dangling
+    /// reference. Reopening is a single flag.
+    pub open: bool,
+
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub bump: u8,
+    pub _reserved: [u8; 32],
+}
+
+/// Where an offer is in its life.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
+pub enum OfferState {
+    /// Escrowed and waiting for the trader.
+    Open,
+    /// The trader signed; a `Mandate` exists and the escrow is empty.
+    Accepted,
+    /// The investor took it back. Terminal.
+    Revoked,
+}
+
+/// An investor's escrowed proposal to one trader, at `["offer", investor, trader, seq]`.
+///
+/// The full rule set is fixed here, before the trader has agreed to anything, and it is copied
+/// onto the `Mandate` verbatim on acceptance. So the terms the trader accepts are provably the
+/// terms the investor published: there is no step between agreement and funding in which either
+/// side could substitute a different number.
+#[account]
+#[derive(InitSpace)]
+pub struct MandateOffer {
+    pub investor: Pubkey,
+    /// The one trader who may accept. Offers are addressed, not open to the highest bidder —
+    /// an open offer would let any trader with a profile take capital an investor had picked
+    /// someone specific for.
+    pub trader: Pubkey,
+    pub seq: u8,
+
+    /// Escrowed at `["offer_vault", offer]` from the moment the offer is posted.
+    pub principal: u64,
+
+    // --- the rules, identical in shape to `Mandate`'s and copied across on acceptance ------
+    pub max_trade_notional: u64,
+    pub max_total_notional: u64,
+    pub max_drawdown_bps: u16,
+    pub max_daily_loss_bps: u16,
+    pub max_risk_per_trade_bps: u16,
+    pub max_stop_distance_bps: u16,
+    pub max_concurrent_positions: u8,
+    pub allowed_markets: u128,
+    pub min_hold_slots: u64,
+    pub trader_split_bps: u16,
+
+    pub note: [u8; MAX_NOTE_LEN],
+    pub note_len: u8,
+
+    /// After this, the trader can no longer accept and the investor can always revoke.
+    ///
+    /// An offer with no expiry is capital an investor can lose track of; an expiry the trader
+    /// can ignore is not an expiry. Acceptance checks it against the cluster clock.
+    pub expires_at: i64,
+
+    pub state: OfferState,
+    pub created_at: i64,
+    pub bump: u8,
+    pub vault_bump: u8,
+    pub _reserved: [u8; 32],
+}
+
+impl MandateOffer {
+    /// The note as text, or an empty string if it is not valid UTF-8.
+    ///
+    /// Total rather than fallible on purpose: a note is decoration, and a client that cannot
+    /// render one should still be able to render the offer.
+    #[must_use]
+    pub fn note_str(&self) -> &str {
+        let len = (self.note_len as usize).min(MAX_NOTE_LEN);
+        match self.note.get(..len) {
+            Some(bytes) => core::str::from_utf8(bytes).unwrap_or(""),
+            None => "",
         }
     }
 }
