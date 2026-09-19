@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { Wordmark } from "@/components/Logo";
 import { ProductSwitcher } from "@/components/ProductSwitcher";
 import { TICKER, useTicker } from "@/hooks/useTicker";
 
@@ -7,13 +8,10 @@ const PROGRAM_ID = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi";
 
 function Nav() {
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-[#0e0e0e]/95 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-line bg-bg/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1440px] items-center gap-8 px-4 py-4 md:px-8">
-        <Link
-          to="/"
-          className="text-xl font-extrabold tracking-tighter text-brand-soft"
-        >
-          SOL-FX
+        <Link to="/" className="text-brand-soft">
+          <Wordmark product="solfx" />
         </Link>
         <nav className="hidden items-center gap-6 text-sm md:flex">
           <Link
@@ -330,9 +328,10 @@ function Band({
 
 export function Landing() {
   return (
-    <div className="relative min-h-screen bg-[#0e0e0e] text-ink">
-      {/* One fixed grid behind the whole page — see `.gridwork` in index.css. */}
+    <div className="relative min-h-screen bg-bg text-ink">
+      {/* The shared backdrop. Identical to NOXFUNDS'; only the accent hue differs. */}
       <div className="gridwork pointer-events-none fixed inset-0 z-0" />
+      <div className="glowfield pointer-events-none fixed inset-0 z-0" />
 
       <div className="relative z-10">
         <ProductSwitcher active="solfx" />
@@ -340,8 +339,6 @@ export function Landing() {
 
         {/* Hero */}
         <section className="relative flex min-h-[700px] items-center overflow-hidden px-4 py-24 md:px-8">
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-0 w-1/2 bg-gradient-to-l from-white/10 via-brand/10 to-transparent" />
-
           <div className="relative z-10 mx-auto grid w-full max-w-[1440px] grid-cols-1 items-center gap-8 lg:grid-cols-12">
             <div className="flex flex-col gap-8 lg:col-span-7">
               <div className="flex w-fit items-center gap-2 border border-line bg-surface px-4 py-2">

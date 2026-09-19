@@ -3,30 +3,36 @@ import { Link } from "react-router-dom";
 /**
  * Everything personal lives in this one object so it can be edited without touching markup.
  *
- * Only `name` and `email` are filled: they come from the repository's own git identity and
- * are therefore verifiable. The rest is left blank on purpose — a bio invented on someone's
- * behalf is worse than an empty field, and this page carries a real person's name.
+ * Written by the person it describes. Nothing here was filled in on their behalf, which was the
+ * rule while the fields were empty and is the reason they are worth reading now that they are
+ * not.
  */
 const ME = {
   name: "Ahmed Mustafa Khan",
   email: "ahmedmustafakhan125@gmail.com",
-  // --- fill these in ---
-  role: "Founder & Lead AI Engineer at Noxyra AI | Agentic AI & Solana Developer", // e.g. "Computer science student · building SolFX solo"
-  location: "Islamabad, Pakistan", // e.g. "Karachi, Pakistan"
-  bio: ["Passionate about agentic AI designing systems that learn, decide, and execute autonomously. Currently exploring decentralized finance with a Solana based forex brokerage platform.",
+  role: "Founder & Lead AI Engineer at Noxyra AI · Agentic AI & Solana Developer",
+  location: "Islamabad, Pakistan",
+  bio: [
+    "Passionate about agentic AI — designing systems that learn, decide, and execute autonomously. Currently exploring decentralized finance with a Solana based forex brokerage platform.",
     "Solana blockchain developer building the next generation of DeFi applications. Computer Science student at COMSATS University Islamabad.",
-    "Focused on bridging AI capabilities with business automation and Web3 technologies."
-    // One paragraph per entry. Left empty deliberately — see the note above.
+    "Focused on bridging AI capabilities with business automation and Web3 technologies.",
   ] as string[],
   links: [
     { label: "GitHub", href: "https://github.com/ahmedmustafakhan125-coder" },
-  
-    { label: "LinkedIn", href: "https://www.linkedin.com/in/mustafa-khan-7653a0304/" }
-    // { label: "GitHub", href: "https://github.com/..." },
-    // { label: "X", href: "https://x.com/..." },
-    // { label: "LinkedIn", href: "https://linkedin.com/in/..." },
+    {
+      label: "LinkedIn",
+      href: "https://www.linkedin.com/in/mustafa-khan-7653a0304/",
+    },
   ] as { label: string; href: string }[],
 };
+
+/**
+ * The repository, given its own slot rather than a row in `links`.
+ *
+ * Everything this page claims about the project is checkable in one place, and a page that
+ * says "verify it yourself" without linking the source is asking to be taken on trust.
+ */
+const REPO = "https://github.com/ahmedmustafakhan125-coder/SOLFX";
 
 function Field({
   label,
@@ -84,6 +90,25 @@ export function About() {
                 your behalf.
               </div>
             )}
+
+            <a
+              href={REPO}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-8 flex items-center justify-between border border-line bg-surface px-4 py-3 transition-colors hover:border-brand"
+            >
+              <span>
+                <span className="block text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+                  Source code
+                </span>
+                <span className="tnum mt-1 block text-sm text-brand-soft">
+                  github.com/ahmedmustafakhan125-coder/SOLFX
+                </span>
+              </span>
+              <span aria-hidden className="text-brand">
+                ↗
+              </span>
+            </a>
 
             <h3 className="mt-12 text-sm font-semibold">What SolFX is</h3>
             <div className="mt-3 space-y-4 text-sm leading-relaxed text-ink-muted">

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { Wordmark } from "@/components/Logo";
 import { NoxFlow } from "@/components/NoxFlow";
 import { ProductSwitcher } from "@/components/ProductSwitcher";
 
@@ -64,14 +65,10 @@ const NAV = [
 
 function Nav() {
   return (
-    <header className="sticky top-0 z-50 border-b border-line-soft bg-[#050607]/95 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-line-soft bg-bg/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1440px] items-center gap-8 px-4 py-4 md:px-8">
-        <Link
-          to="/nox"
-          className="text-lg font-extrabold uppercase tracking-tight md:text-xl"
-        >
-          SOL-FX <span className="text-ink-dim">/</span>{" "}
-          <span className="text-brand">NOXFUNDS</span>
+        <Link to="/nox">
+          <Wordmark product="nox" />
         </Link>
 
         <nav className="hidden items-center gap-7 text-[13px] lg:flex">
@@ -90,7 +87,7 @@ function Nav() {
           href="https://github.com/ahmedmustafakhan125-coder/SOLFX/blob/main/docs/NOXFUNDS.md"
           target="_blank"
           rel="noreferrer"
-          className="nox-cta ml-auto px-5 py-2 text-[11px] font-bold uppercase tracking-[0.14em]"
+          className="cta-solid ml-auto px-5 py-2 text-[11px] font-bold uppercase tracking-[0.14em]"
         >
           Read the spec
         </a>
@@ -130,8 +127,9 @@ function Section({
 export function Nox() {
   return (
     <div data-product="nox" className="relative min-h-screen bg-bg text-ink">
-      {/* One fixed grid behind the whole page, cyan on this surface. */}
-      <div className="nox-grid pointer-events-none fixed inset-0 z-0" />
+      {/* The shared backdrop. Identical to SolFX's; only the accent hue differs. */}
+      <div className="gridwork pointer-events-none fixed inset-0 z-0" />
+      <div className="glowfield pointer-events-none fixed inset-0 z-0" />
 
       <div className="relative z-10">
         <ProductSwitcher active="nox" />
@@ -139,8 +137,6 @@ export function Nox() {
 
         {/* ------------------------------------------------------------------ hero */}
         <section className="relative overflow-hidden px-4 py-28 md:px-8 md:py-36">
-          <div className="nox-glow pointer-events-none absolute inset-0" />
-
           <div className="relative z-10 mx-auto max-w-[1200px]">
             <div className="flex w-fit items-center gap-2 border border-brand/30 bg-brand/5 px-3 py-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-brand" />
@@ -169,7 +165,7 @@ export function Nox() {
             <div className="mt-10 flex flex-wrap gap-3">
               <a
                 href="#how"
-                className="nox-cta px-7 py-3 text-[11px] font-bold uppercase tracking-[0.14em]"
+                className="cta-solid px-7 py-3 text-[11px] font-bold uppercase tracking-[0.14em]"
               >
                 See how it works
               </a>

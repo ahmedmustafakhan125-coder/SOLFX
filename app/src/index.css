@@ -17,6 +17,8 @@
   --sf-text-muted: #cfc4c5;
   --sf-text-dim: #8a8384;
   --sf-purple: #9843fe;
+  /* The same purple as bare channels, for the grid and glow that use it at low alpha. */
+  --sf-accent-rgb: 152 67 254;
   --sf-purple-dim: #7b2fd6;
   --sf-purple-soft: #d8b9ff;
   --sf-green: #00ffa3;
@@ -79,26 +81,56 @@ body {
 }
 
 /*
- * The engineering grid. It backs the whole page, not just the hero.
+ * The page backdrop: one grid and one glow, shared by both products.
  *
- * Fixed rather than absolute, so one layer covers any scroll height: an absolute grid inside
- * each section would restart its 64px rhythm at every section boundary and show a seam wherever
- * a section's height was not a multiple of the cell.
+ * The only thing that differs between SolFX and NOXFUNDS is the hue, so the hue is the only
+ * thing either surface sets. `--sf-accent-rgb` carries it as bare channels, because a colour
+ * used at four different alphas cannot be a hex literal without repeating it four times and
+ * letting one of them drift.
  *
- * Page content sits in a `relative z-10` wrapper above it. Panels are opaque, so the grid reads
- * in the gutters between them rather than through them.
+ * Both layers are **fixed**, so one covers any scroll height. An absolute grid inside each
+ * section would restart its rhythm at every boundary and show a seam wherever a section's
+ * height was not a whole number of cells. Page content sits in a `relative z-10` wrapper above
+ * them; panels are opaque, so the grid reads in the gutters rather than through them.
  */
 .gridwork {
   background-image:
-    linear-gradient(rgba(76, 69, 70, 0.55) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(76, 69, 70, 0.55) 1px, transparent 1px);
-  background-size: 64px 64px;
+    linear-gradient(rgb(var(--sf-accent-rgb) / 0.13) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      rgb(var(--sf-accent-rgb) / 0.13) 1px,
+      transparent 1px
+    );
+  background-size: 60px 60px;
+}
+
+/*
+ * The glow. Strong from the left, faint from the top right — the shape in both references.
+ *
+ * Tinted only. There is no white layer: a white wash over a dark surface greys the grid out
+ * and reads as fog rather than as light, which is exactly what the earlier hero gradient did.
+ */
+.glowfield {
+  background:
+    radial-gradient(
+      55% 65% at 0% 32%,
+      rgb(var(--sf-accent-rgb) / 0.16),
+      transparent 70%
+    ),
+    radial-gradient(
+      45% 55% at 100% 0%,
+      rgb(var(--sf-accent-rgb) / 0.09),
+      transparent 70%
+    );
 }
 
 /*
  * NOXFUNDS is a second product on the same surface, so it gets a second accent rather than a
  * second stylesheet. Scoped to `[data-product="nox"]`, which the NOXFUNDS pages set on their
  * root element — everything built from `--color-brand` retints with no new class names.
+ *
+ * Only the hue changes. Background, surfaces and borders stay exactly as SolFX has them, so the
+ * two products are the same page in two colours rather than two designs that drifted apart.
  *
  * Cyan rather than the obvious green: `--sf-green` is already load-bearing as "long" on the
  * terminal, and a brand colour a trader can confuse with a direction is a bad brand colour.
@@ -107,48 +139,17 @@ body {
   --sf-purple: #00e5ff;
   --sf-purple-dim: #00b4cc;
   --sf-purple-soft: #7df3ff;
-  /* The NOXFUNDS surface runs darker than the terminal — closer to true black. */
-  --sf-bg: #050607;
-  --sf-surface: #0b0d0e;
-  --sf-surface-high: #14181a;
-  --sf-border: #1f2b2e;
-  --sf-border-soft: #162022;
+  --sf-accent-rgb: 0 229 255;
 }
 
-/*
- * The hero backdrop from the reference: a cyan engineering grid that fades out downward, with
- * a glow bleeding in from the left edge. Two layers rather than one image, so it scales to any
- * viewport and costs nothing to download.
- */
-.nox-grid {
-  background-image:
-    linear-gradient(rgba(0, 229, 255, 0.11) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 229, 255, 0.11) 1px, transparent 1px);
-  background-size: 56px 56px;
-}
-
-.nox-glow {
-  background:
-    radial-gradient(
-      60% 70% at 0% 35%,
-      rgba(0, 229, 255, 0.16),
-      transparent 70%
-    ),
-    radial-gradient(
-      45% 55% at 100% 0%,
-      rgba(0, 229, 255, 0.07),
-      transparent 70%
-    );
-}
-
-/* Solid cyan call to action, black text — the primary button in the reference. */
-.nox-cta {
+/* Solid accent call to action with dark text — the primary button in both references. */
+.cta-solid {
   background: var(--sf-purple);
   color: #04080a;
   border: 1px solid var(--sf-purple);
   transition: background 150ms ease;
 }
-.nox-cta:hover {
+.cta-solid:hover {
   background: var(--sf-purple-soft);
 }
 

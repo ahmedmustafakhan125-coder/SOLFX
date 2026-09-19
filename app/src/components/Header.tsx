@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useWalletConnection } from "@solana/react-hooks";
 
+import { Logo } from "@/components/Logo";
+
 const NAV = [
   { to: "/trade", label: "Trade" },
   { to: "/pool", label: "Pool" },
@@ -26,7 +28,8 @@ export function Header({ rpcLabel }: { rpcLabel: string }) {
 
   return (
     <header className="flex items-center gap-6 border-b border-line-soft px-5 py-3">
-      <Link to="/" className="flex items-baseline gap-2">
+      <Link to="/" className="flex items-center gap-2">
+        <Logo className="h-6 w-6 shrink-0 text-brand" />
         <span className="text-lg font-extrabold tracking-tight">SolFX</span>
         <span className="text-[10px] uppercase tracking-[0.2em] text-ink-dim">
           Pro Terminal
