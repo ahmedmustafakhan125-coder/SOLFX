@@ -186,10 +186,24 @@ fn mandate_of(principal: u64) -> Nox {
 
     let mandate = mandate_pda(&investor.pubkey(), &trader.pubkey(), 0);
     let signer = signer_pda(&mandate);
+    // The investor holds USDC, and `fund_mandate` moves the principal out of it into the
+    // mandate's own vault. Before the funding fix these tests wrote the vault balance directly,
+    // which is exactly why a mandate with a principal nobody deposited went unnoticed.
+    let investor_token = Pubkey::new_unique();
+    env.write_token_account(
+        investor_token,
+        env.usdc_mint,
+        investor.pubkey(),
+        support::INVESTOR_START,
+    );
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
             trader_profile: profile_pda(&trader.pubkey()),
+            usdc_mint: env.usdc_mint,
+            investor_token,
+            mandate_vault: support::vault_pda(&mandate),
+            token_program: spl_token::ID,
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader.pubkey(),
@@ -224,10 +238,9 @@ fn mandate_of(principal: u64) -> Nox {
 impl Nox {
     fn fund_for_trading(&mut self, usdc: u64) {
         self.env.svm.airdrop(&self.signer, 1_000_000_000).unwrap();
-        let vault = Pubkey::new_unique();
+        // Filled by `fund_mandate`; this only moves what is already there into SolFX.
+        let vault = support::vault_pda(&self.mandate);
         self.vault = vault;
-        self.env
-            .write_token_account(vault, self.env.usdc_mint, self.signer, usdc);
         let payer = self.investor.insecure_clone();
         let user_account = Env::user_pda(&self.signer);
 
@@ -695,10 +708,22 @@ fn a_second_concurrent_mandate_is_refused_at_bronze() {
         .unwrap();
 
     let mandate2 = mandate_pda(&investor2.pubkey(), &nox.trader.pubkey(), 0);
+    let investor2_token = Pubkey::new_unique();
+    let mint = nox.env.usdc_mint;
+    nox.env.write_token_account(
+        investor2_token,
+        mint,
+        investor2.pubkey(),
+        support::INVESTOR_START,
+    );
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
             trader_profile: profile_pda(&nox.trader.pubkey()),
+            usdc_mint: mint,
+            investor_token: investor2_token,
+            mandate_vault: support::vault_pda(&mandate2),
+            token_program: spl_token::ID,
             investor: investor2.pubkey(),
             config: config_pda(),
             trader: nox.trader.pubkey(),
@@ -857,4 +882,98 @@ fn a_trade_cannot_be_recorded_against_another_traders_profile() {
         msg.contains("ConstraintSeeds") || msg.contains("ProfileMismatch"),
         "{msg}"
     );
+}
+
+/// **A trader's slot cannot be taken by someone who deposits nothing.**
+///
+/// Measured against the pre-fix program on 2026-09-17: a wallet holding no USDC funded a
+/// "$10,000" mandate, and the Bronze trader's only slot was gone — a real investor was then
+/// refused with `TooManyActiveMandates`, and nothing in the protocol could free it, because
+/// settlement is the investor's to request and the griefer simply never would.
+///
+/// `fund_mandate` now moves the principal in the same instruction, so the slot costs exactly
+/// what it claims to be worth.
+#[test]
+fn a_traders_slot_cannot_be_taken_without_the_principal() {
+    let mut nox = roomy_mandate();
+    let trader = Keypair::new();
+    let admin = nox.env.admin.insecure_clone();
+    create_profile(&mut nox.env, &admin, &trader.pubkey());
+    let mint = nox.env.usdc_mint;
+
+    // A griefer with SOL for fees and an empty USDC account.
+    let griefer = Keypair::new();
+    nox.env
+        .svm
+        .airdrop(&griefer.pubkey(), 1_000_000_000)
+        .unwrap();
+    let griefer_token = Pubkey::new_unique();
+    nox.env
+        .write_token_account(griefer_token, mint, griefer.pubkey(), 0);
+
+    let fund = |investor: &Pubkey, token: Pubkey, principal: u64| {
+        let mandate = mandate_pda(investor, &trader.pubkey(), 0);
+        Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::FundMandate {
+                trader_profile: profile_pda(&trader.pubkey()),
+                usdc_mint: mint,
+                investor_token: token,
+                mandate_vault: support::vault_pda(&mandate),
+                token_program: spl_token::ID,
+                investor: *investor,
+                config: config_pda(),
+                trader: trader.pubkey(),
+                mandate,
+                mandate_signer: signer_pda(&mandate),
+                solfx_user_account: Env::user_pda(&signer_pda(&mandate)),
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::FundMandate {
+                seq: 0,
+                principal,
+                rules: base_rules(),
+            }
+            .data(),
+        }
+    };
+
+    let ix = fund(&griefer.pubkey(), griefer_token, 10_000 * ONE_USDC);
+    let err = nox
+        .env
+        .send(ix, &[&griefer])
+        .expect_err("a mandate cannot be funded with money the investor does not have");
+    assert!(
+        format!("{err:?}").contains("InsufficientPrincipal"),
+        "{err:?}"
+    );
+
+    let profile: noxfunds::state::TraderProfile = nox.env.read(&profile_pda(&trader.pubkey()));
+    assert_eq!(
+        profile.active_mandates, 0,
+        "the refused attempt took no slot"
+    );
+
+    // …and the slot is still there for someone who actually pays.
+    let real = Keypair::new();
+    nox.env.svm.airdrop(&real.pubkey(), 1_000_000_000).unwrap();
+    let real_token = Pubkey::new_unique();
+    nox.env
+        .write_token_account(real_token, mint, real.pubkey(), support::INVESTOR_START);
+    let ix = fund(&real.pubkey(), real_token, 500 * ONE_USDC);
+    nox.env.send(ix, &[&real]).expect("a real investor funds");
+
+    let profile: noxfunds::state::TraderProfile = nox.env.read(&profile_pda(&trader.pubkey()));
+    assert_eq!(profile.active_mandates, 1);
+    assert_eq!(
+        nox.env.token_balance(&support::vault_pda(&mandate_pda(
+            &real.pubkey(),
+            &trader.pubkey(),
+            0
+        ))),
+        500 * ONE_USDC,
+        "the vault holds exactly the principal"
+    );
+    nox.env.assert_invariants();
 }

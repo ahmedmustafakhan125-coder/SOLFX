@@ -153,7 +153,10 @@ pub struct Mandate {
     pub slots: [PositionSlot; MAX_SLOTS],
     pub opened_at: i64,
     pub bump: u8,
-    pub _reserved: [u8; 64],
+    /// Bump of the mandate's USDC vault at `["vault", mandate]`, stored so every instruction that
+    /// touches the vault re-checks its address without re-deriving it.
+    pub vault_bump: u8,
+    pub _reserved: [u8; 63],
 }
 
 impl Mandate {

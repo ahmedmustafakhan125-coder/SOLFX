@@ -217,10 +217,24 @@ fn roomy_mandate() -> Nox {
 
     let mandate = mandate_pda(&investor.pubkey(), &trader.pubkey(), 0);
     let signer = signer_pda(&mandate);
+    // The investor holds USDC, and `fund_mandate` moves the principal out of it into the
+    // mandate's own vault. Before the funding fix these tests wrote the vault balance directly,
+    // which is exactly why a mandate with a principal nobody deposited went unnoticed.
+    let investor_token = Pubkey::new_unique();
+    env.write_token_account(
+        investor_token,
+        env.usdc_mint,
+        investor.pubkey(),
+        support::INVESTOR_START,
+    );
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
             trader_profile: profile_pda(&trader.pubkey()),
+            usdc_mint: env.usdc_mint,
+            investor_token,
+            mandate_vault: support::vault_pda(&mandate),
+            token_program: spl_token::ID,
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader.pubkey(),
@@ -255,10 +269,9 @@ fn roomy_mandate() -> Nox {
 impl Nox {
     fn fund_for_trading(&mut self, usdc: u64) {
         self.env.svm.airdrop(&self.signer, 1_000_000_000).unwrap();
-        let vault = Pubkey::new_unique();
+        // Filled by `fund_mandate`; this only moves what is already there into SolFX.
+        let vault = support::vault_pda(&self.mandate);
         self.vault = vault;
-        self.env
-            .write_token_account(vault, self.env.usdc_mint, self.signer, usdc);
         let payer = self.investor.insecure_clone();
         let user_account = Env::user_pda(&self.signer);
 

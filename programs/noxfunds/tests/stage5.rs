@@ -143,10 +143,24 @@ fn setup_funded(rules: MandateRules, principal: u64, deposit: u64) -> Nox {
 
     let mandate = mandate_pda(&investor.pubkey(), &trader.pubkey(), 0);
     let signer = signer_pda(&mandate);
+    // The investor holds USDC, and `fund_mandate` moves the principal out of it into the
+    // mandate's own vault. Before the funding fix these tests wrote the vault balance directly,
+    // which is exactly why a mandate with a principal nobody deposited went unnoticed.
+    let investor_token = Pubkey::new_unique();
+    env.write_token_account(
+        investor_token,
+        env.usdc_mint,
+        investor.pubkey(),
+        support::INVESTOR_START,
+    );
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
             trader_profile: profile_pda(&trader.pubkey()),
+            usdc_mint: env.usdc_mint,
+            investor_token,
+            mandate_vault: support::vault_pda(&mandate),
+            token_program: spl_token::ID,
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader.pubkey(),
@@ -220,10 +234,9 @@ fn base_rules() -> MandateRules {
 impl Nox {
     fn fund_for_trading(&mut self, usdc: u64) {
         self.env.svm.airdrop(&self.signer, 1_000_000_000).unwrap();
-        let vault = Pubkey::new_unique();
+        // Filled by `fund_mandate`; this only moves what is already there into SolFX.
+        let vault = support::vault_pda(&self.mandate);
         self.vault = vault;
-        self.env
-            .write_token_account(vault, self.env.usdc_mint, self.signer, usdc);
         let payer = self.investor.insecure_clone();
         let user_account = Env::user_pda(&self.signer);
 
@@ -715,4 +728,71 @@ fn the_settler_cannot_redirect_the_investors_money() {
         "refused by the token-authority constraint: {err:?}"
     );
     assert_eq!(nox.env.token_balance(&thief_account), 0);
+}
+
+/// **Settlement pays out of the mandate's own vault, and no other.**
+///
+/// `claim_settlement` is permissionless, so the settler chooses the accounts. The vault used to
+/// be constrained only by *who owned it* — any token account whose authority was the mandate
+/// signer would do, and anyone can create one of those. A settler could therefore pass a fresh,
+/// empty account: SolFX's collateral would be withdrawn into it, `final_equity` would be read
+/// from it, and whatever the investor had deposited but not yet traded would be left behind in
+/// the real vault, uncounted in the split.
+///
+/// The vault is now bound to `["vault", mandate]` by seeds and a stored bump.
+#[test]
+fn settlement_refuses_a_vault_that_is_not_the_mandates_own() {
+    let mut nox = roomy_mandate();
+    let payees = nox.payees();
+    let inv = nox.investor.insecure_clone();
+    nox.request_settlement(&inv).expect("request");
+
+    // A token account the mandate signer genuinely owns — just not the mandate's vault.
+    let impostor = Pubkey::new_unique();
+    let mint = nox.env.usdc_mint;
+    let signer = nox.signer;
+    nox.env.write_token_account(impostor, mint, signer, 0);
+
+    let settler = solana_keypair::Keypair::new();
+    nox.env
+        .svm
+        .airdrop(&settler.pubkey(), 1_000_000_000)
+        .unwrap();
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::ClaimSettlement {
+            settler: settler.pubkey(),
+            config: config_pda(),
+            mandate: nox.mandate,
+            mandate_signer: nox.signer,
+            trader_profile: profile_pda(&nox.trader.pubkey()),
+            protocol: nox.env.protocol,
+            user_account: Env::user_pda(&nox.signer),
+            usdc_mint: mint,
+            collateral_vault: nox.env.collateral_vault,
+            mandate_vault: impostor,
+            investor_token: payees.investor,
+            trader_token: payees.trader,
+            treasury_token: payees.treasury,
+            token_program: spl_token::ID,
+            solfx_core_program: solfx_core::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::ClaimSettlement {}.data(),
+    };
+    let err = nox
+        .env
+        .send(ix, &[&settler])
+        .expect_err("only the mandate's own vault may be settled through");
+    assert!(format!("{err:?}").contains("ConstraintSeeds"), "{err:?}");
+
+    // The real vault still holds the principal, and a proper settlement still works.
+    assert_eq!(
+        nox.env.token_balance(&support::vault_pda(&nox.mandate)),
+        0,
+        "the principal is in SolFX, not idle in the vault"
+    );
+    nox.claim(&payees).expect("the honest settlement");
+    assert!(nox.env.token_balance(&payees.investor) > 0);
+    nox.env.assert_invariants();
 }

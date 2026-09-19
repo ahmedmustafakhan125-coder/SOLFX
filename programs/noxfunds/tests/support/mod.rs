@@ -64,3 +64,17 @@ pub fn set_upgrade_authority_of(env: &mut Env, program: &Pubkey, authority: Opti
 pub fn set_upgrade_authority(env: &mut Env, authority: Option<Pubkey>) {
     set_upgrade_authority_of(env, &noxfunds::ID, authority);
 }
+
+/// The mandate's USDC vault, at `["vault", mandate]`. Since the funding fix there is exactly
+/// one of these per mandate, and every instruction that touches it re-derives this address.
+pub fn vault_pda(mandate: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[noxfunds::constants::MANDATE_VAULT_SEED, mandate.as_ref()],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+/// What every fixture's investor starts with, so a deposit is a real transfer and the balance
+/// left behind is checkable.
+pub const INVESTOR_START: u64 = 1_000_000_000_000;

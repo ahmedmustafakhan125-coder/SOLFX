@@ -17,7 +17,9 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 use solfx_core::state::UserAccount;
 
-use crate::constants::{CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, TRADER_SEED};
+use crate::constants::{
+    CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, MANDATE_VAULT_SEED, TRADER_SEED,
+};
 use crate::errors::NoxError;
 use crate::events::{MandateSettled, SettlementRequested};
 use crate::settlement::split;
@@ -93,8 +95,15 @@ pub struct ClaimSettlement<'info> {
 
     // --- where the money goes -----------------------------------------------------------
     /// The mandate's own USDC account. Withdrawals land here first, then leave in three parts.
+    ///
+    /// Bound to `["vault", mandate]`. It used to be *any* token account the signer owned, and
+    /// the settler — who is anyone — chose which: they could pass a fresh empty account, so the
+    /// split was computed over a balance that excluded any principal still sitting in the real
+    /// vault.
     #[account(
         mut,
+        seeds = [MANDATE_VAULT_SEED, mandate.key().as_ref()],
+        bump = mandate.vault_bump,
         token::mint = config.usdc_mint,
         token::authority = mandate_signer,
     )]

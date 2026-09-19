@@ -1,9 +1,11 @@
 //! Funding a mandate: the moment an investor fixes the rules and hands over capital.
 
 use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
-    CONFIG_SEED, DEFAULT_TRADER_SPLIT_BPS, MANDATE_SEED, MANDATE_SIGNER_SEED, TRADER_SEED,
+    CONFIG_SEED, DEFAULT_TRADER_SPLIT_BPS, MANDATE_SEED, MANDATE_SIGNER_SEED, MANDATE_VAULT_SEED,
+    TRADER_SEED,
 };
 use crate::errors::NoxError;
 use crate::events::MandateFunded;
@@ -112,6 +114,42 @@ pub struct FundMandate<'info> {
     /// `solfx-core` on every CPI; only its address is recorded here.
     pub solfx_user_account: UncheckedAccount<'info>,
 
+    // --- the principal, which has to actually arrive -----------------------------------------
+    #[account(address = config.usdc_mint)]
+    pub usdc_mint: Box<Account<'info, Mint>>,
+
+    /// Where the principal comes from. Must be the investor's own USDC.
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        token::authority = investor,
+    )]
+    pub investor_token: Box<Account<'info, TokenAccount>>,
+
+    /// The mandate's one and only vault, at `["vault", mandate]`, owned by the signer PDA.
+    ///
+    /// # Why this is created here and not left to the client
+    ///
+    /// Before this existed, `fund_mandate` recorded `principal` as a number and moved nothing,
+    /// and "the vault" was any token account the signer happened to own. Measured on the
+    /// deployed program: a stranger holding no USDC funded a $10,000 mandate for a Bronze trader,
+    /// and the trader's only slot was taken — a real investor was then refused with
+    /// `TooManyActiveMandates`. Settlement also pays `principal` back first, so a principal that
+    /// was never deposited turned an investor's own later deposit into "profit" for the trader.
+    ///
+    /// Creating the vault at a fixed address and filling it in the same instruction makes
+    /// `principal` a fact about money rather than a claim about it.
+    #[account(
+        init,
+        payer = investor,
+        seeds = [MANDATE_VAULT_SEED, mandate.key().as_ref()],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = mandate_signer,
+    )]
+    pub mandate_vault: Box<Account<'info, TokenAccount>>,
+
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
@@ -124,6 +162,12 @@ pub fn fund_mandate(
     require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
     require!(principal > 0, NoxError::ZeroAmount);
     rules.validate()?;
+    // Named rather than left to the Token Program's generic "insufficient funds", so the
+    // frontend can say what the investor needs to do.
+    require!(
+        ctx.accounts.investor_token.amount >= principal,
+        NoxError::InsufficientPrincipal
+    );
 
     // The two things a tier actually binds. Both are checked here rather than at trade time,
     // because both are properties of the *mandate* and an investor should be refused while
@@ -164,12 +208,9 @@ pub fn fund_mandate(
     m.slots = Default::default();
     m.opened_at = Clock::get()?.unix_timestamp;
     m.bump = ctx.bumps.mandate;
+    m.vault_bump = ctx.bumps.mandate_vault;
 
-    let profile = &mut ctx.accounts.trader_profile;
-    profile.mandates_funded = profile.mandates_funded.saturating_add(1);
-    profile.active_mandates = profile.active_mandates.saturating_add(1);
-
-    emit!(MandateFunded {
+    let event = MandateFunded {
         mandate: m.key(),
         investor: m.investor,
         trader: m.trader,
@@ -179,8 +220,40 @@ pub fn fund_mandate(
         allowed_markets: m.allowed_markets,
         trader_split_bps: m.trader_split_bps,
         ts: m.opened_at,
-    });
+    };
+
+    let profile = &mut ctx.accounts.trader_profile;
+    profile.mandates_funded = profile.mandates_funded.saturating_add(1);
+    profile.active_mandates = profile.active_mandates.saturating_add(1);
+
+    // State first, then the one CPI. If the transfer fails the whole instruction reverts, so a
+    // mandate can never exist without its principal having arrived.
+    deposit_principal(&ctx, principal)?;
+
+    emit!(event);
     Ok(())
+}
+
+/// Move exactly `principal` from the investor into the mandate's vault.
+///
+/// `transfer_checked` rather than `transfer`, as everywhere else in this program: the mint and
+/// its decimals are verified by the Token Program too, not only by the constraint above.
+/// `#[inline(never)]` keeps the by-value `CpiContext` out of the handler's stack frame.
+#[inline(never)]
+fn deposit_principal(ctx: &Context<FundMandate>, principal: u64) -> Result<()> {
+    token::transfer_checked(
+        CpiContext::new(
+            ctx.accounts.token_program.key(),
+            TransferChecked {
+                from: ctx.accounts.investor_token.to_account_info(),
+                mint: ctx.accounts.usdc_mint.to_account_info(),
+                to: ctx.accounts.mandate_vault.to_account_info(),
+                authority: ctx.accounts.investor.to_account_info(),
+            },
+        ),
+        principal,
+        ctx.accounts.usdc_mint.decimals,
+    )
 }
 
 // --- giving the mandate a SolFX account, and funding it -------------------------------------
@@ -289,9 +362,14 @@ pub struct FundSolfxCollateral<'info> {
     /// CHECK: validated by `solfx-core`.
     #[account(mut)]
     pub collateral_vault: UncheckedAccount<'info>,
-    /// CHECK: the mandate's USDC account. `solfx-core` requires its owner to be the
-    /// authority, which is `mandate_signer`.
-    #[account(mut)]
+    /// CHECK: the mandate's own vault, bound by its seeds and stored bump — collateral can only
+    /// come from the account `fund_mandate` filled. `solfx-core` additionally requires its owner
+    /// to be the authority, `mandate_signer`.
+    #[account(
+        mut,
+        seeds = [MANDATE_VAULT_SEED, mandate.key().as_ref()],
+        bump = mandate.vault_bump,
+    )]
     pub mandate_vault: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, anchor_spl::token::Token>,

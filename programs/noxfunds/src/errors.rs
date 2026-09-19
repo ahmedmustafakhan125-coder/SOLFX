@@ -78,6 +78,10 @@ pub enum NoxError {
     // published, so inserting a variant earlier would renumber every error after it.
     #[msg("Only the program's upgrade authority may initialise the configuration")]
     NotTheUpgradeAuthority,
+
+    // --- funding -------------------------------------------------------------------------
+    #[msg("The investor's token account holds less than the principal")]
+    InsufficientPrincipal,
 }
 
 /// Map `solfx-math`'s errors onto this program's. Total and explicit, so adding a variant

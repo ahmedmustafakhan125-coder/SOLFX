@@ -176,12 +176,26 @@ fn setup() -> Nox {
 
     let mandate = mandate_pda(&investor.pubkey(), &trader.pubkey(), 0);
     let signer = signer_pda(&mandate);
+    // The investor holds USDC, and `fund_mandate` moves the principal out of it into the
+    // mandate's own vault. Before the funding fix these tests wrote the vault balance directly,
+    // which is exactly why a mandate with a principal nobody deposited went unnoticed.
+    let investor_token = Pubkey::new_unique();
+    env.write_token_account(
+        investor_token,
+        env.usdc_mint,
+        investor.pubkey(),
+        support::INVESTOR_START,
+    );
     let solfx_user = Env::user_pda(&signer);
 
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
             trader_profile: profile_pda(&trader.pubkey()),
+            usdc_mint: env.usdc_mint,
+            investor_token,
+            mandate_vault: support::vault_pda(&mandate),
+            token_program: spl_token::ID,
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader.pubkey(),
@@ -482,10 +496,24 @@ fn a_daily_loss_looser_than_the_total_drawdown_is_refused() {
     let admin = nox.env.admin.insecure_clone();
     create_profile(&mut nox.env, &admin, &trader2.pubkey());
 
+    // Funded properly, so the refusal below is about the rules and not about the money.
+    let investor_token = Pubkey::new_unique();
+    let mint = nox.env.usdc_mint;
+    nox.env.write_token_account(
+        investor_token,
+        mint,
+        investor.pubkey(),
+        support::INVESTOR_START,
+    );
+
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
             trader_profile: profile_pda(&trader2.pubkey()),
+            usdc_mint: mint,
+            investor_token,
+            mandate_vault: support::vault_pda(&mandate),
+            token_program: spl_token::ID,
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader2.pubkey(),
@@ -541,7 +569,8 @@ fn the_market_bitmap_does_not_wrap() {
         slots: Default::default(),
         opened_at: 0,
         bump: 0,
-        _reserved: [0; 64],
+        vault_bump: 0,
+        _reserved: [0; 63],
     };
     assert!(m.permits_market(0));
     assert!(!m.permits_market(1));
@@ -564,9 +593,8 @@ impl Nox {
         // `Position` (2,596,080 lamports) and `TriggerOrder` (2,039,280).
         self.env.svm.airdrop(&self.signer, 1_000_000_000).unwrap();
 
-        let vault = Pubkey::new_unique();
-        self.env
-            .write_token_account(vault, self.env.usdc_mint, self.signer, usdc);
+        // Filled by `fund_mandate`; this only moves what is already there into SolFX.
+        let vault = support::vault_pda(&self.mandate);
 
         let payer = self.investor.insecure_clone();
         let user_account = Env::user_pda(&self.signer);
@@ -663,7 +691,10 @@ fn a_compliant_trade_opens_a_position_with_its_stop_attached() {
 #[test]
 fn the_third_concurrent_position_is_the_last_one_allowed() {
     let mut nox = setup();
-    nox.fund_for_trading(20_000 * ONE_USDC);
+    // The whole principal. A mandate cannot put more into SolFX than the investor deposited,
+    // which is the point of the funding fix — this used to ask for 20,000 against a 10,000
+    // principal and a vault that had been written into existence.
+    nox.fund_for_trading(PRINCIPAL);
 
     let stop = SPOT - (SPOT * 100) / 10_000;
     let size = ONE_LOT / 100;

@@ -96,7 +96,10 @@ struct Nox {
 }
 
 fn setup_with(rules: MandateRules) -> Nox {
-    setup_funded(rules, PRINCIPAL, 20_000 * ONE_USDC)
+    // Deposit the whole principal. It used to ask for twice the principal, which the old
+    // fixture could grant by writing a vault balance out of thin air; a mandate can now only
+    // put into SolFX what the investor actually paid in.
+    setup_funded(rules, PRINCIPAL, PRINCIPAL)
 }
 
 /// A mandate whose principal and deposit are whatever the test needs.
@@ -148,10 +151,24 @@ fn setup_funded(rules: MandateRules, principal: u64, deposit: u64) -> Nox {
 
     let mandate = mandate_pda(&investor.pubkey(), &trader.pubkey(), 0);
     let signer = signer_pda(&mandate);
+    // The investor holds USDC, and `fund_mandate` moves the principal out of it into the
+    // mandate's own vault. Before the funding fix these tests wrote the vault balance directly,
+    // which is exactly why a mandate with a principal nobody deposited went unnoticed.
+    let investor_token = Pubkey::new_unique();
+    env.write_token_account(
+        investor_token,
+        env.usdc_mint,
+        investor.pubkey(),
+        support::INVESTOR_START,
+    );
     let ix = Instruction {
         program_id: noxfunds::ID,
         accounts: noxfunds::accounts::FundMandate {
             trader_profile: profile_pda(&trader.pubkey()),
+            usdc_mint: env.usdc_mint,
+            investor_token,
+            mandate_vault: support::vault_pda(&mandate),
+            token_program: spl_token::ID,
             investor: investor.pubkey(),
             config: config_pda(),
             trader: trader.pubkey(),
@@ -220,9 +237,8 @@ fn base_rules() -> MandateRules {
 impl Nox {
     fn fund_for_trading(&mut self, usdc: u64) {
         self.env.svm.airdrop(&self.signer, 1_000_000_000).unwrap();
-        let vault = Pubkey::new_unique();
-        self.env
-            .write_token_account(vault, self.env.usdc_mint, self.signer, usdc);
+        // Filled by `fund_mandate`; this only moves what is already there into SolFX.
+        let vault = support::vault_pda(&self.mandate);
         let payer = self.investor.insecure_clone();
         let user_account = Env::user_pda(&self.signer);
 
@@ -562,10 +578,11 @@ fn an_open_position_is_counted_in_equity() {
 
     nox.observe(&[0]).expect("observe with one position");
     let m = nox.mandate();
-    // Deposited $20,000; $500 of it is now position margin. If positions were ignored the
-    // observation would read ~$19,500 and the mandate would look like it had lost money.
+    // Deposited $10,000 — the whole principal; $500 of it is now position margin. If positions
+    // were ignored the observation would read ~$9,500 and the mandate would look like it had
+    // lost money.
     assert!(
-        m.last_equity > 19_000 * ONE_USDC,
+        m.last_equity > 9_500 * ONE_USDC,
         "position equity must be counted, got {}",
         m.last_equity
     );
