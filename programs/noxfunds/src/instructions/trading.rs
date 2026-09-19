@@ -510,6 +510,13 @@ pub fn funded_close_position(
     // changes a fee, which is precisely the failure `.claude/rules/solana.md` §10 warns about.
     let free_before = ctx.accounts.user_account.free_collateral;
     let released_margin = ctx.accounts.position.collateral;
+    // The open fee was taken when the position opened, so it is already out of `free_before`
+    // and the delta below cannot see it. Measured on devnet 2026-09-19: a mandate lost
+    // 0.202126 USDC on one round trip while the record showed 0.192117 — short by exactly the
+    // 0.010009 open fee. Every trade was flattered by whatever it paid to open, which is the
+    // one direction a track record must not be wrong in, and profit factor is what tiers are
+    // decided on.
+    let open_fee = ctx.accounts.position.open_fee_paid;
 
     let mandate_key = ctx.accounts.mandate.key();
     let bump = ctx.accounts.mandate.signer_bump;
@@ -550,6 +557,7 @@ pub fn funded_close_position(
     let realized_pnl = i128::from(ctx.accounts.user_account.free_collateral)
         .checked_sub(i128::from(free_before))
         .and_then(|d| d.checked_sub(i128::from(released_margin)))
+        .and_then(|d| d.checked_sub(i128::from(open_fee)))
         .ok_or(NoxError::MathOverflow)?;
     let realized_pnl = i64::try_from(realized_pnl).map_err(|_| NoxError::MathOverflow)?;
 

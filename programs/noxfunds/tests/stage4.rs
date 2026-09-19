@@ -526,23 +526,22 @@ const STOP: i64 = SPOT - (SPOT * 30) / 10_000;
 #[test]
 fn a_winning_trade_records_the_venues_own_figure() {
     let mut nox = roomy_mandate();
-    nox.open(0, STOP).expect("open");
-
+    let user_account = Env::user_pda(&nox.signer);
+    // Read *before the open*, not between the open and the close: the open fee comes out at the
+    // open, and measuring after it would exclude the fee from both sides and prove nothing.
     let before = nox
         .env
-        .read::<solfx_core::state::UserAccount>(&Env::user_pda(&nox.signer));
-    let margin = nox
-        .env
-        .read::<solfx_core::state::Position>(&Env::position_pda(&Env::user_pda(&nox.signer), 0, 0))
-        .collateral;
+        .read::<solfx_core::state::UserAccount>(&user_account)
+        .free_collateral;
 
+    nox.open(0, STOP).expect("open");
     nox.close_at(favourable(), 0).expect("close in profit");
 
     let after = nox
         .env
-        .read::<solfx_core::state::UserAccount>(&Env::user_pda(&nox.signer));
-    let moved =
-        i128::from(after.free_collateral) - i128::from(before.free_collateral) - i128::from(margin);
+        .read::<solfx_core::state::UserAccount>(&user_account)
+        .free_collateral;
+    let moved = i128::from(after) - i128::from(before);
 
     let p = nox.profile();
     assert_eq!(p.trades, 1);
@@ -551,7 +550,7 @@ fn a_winning_trade_records_the_venues_own_figure() {
     assert_eq!(
         i128::from(p.gross_profit),
         moved,
-        "the record must equal the balance movement to the unit"
+        "the record must equal what the mandate's collateral actually did, to the unit"
     );
     assert_eq!(p.largest_win, p.gross_profit);
     assert_eq!(p.gross_loss, 0);
@@ -573,6 +572,40 @@ fn a_losing_trade_records_as_a_loss() {
     // No wins at all, so the profit factor is zero rather than undefined.
     assert_eq!(p.profit_factor_bps(), 0);
     assert_eq!(p.win_rate_bps(), 0);
+    nox.env.assert_invariants();
+}
+
+/// **The record equals what the mandate actually lost — both fees, not one.**
+///
+/// The recorded figure is the change in SolFX free collateral across the close, and the open fee
+/// was taken when the position *opened*, so it is already out of the "before" reading. Measured
+/// on devnet 2026-09-19: a mandate lost 0.202126 USDC on one round trip while its trader's
+/// record showed 0.192117, short by exactly the 0.010009 open fee. This asserts the two agree
+/// to the unit, which is the only version of a track record worth publishing.
+#[test]
+fn the_record_matches_the_collateral_the_mandate_actually_lost() {
+    let mut nox = roomy_mandate();
+    let user_account = Env::user_pda(&nox.signer);
+    let before = nox
+        .env
+        .read::<solfx_core::state::UserAccount>(&user_account)
+        .free_collateral;
+
+    nox.open(0, STOP).expect("open");
+    nox.close_at(PriceSpec::default(), 0).expect("close");
+
+    let after = nox
+        .env
+        .read::<solfx_core::state::UserAccount>(&user_account)
+        .free_collateral;
+    let actually_lost = before - after;
+    let p = nox.profile();
+    assert_eq!(p.losses, 1);
+    assert_eq!(
+        p.gross_loss, actually_lost,
+        "the record says {} but the mandate is down {}",
+        p.gross_loss, actually_lost
+    );
     nox.env.assert_invariants();
 }
 
