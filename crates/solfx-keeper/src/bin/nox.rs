@@ -80,6 +80,11 @@ use solfx_core::state::{Direction, Market, MarketStatus, Position, PriceSource, 
 const TOKEN_PROGRAM: Pubkey = solana_pubkey::pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ATA_PROGRAM: Pubkey = solana_pubkey::pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const ONE_USDC: u64 = 1_000_000;
+/// Basis points in a whole.
+const BPS_WHOLE: u64 = 10_000;
+/// How far under the mandate's per-trade ceiling a planned trade is sized. 200 bps survives a
+/// 2% rise between planning and landing — see `plan_trade` for the run it was measured on.
+const NOTIONAL_HEADROOM_BPS: u64 = 200;
 const BASE_PRECISION: u128 = 1_000_000_000;
 const NOTIONAL_DIVISOR: u128 = 1_000_000_000_000;
 
@@ -456,10 +461,23 @@ fn plan_trade(
     let collateral_raw = raw(collateral)?;
     let principal_raw = raw(principal)?;
 
+    // The trade is sized under the mandate's ceiling, not at it.
+    //
+    // `check_rules` measures the notional at the oracle price **when the transaction lands**,
+    // and this plan is priced when the run starts. A trade sized to exactly the ceiling passes
+    // only if the price has not risen by a single tick in between. Three runs did pass that way,
+    // by luck; the marketplace run put six more transactions in the gap and was refused with
+    // `TradeExceedsMandate`. The ceiling stays where it was — a mandate's rules are immutable, so
+    // an existing one cannot be loosened — and the trade leaves room for the price to move.
+    let traded_raw = notional_raw
+        .checked_mul(BPS_WHOLE.saturating_sub(NOTIONAL_HEADROOM_BPS))
+        .and_then(|v| v.checked_div(BPS_WHOLE))
+        .ok_or_else(|| anyhow!("notional overflows"))?;
+
     let price_u = u128::try_from(price).map_err(|_| anyhow!("negative price"))?;
-    // `notional_raw`, not `notional`: the quote side is 1e6 units, and using whole USDC here
-    // sized a $100 position at 1 base unit — caught by the bounds check below, on devnet.
-    let size_base = u128::from(notional_raw)
+    // In 1e6 units, not whole USDC: using whole USDC here once sized a $100 position at 1 base
+    // unit — caught by the bounds check below, on devnet.
+    let size_base = u128::from(traded_raw)
         .checked_mul(NOTIONAL_DIVISOR)
         .and_then(|v| v.checked_div(price_u))
         .and_then(|v| u64::try_from(v).ok())
@@ -555,7 +573,7 @@ fn plan_trade(
         price,
         size_base,
         collateral: collateral_raw,
-        notional: notional_raw,
+        notional: traded_raw,
         stop_price,
         // A long buys, so the bound is a maximum. There is no "disabled" slippage.
         price_limit: price
@@ -796,9 +814,10 @@ async fn lifecycle(
     );
     println!("  oracle    {}", price_1e9(plan.price));
     println!(
-        "  plan      principal {}, notional {}, margin {}, stop {} (100 bps below)",
+        "  plan      principal {}, notional {} under a {} ceiling, margin {}, stop {} (100 bps below)",
         usdc(principal_raw),
         usdc(plan.notional),
+        usdc(plan.rules.max_trade_notional),
         usdc(plan.collateral),
         price_1e9(plan.stop_price)
     );
@@ -1829,16 +1848,60 @@ mod tests {
 
     /// $200 of principal at a BTC-like price: half deployed, a quarter as margin.
     #[test]
+    /// **The planned trade still fits its ceiling after the price moves.**
+    ///
+    /// The program measures notional at the oracle price when the transaction lands; the plan
+    /// is priced when the run starts. This is the gap that refused the first marketplace run.
+    /// Measured with the program's own arithmetic, `notional_in_collateral`, not a restatement.
+    #[test]
+    fn the_planned_trade_survives_the_price_rising_before_it_lands() {
+        let planned_at = 81_244_696_432_490_i64; // the marketplace run's oracle, at 1e9
+        let m = market_for(1, u64::MAX);
+        let plan = plan_trade(
+            5,
+            Pubkey::new_unique(),
+            m,
+            Pubkey::new_unique(),
+            planned_at,
+            200,
+        )
+        .unwrap();
+        let ceiling = plan.rules.max_trade_notional;
+        let at = |bps_up: i64| {
+            let p = planned_at + planned_at * bps_up / 10_000;
+            solfx_math::pnl::notional_in_collateral(
+                plan.size_base,
+                p,
+                solfx_math::types::QuoteConversion::None,
+                0,
+            )
+            .unwrap()
+        };
+        // Up 0, 100 and 200 bps between planning and landing: still inside.
+        for bps in [0, 100, 200] {
+            assert!(
+                at(bps) <= ceiling,
+                "refused after a {bps} bps rise: {}",
+                at(bps)
+            );
+        }
+        // Past the headroom, the program's refusal is the right answer and still happens.
+        assert!(at(300) > ceiling, "a 3% rise should exceed a 2% headroom");
+    }
+
+    #[test]
     fn the_plan_sizes_the_trade_from_the_principal() {
         let price = 80_000 * 1_000_000_000_i64; // $80,000 at PRICE_PRECISION
         let m = market_for(1, u64::MAX);
         let plan =
             plan_trade(5, Pubkey::new_unique(), m, Pubkey::new_unique(), price, 200).unwrap();
-        assert_eq!(plan.notional, 100 * ONE_USDC);
+        // A $100 ceiling, and a trade 2% under it.
+        assert_eq!(plan.rules.max_trade_notional, 100 * ONE_USDC);
+        assert_eq!(plan.notional, 98 * ONE_USDC);
         assert_eq!(plan.collateral, 50 * ONE_USDC);
-        // $100 of BTC at $80,000 is 0.00125 BTC, and base units are 1e9: 1,250,000.
+        // $98 of BTC at $80,000 is 0.001225 BTC, and base units are 1e9: 1,225,000.
         // Pinned because the first version computed 1, having used whole USDC for the quote.
-        assert_eq!(plan.size_base, 1_250_000);
+        assert_eq!(plan.size_base, 1_225_000);
         // The stop sits 100 bps below the entry, so a long's stop is below the price.
         assert!(plan.stop_price < price);
         assert!(plan.price_limit > price, "a long's bound is a maximum");
