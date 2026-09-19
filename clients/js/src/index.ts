@@ -24,3 +24,13 @@ export * from "./priceAccounts.js";
 export * from "./events/index.js";
 // Hand-written because `solfx_referral` is not in `codama.json`. See referral/index.ts.
 export * as referral from "./referral/index.js";
+
+// NOXFUNDS. Codama output from `codama.noxfunds.json`, generated from the IDL **as published on
+// chain** (`scripts/fetch-idl.sh noxfunds`), so it describes the program users actually call.
+//
+// Its own config and its own folder, and namespaced rather than flattened: `codama.json` renders
+// with `deleteFolderBeforeRendering`, so sharing it would delete the SolFX client, and both
+// programs define names like `Direction` that would collide in one flat namespace.
+export * as nox from "./generated-noxfunds/index.js";
+// The addresses the IDL cannot describe. See nox/pdas.ts.
+export * as noxPdas from "./nox/pdas.js";

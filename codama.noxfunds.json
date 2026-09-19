@@ -1,0 +1,13 @@
+{
+  "idl": "clients/js/idl/noxfunds.json",
+  "before": [],
+  "scripts": {
+    "js": {
+      "from": "@codama/renderers-js",
+      "args": [
+        "clients/js/src/generated-noxfunds",
+        { "deleteFolderBeforeRendering": true, "formatCode": true }
+      ]
+    }
+  }
+}

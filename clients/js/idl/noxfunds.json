@@ -1,0 +1,3404 @@
+{
+  "accounts": [
+    {
+      "discriminator": [
+        113,
+        216,
+        98,
+        159,
+        185,
+        63,
+        55,
+        18
+      ],
+      "name": "Mandate"
+    },
+    {
+      "discriminator": [
+        115,
+        160,
+        106,
+        28,
+        4,
+        223,
+        249,
+        200
+      ],
+      "name": "NoxConfig"
+    },
+    {
+      "discriminator": [
+        99,
+        135,
+        170,
+        100,
+        49,
+        79,
+        225,
+        169
+      ],
+      "name": "TraderProfile"
+    }
+  ],
+  "address": "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx",
+  "errors": [
+    {
+      "code": 6000,
+      "msg": "Protocol is paused",
+      "name": "ProtocolPaused"
+    },
+    {
+      "code": 6001,
+      "msg": "Only the admin may do this",
+      "name": "NotTheAdmin"
+    },
+    {
+      "code": 6002,
+      "msg": "Signer is not this mandate's trader",
+      "name": "NotTheTrader"
+    },
+    {
+      "code": 6003,
+      "msg": "Mandate is not Active",
+      "name": "MandateNotActive"
+    },
+    {
+      "code": 6004,
+      "msg": "Trade notional exceeds the mandate's per-trade ceiling",
+      "name": "TradeExceedsMandate"
+    },
+    {
+      "code": 6005,
+      "msg": "Risk at the stop exceeds the mandate's per-trade risk limit",
+      "name": "RiskPerTradeExceeded"
+    },
+    {
+      "code": 6006,
+      "msg": "Every funded trade must carry a stop-loss",
+      "name": "StopLossRequired"
+    },
+    {
+      "code": 6007,
+      "msg": "Stop-loss is further from entry than the mandate allows",
+      "name": "StopTooFar"
+    },
+    {
+      "code": 6008,
+      "msg": "Stop-loss is on the wrong side of the entry price",
+      "name": "StopOnWrongSide"
+    },
+    {
+      "code": 6009,
+      "msg": "This market is not in the mandate's permitted set",
+      "name": "MarketNotPermitted"
+    },
+    {
+      "code": 6010,
+      "msg": "Mandate already holds its maximum number of open positions",
+      "name": "TooManyOpenPositions"
+    },
+    {
+      "code": 6011,
+      "msg": "Trade would exceed the mandate's total open notional",
+      "name": "TotalNotionalExceeded"
+    },
+    {
+      "code": 6012,
+      "msg": "Mandate has breached its maximum drawdown",
+      "name": "DrawdownExceeded"
+    },
+    {
+      "code": 6013,
+      "msg": "Position has not been held for the mandate's minimum",
+      "name": "MinimumHoldNotMet"
+    },
+    {
+      "code": 6014,
+      "msg": "Mandate has not breached anything; there is nothing to flag",
+      "name": "NotBreached"
+    },
+    {
+      "code": 6015,
+      "msg": "Only the investor who funded this mandate may do this",
+      "name": "NotTheInvestor"
+    },
+    {
+      "code": 6016,
+      "msg": "Mandate still holds open positions; close them before settling",
+      "name": "PositionsStillOpen"
+    },
+    {
+      "code": 6017,
+      "msg": "Mandate is not winding down or breached, so it cannot be settled",
+      "name": "MandateNotSettleable"
+    },
+    {
+      "code": 6018,
+      "msg": "This mandate is not tracking a position at that market and nonce",
+      "name": "PositionNotTracked"
+    },
+    {
+      "code": 6019,
+      "msg": "That position still exists on SolFX, so there is nothing to reconcile",
+      "name": "PositionStillOpen"
+    },
+    {
+      "code": 6020,
+      "msg": "Equity observation must supply every open position exactly once",
+      "name": "IncompleteObservation"
+    },
+    {
+      "code": 6021,
+      "msg": "Only a breached or winding-down mandate may be wound down by a third party",
+      "name": "MandateNotWindingDown"
+    },
+    {
+      "code": 6022,
+      "msg": "A position at this market and nonce closed without being reconciled; reconcile it first",
+      "name": "SlotNotReconciled"
+    },
+    {
+      "code": 6023,
+      "msg": "Mandate rules are not internally consistent",
+      "name": "InvalidMandateRules"
+    },
+    {
+      "code": 6024,
+      "msg": "Amount must be greater than zero",
+      "name": "ZeroAmount"
+    },
+    {
+      "code": 6025,
+      "msg": "Arithmetic overflow",
+      "name": "MathOverflow"
+    },
+    {
+      "code": 6026,
+      "msg": "This mandate is larger than the trader's tier permits",
+      "name": "MandateExceedsTierLimit"
+    },
+    {
+      "code": 6027,
+      "msg": "The trader already holds as many mandates as their tier permits",
+      "name": "TooManyActiveMandates"
+    },
+    {
+      "code": 6028,
+      "msg": "This profile does not belong to the mandate's trader",
+      "name": "ProfileMismatch"
+    },
+    {
+      "code": 6029,
+      "msg": "Only the program's upgrade authority may initialise the configuration",
+      "name": "NotTheUpgradeAuthority"
+    },
+    {
+      "code": 6030,
+      "msg": "The investor's token account holds less than the principal",
+      "name": "InsufficientPrincipal"
+    }
+  ],
+  "events": [
+    {
+      "discriminator": [
+        181,
+        49,
+        200,
+        156,
+        19,
+        167,
+        178,
+        91
+      ],
+      "name": "ConfigInitialized"
+    },
+    {
+      "discriminator": [
+        207,
+        28,
+        22,
+        40,
+        29,
+        78,
+        35,
+        47
+      ],
+      "name": "EquityObserved"
+    },
+    {
+      "discriminator": [
+        32,
+        204,
+        94,
+        115,
+        171,
+        111,
+        4,
+        161
+      ],
+      "name": "FundedTradeClosed"
+    },
+    {
+      "discriminator": [
+        90,
+        92,
+        72,
+        165,
+        10,
+        251,
+        121,
+        216
+      ],
+      "name": "FundedTradeOpened"
+    },
+    {
+      "discriminator": [
+        231,
+        129,
+        99,
+        17,
+        108,
+        8,
+        144,
+        89
+      ],
+      "name": "MandateBreached"
+    },
+    {
+      "discriminator": [
+        203,
+        100,
+        172,
+        41,
+        38,
+        98,
+        164,
+        99
+      ],
+      "name": "MandateFunded"
+    },
+    {
+      "discriminator": [
+        178,
+        149,
+        252,
+        51,
+        104,
+        193,
+        48,
+        113
+      ],
+      "name": "MandateSettled"
+    },
+    {
+      "discriminator": [
+        227,
+        171,
+        63,
+        219,
+        215,
+        204,
+        235,
+        122
+      ],
+      "name": "PositionReconciled"
+    },
+    {
+      "discriminator": [
+        91,
+        171,
+        195,
+        9,
+        95,
+        59,
+        226,
+        106
+      ],
+      "name": "PositionWoundDown"
+    },
+    {
+      "discriminator": [
+        228,
+        95,
+        93,
+        44,
+        96,
+        115,
+        75,
+        225
+      ],
+      "name": "SettlementRequested"
+    },
+    {
+      "discriminator": [
+        92,
+        141,
+        215,
+        142,
+        176,
+        0,
+        249,
+        6
+      ],
+      "name": "StopCancelled"
+    },
+    {
+      "discriminator": [
+        126,
+        9,
+        150,
+        127,
+        199,
+        123,
+        136,
+        1
+      ],
+      "name": "TierChanged"
+    },
+    {
+      "discriminator": [
+        153,
+        142,
+        127,
+        129,
+        64,
+        214,
+        134,
+        138
+      ],
+      "name": "TradeRecorded"
+    },
+    {
+      "discriminator": [
+        77,
+        138,
+        158,
+        59,
+        167,
+        154,
+        24,
+        201
+      ],
+      "name": "TraderProfileCreated"
+    }
+  ],
+  "instructions": [
+    {
+      "accounts": [
+        {
+          "name": "settler",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "user_account",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint",
+          "writable": true
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true
+        },
+        {
+          "name": "mandate_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "investor_token",
+          "writable": true
+        },
+        {
+          "name": "trader_token",
+          "writable": true
+        },
+        {
+          "name": "treasury_token",
+          "writable": true
+        },
+        {
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "account": "Mandate",
+                "kind": "account",
+                "path": "mandate.trader"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        85,
+        208,
+        73,
+        229,
+        143,
+        98,
+        83,
+        212
+      ],
+      "name": "claim_settlement"
+    },
+    {
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate"
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "user_account",
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        82,
+        18,
+        172,
+        49,
+        89,
+        98,
+        47,
+        142
+      ],
+      "name": "create_solfx_account"
+    },
+    {
+      "accounts": [
+        {
+          "name": "investor",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "trader"
+        },
+        {
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "solfx_user_account"
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "investor_token",
+          "writable": true
+        },
+        {
+          "name": "mandate_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "seq",
+          "type": "u8"
+        },
+        {
+          "name": "principal",
+          "type": "u64"
+        },
+        {
+          "name": "rules",
+          "type": {
+            "defined": {
+              "name": "MandateRules"
+            }
+          }
+        }
+      ],
+      "discriminator": [
+        233,
+        15,
+        136,
+        238,
+        108,
+        122,
+        197,
+        29
+      ],
+      "name": "fund_mandate"
+    },
+    {
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate"
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "user_account",
+          "writable": true
+        },
+        {
+          "name": "collateral_mint",
+          "writable": true
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true
+        },
+        {
+          "name": "mandate_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ],
+      "discriminator": [
+        29,
+        23,
+        27,
+        204,
+        167,
+        94,
+        187,
+        211
+      ],
+      "name": "fund_solfx_collateral"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate"
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "trigger_order",
+          "writable": true
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_index",
+          "type": "u16"
+        },
+        {
+          "name": "nonce",
+          "type": "u8"
+        },
+        {
+          "name": "order_id",
+          "type": "u8"
+        }
+      ],
+      "discriminator": [
+        134,
+        246,
+        181,
+        255,
+        164,
+        74,
+        78,
+        238
+      ],
+      "name": "funded_cancel_stop"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "user_account",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "account": "Mandate",
+                "kind": "account",
+                "path": "mandate.trader"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true
+        },
+        {
+          "name": "lp_pool",
+          "writable": true
+        },
+        {
+          "name": "lp_vault",
+          "writable": true
+        },
+        {
+          "name": "insurance_fund",
+          "writable": true
+        },
+        {
+          "name": "insurance_vault",
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "writable": true
+        },
+        {
+          "name": "price_update"
+        },
+        {
+          "name": "secondary_price_update",
+          "optional": true
+        },
+        {
+          "name": "quote_conversion_price_update",
+          "optional": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_index",
+          "type": "u16"
+        },
+        {
+          "name": "nonce",
+          "type": "u8"
+        },
+        {
+          "name": "price_limit",
+          "type": "i64"
+        }
+      ],
+      "discriminator": [
+        227,
+        179,
+        83,
+        193,
+        193,
+        251,
+        156,
+        231
+      ],
+      "name": "funded_close_position"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "user_account",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "trigger_order",
+          "writable": true
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true
+        },
+        {
+          "name": "lp_pool",
+          "writable": true
+        },
+        {
+          "name": "lp_vault",
+          "writable": true
+        },
+        {
+          "name": "insurance_fund",
+          "writable": true
+        },
+        {
+          "name": "insurance_vault",
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "writable": true
+        },
+        {
+          "name": "price_update"
+        },
+        {
+          "name": "secondary_price_update",
+          "optional": true
+        },
+        {
+          "name": "quote_conversion_price_update",
+          "optional": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_index",
+          "type": "u16"
+        },
+        {
+          "name": "nonce",
+          "type": "u8"
+        },
+        {
+          "name": "direction",
+          "type": {
+            "defined": {
+              "name": "Direction"
+            }
+          }
+        },
+        {
+          "name": "size_base",
+          "type": "u64"
+        },
+        {
+          "name": "collateral",
+          "type": "u64"
+        },
+        {
+          "name": "price_limit",
+          "type": "i64"
+        },
+        {
+          "name": "order_id",
+          "type": "u8"
+        },
+        {
+          "name": "stop_loss_price",
+          "type": "i64"
+        }
+      ],
+      "discriminator": [
+        109,
+        93,
+        55,
+        146,
+        36,
+        186,
+        248,
+        83
+      ],
+      "name": "funded_open_position"
+    },
+    {
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx",
+          "name": "program"
+        },
+        {
+          "name": "program_data"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "guardian",
+          "type": "pubkey"
+        },
+        {
+          "name": "treasury",
+          "type": "pubkey"
+        },
+        {
+          "name": "usdc_mint",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        208,
+        127,
+        21,
+        1,
+        194,
+        190,
+        196,
+        70
+      ],
+      "name": "initialize_config"
+    },
+    {
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "authority"
+        },
+        {
+          "name": "profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        195,
+        249,
+        92,
+        96,
+        42,
+        151,
+        172,
+        99
+      ],
+      "name": "initialize_trader_profile"
+    },
+    {
+      "accounts": [
+        {
+          "name": "observer",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_account"
+        },
+        {
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "account": "Mandate",
+                "kind": "account",
+                "path": "mandate.trader"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        198,
+        172,
+        192,
+        97,
+        103,
+        219,
+        39,
+        91
+      ],
+      "name": "observe_mandate_equity"
+    },
+    {
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "account": "TraderProfile",
+                "kind": "account",
+                "path": "profile.authority"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        88,
+        190,
+        225,
+        127,
+        27,
+        185,
+        123,
+        147
+      ],
+      "name": "recompute_tier"
+    },
+    {
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "position"
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_index",
+          "type": "u16"
+        },
+        {
+          "name": "nonce",
+          "type": "u8"
+        }
+      ],
+      "discriminator": [
+        112,
+        179,
+        103,
+        225,
+        241,
+        95,
+        12,
+        78
+      ],
+      "name": "reconcile_position"
+    },
+    {
+      "accounts": [
+        {
+          "name": "investor",
+          "signer": true
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        238,
+        127,
+        110,
+        105,
+        43,
+        95,
+        115,
+        41
+      ],
+      "name": "request_settlement"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ],
+      "discriminator": [
+        91,
+        60,
+        125,
+        192,
+        176,
+        225,
+        166,
+        218
+      ],
+      "name": "set_paused"
+    },
+    {
+      "accounts": [
+        {
+          "name": "closer",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate"
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "trigger_order",
+          "writable": true
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        47,
+        86,
+        164,
+        53,
+        15,
+        111,
+        233,
+        112
+      ],
+      "name": "wind_down_cancel_stop"
+    },
+    {
+      "accounts": [
+        {
+          "name": "closer",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "user_account",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true
+        },
+        {
+          "name": "lp_pool",
+          "writable": true
+        },
+        {
+          "name": "lp_vault",
+          "writable": true
+        },
+        {
+          "name": "insurance_fund",
+          "writable": true
+        },
+        {
+          "name": "insurance_vault",
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "writable": true
+        },
+        {
+          "name": "price_update"
+        },
+        {
+          "name": "secondary_price_update",
+          "optional": true
+        },
+        {
+          "name": "quote_conversion_price_update",
+          "optional": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        65,
+        158,
+        128,
+        30,
+        106,
+        110,
+        180,
+        11
+      ],
+      "name": "wind_down_position"
+    }
+  ],
+  "metadata": {
+    "description": "NOXFUNDS: a decentralized prop firm whose rules are checked before the fill, not after.",
+    "name": "noxfunds",
+    "repository": "https://github.com/ahmedmustafakhan125-coder/SOLFX",
+    "spec": "0.1.0",
+    "version": "0.1.0"
+  },
+  "types": [
+    {
+      "name": "ConfigInitialized",
+      "type": {
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Direction",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Long"
+          },
+          {
+            "name": "Short"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EquityObserved",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "equity",
+            "type": "u64"
+          },
+          {
+            "name": "peak_equity",
+            "type": "u64"
+          },
+          {
+            "name": "drawdown_bps",
+            "type": "u64"
+          },
+          {
+            "name": "open_positions",
+            "type": "u8"
+          },
+          {
+            "name": "observer",
+            "type": "pubkey"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "FeedKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "SpotFx"
+          },
+          {
+            "name": "ContinuousIndex"
+          },
+          {
+            "name": "Crypto"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FundedTradeClosed",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "open_positions",
+            "type": "u8"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "FundedTradeOpened",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "direction",
+            "type": "u8"
+          },
+          {
+            "name": "size_base",
+            "type": "u64"
+          },
+          {
+            "name": "notional",
+            "type": "u64"
+          },
+          {
+            "name": "collateral",
+            "type": "u64"
+          },
+          {
+            "name": "stop_loss_price",
+            "type": "i64"
+          },
+          {
+            "name": "notional_used_bps",
+            "type": "u64"
+          },
+          {
+            "name": "risk_used_bps",
+            "type": "u64"
+          },
+          {
+            "name": "open_positions",
+            "type": "u8"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Mandate",
+      "type": {
+        "fields": [
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u8"
+          },
+          {
+            "name": "solfx_user_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "signer_bump",
+            "type": "u8"
+          },
+          {
+            "name": "principal",
+            "type": "u64"
+          },
+          {
+            "name": "peak_equity",
+            "type": "u64"
+          },
+          {
+            "name": "max_trade_notional",
+            "type": "u64"
+          },
+          {
+            "name": "max_total_notional",
+            "type": "u64"
+          },
+          {
+            "name": "max_drawdown_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_daily_loss_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_risk_per_trade_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_stop_distance_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_concurrent_positions",
+            "type": "u8"
+          },
+          {
+            "name": "allowed_markets",
+            "type": "u128"
+          },
+          {
+            "name": "min_hold_slots",
+            "type": "u64"
+          },
+          {
+            "name": "trader_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "MandateState"
+              }
+            }
+          },
+          {
+            "name": "open_positions",
+            "type": "u8"
+          },
+          {
+            "name": "open_notional",
+            "type": "u64"
+          },
+          {
+            "name": "last_equity",
+            "type": "u64"
+          },
+          {
+            "name": "last_observed_at",
+            "type": "i64"
+          },
+          {
+            "name": "slots",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "PositionSlot"
+                  }
+                },
+                8
+              ]
+            }
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                63
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MandateBreached",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "rule",
+            "type": "u32"
+          },
+          {
+            "name": "equity",
+            "type": "u64"
+          },
+          {
+            "name": "peak_equity",
+            "type": "u64"
+          },
+          {
+            "name": "drawdown_bps",
+            "type": "u64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MandateFunded",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_trade_notional",
+            "type": "u64"
+          },
+          {
+            "name": "max_drawdown_bps",
+            "type": "u16"
+          },
+          {
+            "name": "allowed_markets",
+            "type": "u128"
+          },
+          {
+            "name": "trader_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MandateRules",
+      "type": {
+        "fields": [
+          {
+            "name": "max_trade_notional",
+            "type": "u64"
+          },
+          {
+            "name": "max_total_notional",
+            "type": "u64"
+          },
+          {
+            "name": "max_drawdown_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_daily_loss_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_risk_per_trade_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_stop_distance_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_concurrent_positions",
+            "type": "u8"
+          },
+          {
+            "name": "allowed_markets",
+            "type": "u128"
+          },
+          {
+            "name": "min_hold_slots",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MandateSettled",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "principal",
+            "type": "u64"
+          },
+          {
+            "name": "final_equity",
+            "type": "u64"
+          },
+          {
+            "name": "gross_profit",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee",
+            "type": "u64"
+          },
+          {
+            "name": "trader_share",
+            "type": "u64"
+          },
+          {
+            "name": "investor_share",
+            "type": "u64"
+          },
+          {
+            "name": "was_breached",
+            "type": "bool"
+          },
+          {
+            "name": "settled_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MandateState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Breached"
+          },
+          {
+            "name": "WindingDown"
+          },
+          {
+            "name": "Settled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Market",
+      "type": {
+        "fields": [
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "symbol",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "MarketStatus"
+              }
+            }
+          },
+          {
+            "name": "feed_kind",
+            "type": {
+              "defined": {
+                "name": "FeedKind"
+              }
+            }
+          },
+          {
+            "name": "price_source",
+            "type": {
+              "defined": {
+                "name": "PriceSource"
+              }
+            }
+          },
+          {
+            "name": "pyth_feed_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "secondary_feed_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "quote_conversion_feed",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "quote_conversion_kind",
+            "type": {
+              "defined": {
+                "name": "QuoteConversionKind"
+              }
+            }
+          },
+          {
+            "name": "session_open_dow",
+            "type": "u8"
+          },
+          {
+            "name": "session_open_seconds",
+            "type": "u32"
+          },
+          {
+            "name": "session_close_dow",
+            "type": "u8"
+          },
+          {
+            "name": "session_close_seconds",
+            "type": "u32"
+          },
+          {
+            "name": "weekend_max_leverage",
+            "type": "u16"
+          },
+          {
+            "name": "weekend_oi_cap_bps",
+            "type": "u16"
+          },
+          {
+            "name": "weekend_spread_bps",
+            "type": "u16"
+          },
+          {
+            "name": "weekend_max_conf_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_leverage",
+            "type": "u16"
+          },
+          {
+            "name": "imr_bps",
+            "type": "u16"
+          },
+          {
+            "name": "mmr_bps",
+            "type": "u16"
+          },
+          {
+            "name": "liquidation_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_oi_long",
+            "type": "u64"
+          },
+          {
+            "name": "max_oi_short",
+            "type": "u64"
+          },
+          {
+            "name": "max_position_size",
+            "type": "u64"
+          },
+          {
+            "name": "min_position_size",
+            "type": "u64"
+          },
+          {
+            "name": "max_staleness_seconds",
+            "type": "u32"
+          },
+          {
+            "name": "max_conf_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_deviation_bps",
+            "type": "u16"
+          },
+          {
+            "name": "base_spread_bps",
+            "type": "u16"
+          },
+          {
+            "name": "conf_spread_multiplier_bps",
+            "type": "u16"
+          },
+          {
+            "name": "skew_impact_bps_per_unit",
+            "type": "u32"
+          },
+          {
+            "name": "open_fee_rate",
+            "type": "u64"
+          },
+          {
+            "name": "close_fee_rate",
+            "type": "u64"
+          },
+          {
+            "name": "cum_funding_long",
+            "type": "i128"
+          },
+          {
+            "name": "cum_funding_short",
+            "type": "i128"
+          },
+          {
+            "name": "cum_borrow_index",
+            "type": "u128"
+          },
+          {
+            "name": "last_funding_update_ts",
+            "type": "i64"
+          },
+          {
+            "name": "funding_rate_cap_per_hour",
+            "type": "i64"
+          },
+          {
+            "name": "carry_rate_per_hour",
+            "type": "i64"
+          },
+          {
+            "name": "oi_long",
+            "type": "u64"
+          },
+          {
+            "name": "oi_short",
+            "type": "u64"
+          },
+          {
+            "name": "base_oi_long",
+            "type": "i128"
+          },
+          {
+            "name": "base_oi_short",
+            "type": "i128"
+          },
+          {
+            "name": "last_price",
+            "type": "i64"
+          },
+          {
+            "name": "ema_price",
+            "type": "i64"
+          },
+          {
+            "name": "last_price_update_ts",
+            "type": "i64"
+          },
+          {
+            "name": "total_fees_collected",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "min_hold_slots",
+            "type": "u64"
+          },
+          {
+            "name": "open_position_count",
+            "type": "u64"
+          },
+          {
+            "name": "funding_balance",
+            "type": "u64"
+          },
+          {
+            "name": "funding_rate_k",
+            "type": "u64"
+          },
+          {
+            "name": "rate_base_annual",
+            "type": "i64"
+          },
+          {
+            "name": "rate_quote_annual",
+            "type": "i64"
+          },
+          {
+            "name": "last_session_crank_ts",
+            "type": "i64"
+          },
+          {
+            "name": "status_changed_at",
+            "type": "i64"
+          },
+          {
+            "name": "pending_adl_debt",
+            "type": "u64"
+          },
+          {
+            "name": "liquidation_max_conf_bps",
+            "type": "u16"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                62
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MarketStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Initialized"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "ReduceOnly"
+          },
+          {
+            "name": "Halted"
+          },
+          {
+            "name": "GapWindow"
+          },
+          {
+            "name": "WeekendMode"
+          },
+          {
+            "name": "PreOpenWindow"
+          },
+          {
+            "name": "Delisted"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NoxConfig",
+      "type": {
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "solfx_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "fields": [
+          {
+            "name": "user_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "Direction"
+              }
+            }
+          },
+          {
+            "name": "size_base",
+            "type": "u64"
+          },
+          {
+            "name": "entry_price",
+            "type": "i64"
+          },
+          {
+            "name": "collateral",
+            "type": "u64"
+          },
+          {
+            "name": "entry_notional",
+            "type": "u64"
+          },
+          {
+            "name": "cum_funding_entry",
+            "type": "i128"
+          },
+          {
+            "name": "cum_borrow_entry",
+            "type": "u128"
+          },
+          {
+            "name": "realized_funding",
+            "type": "i64"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "opened_at_slot",
+            "type": "u64"
+          },
+          {
+            "name": "last_updated_at",
+            "type": "i64"
+          },
+          {
+            "name": "open_fee_paid",
+            "type": "u64"
+          },
+          {
+            "name": "referrer",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PositionReconciled",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "notional_released",
+            "type": "u64"
+          },
+          {
+            "name": "open_positions",
+            "type": "u8"
+          },
+          {
+            "name": "caller",
+            "type": "pubkey"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PositionSlot",
+      "type": {
+        "fields": [
+          {
+            "name": "open",
+            "type": "bool"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "notional",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PositionWoundDown",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "open_positions",
+            "type": "u8"
+          },
+          {
+            "name": "closer",
+            "type": "pubkey"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PriceFeedMessage",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "fields": [
+          {
+            "name": "feed_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "price",
+            "type": "i64"
+          },
+          {
+            "name": "conf",
+            "type": "u64"
+          },
+          {
+            "name": "exponent",
+            "type": "i32"
+          },
+          {
+            "name": "publish_time",
+            "type": "i64"
+          },
+          {
+            "name": "prev_publish_time",
+            "type": "i64"
+          },
+          {
+            "name": "ema_price",
+            "type": "i64"
+          },
+          {
+            "name": "ema_conf",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PriceSource",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Direct"
+          },
+          {
+            "fields": [
+              {
+                "name": "invert_quote",
+                "type": "bool"
+              }
+            ],
+            "name": "Synthetic"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PriceUpdateV2",
+      "type": {
+        "fields": [
+          {
+            "name": "write_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "verification_level",
+            "type": {
+              "defined": {
+                "name": "VerificationLevel"
+              }
+            }
+          },
+          {
+            "name": "price_message",
+            "type": {
+              "defined": {
+                "name": "PriceFeedMessage"
+              }
+            }
+          },
+          {
+            "name": "posted_slot",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "QuoteConversionKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "None"
+          },
+          {
+            "name": "QuotePerUsd"
+          },
+          {
+            "name": "UsdPerQuote"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SettlementRequested",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "StopCancelled",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "order_id",
+            "type": "u8"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TierChanged",
+      "type": {
+        "fields": [
+          {
+            "name": "profile",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "from",
+            "type": "u8"
+          },
+          {
+            "name": "to",
+            "type": "u8"
+          },
+          {
+            "name": "trades",
+            "type": "u32"
+          },
+          {
+            "name": "profit_factor_bps",
+            "type": "u64"
+          },
+          {
+            "name": "win_rate_bps",
+            "type": "u64"
+          },
+          {
+            "name": "max_drawdown_bps",
+            "type": "u16"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TradeRecorded",
+      "type": {
+        "fields": [
+          {
+            "name": "profile",
+            "type": "pubkey"
+          },
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "realized_pnl",
+            "type": "i64"
+          },
+          {
+            "name": "hold_slots",
+            "type": "u64"
+          },
+          {
+            "name": "trades",
+            "type": "u32"
+          },
+          {
+            "name": "wins",
+            "type": "u32"
+          },
+          {
+            "name": "losses",
+            "type": "u32"
+          },
+          {
+            "name": "gross_profit",
+            "type": "u64"
+          },
+          {
+            "name": "gross_loss",
+            "type": "u64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TraderProfile",
+      "type": {
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "tier",
+            "type": {
+              "defined": {
+                "name": "TraderTier"
+              }
+            }
+          },
+          {
+            "name": "trades",
+            "type": "u32"
+          },
+          {
+            "name": "wins",
+            "type": "u32"
+          },
+          {
+            "name": "losses",
+            "type": "u32"
+          },
+          {
+            "name": "gross_profit",
+            "type": "u64"
+          },
+          {
+            "name": "gross_loss",
+            "type": "u64"
+          },
+          {
+            "name": "largest_win",
+            "type": "u64"
+          },
+          {
+            "name": "largest_loss",
+            "type": "u64"
+          },
+          {
+            "name": "total_hold_slots",
+            "type": "u128"
+          },
+          {
+            "name": "max_drawdown_bps",
+            "type": "u16"
+          },
+          {
+            "name": "mandates_funded",
+            "type": "u32"
+          },
+          {
+            "name": "active_mandates",
+            "type": "u32"
+          },
+          {
+            "name": "mandates_settled_in_profit",
+            "type": "u32"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TraderProfileCreated",
+      "type": {
+        "fields": [
+          {
+            "name": "profile",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TraderTier",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Bronze"
+          },
+          {
+            "name": "Silver"
+          },
+          {
+            "name": "Gold"
+          },
+          {
+            "name": "Platinum"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserAccount",
+      "type": {
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "free_collateral",
+            "type": "u64"
+          },
+          {
+            "name": "open_positions",
+            "type": "u16"
+          },
+          {
+            "name": "referrer",
+            "type": "pubkey"
+          },
+          {
+            "name": "thirty_day_volume",
+            "type": "u64"
+          },
+          {
+            "name": "volume_window_start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "total_deposits",
+            "type": "u64"
+          },
+          {
+            "name": "total_withdrawals",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "referral_fees_generated",
+            "type": "u64"
+          },
+          {
+            "name": "lifetime_volume",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                48
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "VerificationLevel",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "fields": [
+              {
+                "name": "num_signatures",
+                "type": "u8"
+              }
+            ],
+            "name": "Partial"
+          },
+          {
+            "name": "Full"
+          }
+        ]
+      }
+    }
+  ]
+}
