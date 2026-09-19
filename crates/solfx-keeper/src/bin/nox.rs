@@ -72,7 +72,7 @@ use solfx_core::constants::{
     LP_VAULT_SEED, MARKET_SEED, PROTOCOL_SEED, USER_SEED,
 };
 use solfx_core::instructions::keeper::session::session_is_open;
-use solfx_core::state::{Direction, Market, MarketStatus, Position, UserAccount};
+use solfx_core::state::{Direction, Market, MarketStatus, Position, PriceSource, UserAccount};
 
 const TOKEN_PROGRAM: Pubkey = solana_pubkey::pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ATA_PROGRAM: Pubkey = solana_pubkey::pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
@@ -694,6 +694,21 @@ async fn lifecycle(
     if !session_is_open(&market, now()?) {
         bail!(
             "{} is outside its session. Only the continuous markets trade at the weekend.",
+            entry.symbol
+        );
+    }
+    // `lifecycle` plans, opens and cranks from one oracle account. A synthetic market's price is
+    // composed from two feeds, and a non-USD-quoted one needs a conversion leg, so neither can be
+    // priced — or marked — from a single account. Refused here, before step 1, because the
+    // alternative is worse than an error: steps 1–5 would fund a real mandate, and the open at
+    // step 6 would then fail and leave it stranded. The program marks these markets correctly;
+    // this client does not yet build their extra legs.
+    if matches!(market.price_source, PriceSource::Synthetic { .. })
+        || market.needs_quote_conversion()
+    {
+        bail!(
+            "{} needs more than one oracle leg (synthetic, or not quoted in USD). `nox lifecycle` \
+             builds single-leg trades only — use a direct USD market such as BTC/USD.",
             entry.symbol
         );
     }

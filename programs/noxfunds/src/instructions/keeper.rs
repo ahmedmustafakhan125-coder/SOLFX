@@ -26,7 +26,7 @@
 
 use anchor_lang::prelude::*;
 use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
-use solfx_core::state::{Market, Position, UserAccount};
+use solfx_core::state::{Market, Position, PriceSource, UserAccount};
 
 use crate::constants::{CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, TRADER_SEED};
 use crate::errors::NoxError;
@@ -70,25 +70,32 @@ pub struct ObserveMandateEquity<'info> {
         constraint = trader_profile.authority == mandate.trader @ NoxError::ProfileMismatch,
     )]
     pub trader_profile: Box<Account<'info, TraderProfile>>,
-    // Open positions arrive in `remaining_accounts` as (position, market, price_update)
-    // triples. Passing them as named optionals would fix the count at compile time; a mandate
-    // may hold up to `max_concurrent_positions`, which is a per-mandate figure.
+    // Open positions arrive in `remaining_accounts`, one group each. Passing them as named
+    // optionals would fix the count at compile time; a mandate may hold up to
+    // `max_concurrent_positions`, which is a per-mandate figure.
 }
 
 /// Observe a mandate's equity, update its high-water mark, and breach it if it has fallen too
 /// far.
 ///
-/// `remaining_accounts` carries **(position, market, price_update)** triples — one per open
-/// position. A caller who supplies fewer than the mandate holds understates equity, which can
-/// only ever breach a mandate early rather than let a broken one continue; the count is
-/// checked against `open_positions` so that cannot happen silently.
+/// `remaining_accounts` carries one group per open position: **(position, market,
+/// price_update)**, then the secondary update if the market is synthetic and the conversion
+/// update if it is not USD-quoted. The group's length is read from the market account, never
+/// chosen by the caller, and every leg is checked against the market's own feed ids by
+/// `load_validated_price`. A caller who supplies fewer positions than the mandate holds is
+/// refused rather than allowed to understate or overstate equity — see the slot matching below.
 pub fn observe_mandate_equity(ctx: Context<ObserveMandateEquity>) -> Result<()> {
     let clock = Clock::get()?;
     let rem = ctx.remaining_accounts;
 
-    // Three accounts per open position. The length check is only the first gate — the real
-    // one is below, where each triple must match a distinct open slot.
-    require!(rem.len().is_multiple_of(3), NoxError::IncompleteObservation);
+    // One group per open position: the position, its market and its primary price — then the
+    // secondary leg if the market is synthetic, and the quote-conversion leg if it is not quoted
+    // in USD. The market decides how many legs follow, exactly as `load_validated_price` does.
+    //
+    // It was fixed triples, and `load_validated_price` was called with no extra legs. That made
+    // any mandate holding a synthetic or non-USD-quoted position — EUR/JPY and USD/INR are both
+    // listed on devnet — impossible to observe: the read failed with a missing-leg error, so the
+    // drawdown rule could not be judged for as long as that position stayed open.
     let slots = ctx.accounts.mandate.slots;
     let mut matched: u16 = 0;
 
@@ -97,16 +104,28 @@ pub fn observe_mandate_equity(ctx: Context<ObserveMandateEquity>) -> Result<()> 
     // same function.
     let mut equity = i128::from(ctx.accounts.user_account.free_collateral);
 
-    for triple in rem.chunks_exact(3) {
-        // Destructured rather than indexed. `chunks_exact(3)` guarantees the length, but the
-        // workspace denies `indexing_slicing` and is right to: a slice pattern proves the
-        // length to the compiler instead of to the reader.
-        let [position_info, market_info, price_info] = triple else {
-            return Err(NoxError::MathOverflow.into());
-        };
+    // An iterator rather than indexing: the workspace denies `indexing_slicing`, and a group's
+    // length is only known once its market has been read.
+    let mut accounts = rem.iter();
+    while let Some(position_info) = accounts.next() {
+        let market_info = accounts.next().ok_or(NoxError::IncompleteObservation)?;
+        let price_info = accounts.next().ok_or(NoxError::IncompleteObservation)?;
         let position: Account<Position> = Account::try_from(position_info)?;
         let market: Account<Market> = Account::try_from(market_info)?;
         let price_update: Account<PriceUpdateV2> = Account::try_from(price_info)?;
+        let secondary: Option<Account<PriceUpdateV2>> =
+            if matches!(market.price_source, PriceSource::Synthetic { .. }) {
+                let info = accounts.next().ok_or(NoxError::IncompleteObservation)?;
+                Some(Account::try_from(info)?)
+            } else {
+                None
+            };
+        let quote: Option<Account<PriceUpdateV2>> = if market.needs_quote_conversion() {
+            let info = accounts.next().ok_or(NoxError::IncompleteObservation)?;
+            Some(Account::try_from(info)?)
+        } else {
+            None
+        };
 
         require!(
             position.user_account == ctx.accounts.user_account.key(),
@@ -133,8 +152,13 @@ pub fn observe_mandate_equity(ctx: Context<ObserveMandateEquity>) -> Result<()> 
             NoxError::MarketNotPermitted
         );
 
-        let price =
-            solfx_core::oracle::load_validated_price(&market, &price_update, None, None, &clock)?;
+        let price = solfx_core::oracle::load_validated_price(
+            &market,
+            &price_update,
+            secondary.as_deref(),
+            quote.as_deref(),
+            &clock,
+        )?;
         let health = solfx_core::risk::assess(&position, &market, &price)?;
         equity = equity
             .checked_add(i128::from(health.equity))

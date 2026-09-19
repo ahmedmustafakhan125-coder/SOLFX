@@ -174,8 +174,9 @@ pub mod noxfunds {
     /// too far. **Permissionless** — investor capital is never hostage to an absent trader or
     /// an absent operator.
     ///
-    /// `remaining_accounts` carries (position, market, price_update) triples, one per open
-    /// position.
+    /// `remaining_accounts` carries one group per open position: the position, its market and
+    /// its primary price update, then the secondary update if the market is synthetic and the
+    /// quote-conversion update if it is not USD-quoted — the same legs `open_position` takes.
     pub fn observe_mandate_equity(ctx: Context<ObserveMandateEquity>) -> Result<()> {
         instructions::keeper::observe_mandate_equity(ctx)
     }

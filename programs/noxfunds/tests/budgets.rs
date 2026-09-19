@@ -631,8 +631,10 @@ fn every_noxfunds_instruction_stays_within_its_budget() {
 
 /// **A mandate carrying its maximum number of positions still cranks in one transaction.**
 ///
-/// `observe_mandate_equity` takes one `(position, market, price)` triple per open position in
-/// `remaining_accounts`, so its cost scales with concurrency. That makes the crank — not the
+/// `observe_mandate_equity` takes one group per open position in `remaining_accounts` —
+/// `(position, market, price)` on a direct USD market like this one, plus a secondary leg for a
+/// synthetic and a conversion leg for a non-USD quote. Its cost scales with concurrency, and the
+/// wider shapes are measured in `observe_legs.rs`. That makes the crank — not the
 /// trade — the instruction that decides how high `MAX_SLOTS` can go, and it is the reason this
 /// is measured at the maximum rather than at one. A crank that does not fit is a mandate whose
 /// equity cannot be checked, which is a mandate that cannot be breached or wound down.
