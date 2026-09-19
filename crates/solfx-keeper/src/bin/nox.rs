@@ -52,7 +52,7 @@ mod price_map;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anchor_lang::{InstructionData as _, ToAccountMetas as _};
+use anchor_lang::{InstructionData as _, Space as _, ToAccountMetas as _};
 use anyhow::{anyhow, bail, Context as _, Result};
 use clap::Parser as _;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -66,7 +66,10 @@ use solana_signer::Signer as _;
 use solana_transaction::Transaction;
 
 use noxfunds::instructions::investor::MandateRules;
-use noxfunds::state::{Mandate, MandateState, NoxConfig, TraderProfile};
+use noxfunds::instructions::marketplace::ListingTerms;
+use noxfunds::state::{
+    Mandate, MandateOffer, MandateState, NoxConfig, OfferState, TraderListing, TraderProfile,
+};
 use solfx_core::constants::{
     COLLATERAL_VAULT_SEED, FEE_VAULT_SEED, INSURANCE_FUND_SEED, INSURANCE_VAULT_SEED, LP_POOL_SEED,
     LP_VAULT_SEED, MARKET_SEED, PROTOCOL_SEED, USER_SEED,
@@ -166,6 +169,12 @@ enum Cmd {
         /// deployer's key. Ignored with `--execute`, which signs with `--keypair`.
         #[arg(long)]
         as_funder: Option<Pubkey>,
+        /// Reach the mandate through the marketplace instead of `fund_mandate`: the trader lists,
+        /// the investor offers, the trader declines with a reason, the investor takes the capital
+        /// back and offers again, and the trader accepts. Everything after — the trade, the
+        /// crank, the close, settlement — is the ordinary lifecycle.
+        #[arg(long)]
+        via_market: bool,
     },
     /// What is on chain right now for this investor and trader.
     Status,
@@ -571,14 +580,18 @@ async fn run(args: Args) -> Result<()> {
 
     match args.cmd {
         Cmd::Status => status(&rpc, &dep, &investor, &trader, &nox).await,
-        Cmd::Lifecycle { execute, as_funder } => {
+        Cmd::Lifecycle {
+            execute,
+            as_funder,
+            via_market,
+        } => {
             // A dry run may act as a wallet whose key is not on this machine.
             let acting = match as_funder {
                 Some(k) if !execute => k,
                 _ => funder.pubkey(),
             };
             lifecycle(
-                &rpc, &args, &dep, &funder, acting, &investor, &trader, &nox, execute,
+                &rpc, &args, &dep, &funder, acting, &investor, &trader, &nox, execute, via_market,
             )
             .await
         }
@@ -646,8 +659,15 @@ async fn lifecycle(
     trader: &Keypair,
     nox: &Nox,
     execute: bool,
+    via_market: bool,
 ) -> Result<()> {
     let p = Pdas::derive();
+    if via_market && args.seq >= DECLINED_SEQ_OFFSET {
+        bail!(
+            "--via-market needs --seq below {DECLINED_SEQ_OFFSET}: the declined offer is posted at \
+             seq + {DECLINED_SEQ_OFFSET}"
+        );
+    }
 
     // --- what the chain says, before anything is decided -----------------------------------
     let config = maybe::<NoxConfig>(rpc, &nox.config)
@@ -805,9 +825,14 @@ async fn lifecycle(
             USDC_DECIMALS,
         )),
     }
+    let (investor_lamports, trader_lamports) = if via_market {
+        market_lamports(rpc).await?
+    } else {
+        (INVESTOR_LAMPORTS, TRADER_LAMPORTS)
+    };
     for (who, need) in [
-        (investor.pubkey(), INVESTOR_LAMPORTS),
-        (trader.pubkey(), TRADER_LAMPORTS),
+        (investor.pubkey(), investor_lamports),
+        (trader.pubkey(), trader_lamports),
         (nox.signer, SIGNER_LAMPORTS),
     ] {
         if rpc.get_balance(&who).await? < need {
@@ -862,6 +887,19 @@ async fn lifecycle(
                 args.seq.saturating_add(1)
             );
         }
+    } else if via_market {
+        negotiate(
+            rpc,
+            dep,
+            investor,
+            trader,
+            nox,
+            &plan,
+            principal_raw,
+            investor_token,
+            args.seq,
+        )
+        .await?;
     } else {
         let ix = Instruction {
             program_id: noxfunds::ID,
@@ -1156,6 +1194,312 @@ async fn lifecycle(
     Ok(())
 }
 
+// --- the marketplace route to a mandate ------------------------------------------------------
+
+/// Declined offers sit at `seq + DECLINED_SEQ_OFFSET`, so they never occupy the seq a mandate is
+/// created at.
+///
+/// The two offers in one negotiation cannot share a seq: `accept_offer` creates the mandate at the
+/// accepted offer's own seq, and a revoked offer's account is not closed, so its address stays
+/// taken. Declined offers therefore live in 128–255 and accepted ones in 0–127, and a re-run finds
+/// each exactly where it left it.
+const DECLINED_SEQ_OFFSET: u8 = 128;
+
+/// What the negotiation's opening offer gives the trader, below what their listing asks. The
+/// trader declines it, which is the point: a refusal with a reason is the part of the
+/// conversation nothing else in this tool exercises.
+const OPENING_SPLIT_BPS: u16 = 6_000;
+/// What the listing asks for, and what the revised offer concedes.
+const ASKED_SPLIT_BPS: u16 = 7_000;
+
+fn listing_pda(trader: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[noxfunds::constants::LISTING_SEED, trader.as_ref()],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+fn offer_pda(investor: &Pubkey, trader: &Pubkey, seq: u8) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            noxfunds::constants::OFFER_SEED,
+            investor.as_ref(),
+            trader.as_ref(),
+            &[seq],
+        ],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+fn offer_vault_pda(offer: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[noxfunds::constants::OFFER_VAULT_SEED, offer.as_ref()],
+        &noxfunds::ID,
+    )
+    .0
+}
+
+/// The trader's reply as the program stored it — read back from the account rather than echoed
+/// from what was sent, so what is printed is what anyone reading the chain will see.
+fn offer_reply(o: &MandateOffer) -> &str {
+    let len = usize::from(o.reply_len).min(o.reply.len());
+    o.reply
+        .get(..len)
+        .and_then(|b| std::str::from_utf8(b).ok())
+        .unwrap_or("")
+}
+
+/// What the investor and trader need in SOL when the mandate comes through the marketplace, read
+/// from the cluster's rent rather than assumed.
+///
+/// The rent payers differ from `fund_mandate`'s: the trader pays for the listing, the mandate and
+/// its vault, because they sign `accept_offer` and the investor does not; the investor pays for two
+/// offers and their escrow vaults, because a revoked offer is not closed. Never less than the
+/// ordinary lifecycle's figures, which the trade and settlement steps still rely on.
+async fn market_lamports(rpc: &RpcClient) -> Result<(u64, u64)> {
+    const TOKEN_ACCOUNT_LEN: usize = 165;
+    /// Fees and priority on the dozen transactions each side signs, with room to spare.
+    const FEE_MARGIN: u64 = 5_000_000;
+    let rent = |len: usize| rpc.get_minimum_balance_for_rent_exemption(len);
+
+    let vault = rent(TOKEN_ACCOUNT_LEN).await?;
+    let offer = rent(8 + MandateOffer::INIT_SPACE)
+        .await?
+        .saturating_add(vault);
+    let investor = offer
+        .saturating_mul(2)
+        .saturating_add(FEE_MARGIN)
+        .max(INVESTOR_LAMPORTS);
+    let trader = rent(8 + TraderListing::INIT_SPACE)
+        .await?
+        .saturating_add(rent(8 + Mandate::INIT_SPACE).await?)
+        .saturating_add(vault)
+        .saturating_add(FEE_MARGIN)
+        .max(TRADER_LAMPORTS);
+    Ok((investor, trader))
+}
+
+/// Simulate, then send. Every negotiation move goes through this, so a refusal prints the
+/// program's own logs and costs nothing, rather than surfacing as a bare error code.
+async fn checked_step(
+    rpc: &RpcClient,
+    payer: &Keypair,
+    ix: Instruction,
+    cu: u32,
+    label: &str,
+) -> Result<()> {
+    simulate(rpc, &payer.pubkey(), std::slice::from_ref(&ix), label).await?;
+    step(rpc, payer, vec![ix], cu, label).await
+}
+
+/// Reach a funded mandate through the marketplace — step 3 of the lifecycle, the long way round.
+///
+/// ```text
+/// 3·1  trader lists              "70/30, BTC/USD"                           no money moves
+/// 3·2  investor offers  60/40    capital into escrow                        at seq + 128
+/// 3·3  trader declines           with a reason, stored on the offer          no money moves
+/// 3·4  investor revokes          capital back out of escrow
+/// 3·5  investor offers  70/30    capital into escrow again                  at seq
+/// 3·6  trader accepts            mandate, vault and transfer in one transaction
+/// ```
+///
+/// Resumable like the rest of the lifecycle: each move reads the chain first, and anything
+/// already done is reported and skipped.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+async fn negotiate(
+    rpc: &RpcClient,
+    dep: &Deployment,
+    investor: &Keypair,
+    trader: &Keypair,
+    nox: &Nox,
+    plan: &Plan,
+    principal_raw: u64,
+    investor_token: Pubkey,
+    seq: u8,
+) -> Result<()> {
+    let expires_at = now()?
+        .checked_add(3_600)
+        .ok_or_else(|| anyhow!("clock overflow"))?;
+    let first_seq = seq
+        .checked_add(DECLINED_SEQ_OFFSET)
+        .ok_or_else(|| anyhow!("--seq {seq} leaves no room for the declined offer"))?;
+
+    let post = |at: u8, offer: Pubkey, split: u16, note: &str| Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::PostOffer {
+            investor: investor.pubkey(),
+            config: nox.config,
+            trader: trader.pubkey(),
+            trader_profile: nox.profile,
+            offer,
+            usdc_mint: dep.usdc_mint,
+            investor_token,
+            offer_vault: offer_vault_pda(&offer),
+            token_program: TOKEN_PROGRAM,
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::PostOffer {
+            seq: at,
+            principal: principal_raw,
+            rules: plan.rules,
+            trader_split_bps: split,
+            expires_at,
+            note: note.to_owned(),
+        }
+        .data(),
+    };
+
+    // --- 3·1 the trader advertises -----------------------------------------------------------
+    let listing = listing_pda(&trader.pubkey());
+    if maybe::<TraderListing>(rpc, &listing).await?.is_some() {
+        println!("  3·1 listing       already posted");
+    } else {
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::PostListing {
+                trader: trader.pubkey(),
+                config: nox.config,
+                trader_profile: nox.profile,
+                listing,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::PostListing {
+                terms: ListingTerms {
+                    min_principal: principal_raw,
+                    max_principal: principal_raw.saturating_mul(10),
+                    wanted_markets: plan.rules.allowed_markets,
+                    wanted_split_bps: ASKED_SPLIT_BPS,
+                    note: "Momentum, one position at a time, always with a stop. 70/30.".to_owned(),
+                },
+            }
+            .data(),
+        };
+        checked_step(rpc, trader, ix, 60_000, "3·1 listing").await?;
+    }
+
+    // --- 3·2 the opening offer, below what the listing asks ----------------------------------
+    let first = offer_pda(&investor.pubkey(), &trader.pubkey(), first_seq);
+    if maybe::<MandateOffer>(rpc, &first).await?.is_some() {
+        println!("  3·2 offer 60/40   already posted at seq {first_seq}");
+    } else {
+        let ix = post(
+            first_seq,
+            first,
+            OPENING_SPLIT_BPS,
+            "60/40. The capital and the risk are both mine.",
+        );
+        checked_step(rpc, investor, ix, 80_000, "3·2 offer 60/40").await?;
+        println!(
+            "       escrow holds {}",
+            usdc(token_balance(rpc, &offer_vault_pda(&first)).await)
+        );
+    }
+
+    // --- 3·3 the trader says no, and why -----------------------------------------------------
+    let o = maybe::<MandateOffer>(rpc, &first)
+        .await?
+        .ok_or_else(|| anyhow!("the opening offer {first} is not on chain"))?;
+    if o.state == OfferState::Open {
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::DeclineOffer {
+                trader: trader.pubkey(),
+                offer: first,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::DeclineOffer {
+                reason: "70/30, as the listing says. Happy to trade it at that.".to_owned(),
+            }
+            .data(),
+        };
+        checked_step(rpc, trader, ix, 40_000, "3·3 decline").await?;
+    } else {
+        println!("  3·3 decline       already answered — {:?}", o.state);
+    }
+    let o = maybe::<MandateOffer>(rpc, &first)
+        .await?
+        .ok_or_else(|| anyhow!("the opening offer {first} vanished"))?;
+    println!("       reason on chain: \"{}\"", offer_reply(&o));
+
+    // --- 3·4 the investor takes the capital back ----------------------------------------------
+    if matches!(o.state, OfferState::Open | OfferState::Declined) {
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::RevokeOffer {
+                investor: investor.pubkey(),
+                offer: first,
+                usdc_mint: dep.usdc_mint,
+                offer_vault: offer_vault_pda(&first),
+                investor_token,
+                token_program: TOKEN_PROGRAM,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::RevokeOffer {}.data(),
+        };
+        checked_step(rpc, investor, ix, 60_000, "3·4 revoke").await?;
+    } else {
+        println!("  3·4 revoke        already {:?}", o.state);
+    }
+    println!(
+        "       escrow {} — investor holds {}",
+        usdc(token_balance(rpc, &offer_vault_pda(&first)).await),
+        usdc(token_balance(rpc, &investor_token).await)
+    );
+
+    // --- 3·5 the revised offer, at the seq the mandate will take ------------------------------
+    let second = offer_pda(&investor.pubkey(), &trader.pubkey(), seq);
+    match maybe::<MandateOffer>(rpc, &second).await? {
+        None => {
+            let ix = post(seq, second, ASKED_SPLIT_BPS, "70/30, as you asked.");
+            checked_step(rpc, investor, ix, 80_000, "3·5 offer 70/30").await?;
+        }
+        Some(o) if o.state == OfferState::Open => {
+            println!("  3·5 offer 70/30   already posted at seq {seq}");
+        }
+        Some(o) => bail!(
+            "the offer at seq {seq} is {:?} and there is no mandate behind it — pass a fresh --seq",
+            o.state
+        ),
+    }
+
+    // --- 3·6 acceptance: mandate, vault and transfer, together ----------------------------------
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::AcceptOffer {
+            trader: trader.pubkey(),
+            config: nox.config,
+            offer: second,
+            trader_profile: nox.profile,
+            mandate: nox.mandate,
+            mandate_signer: nox.signer,
+            solfx_user_account: nox.user_account,
+            usdc_mint: dep.usdc_mint,
+            offer_vault: offer_vault_pda(&second),
+            mandate_vault: nox.vault,
+            token_program: TOKEN_PROGRAM,
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::AcceptOffer {}.data(),
+    };
+    checked_step(rpc, trader, ix, 100_000, "3·6 accept").await?;
+    let m = maybe::<Mandate>(rpc, &nox.mandate)
+        .await?
+        .ok_or_else(|| anyhow!("accept_offer landed but no mandate is at {}", nox.mandate))?;
+    println!(
+        "       mandate {:?}, trader keeps {} bps — vault holds {}, escrow {}",
+        m.state,
+        m.trader_split_bps,
+        usdc(token_balance(rpc, &nox.vault).await),
+        usdc(token_balance(rpc, &offer_vault_pda(&second)).await)
+    );
+    Ok(())
+}
+
 // --- plumbing --------------------------------------------------------------------------------------
 
 /// Run a transaction against the cluster without signing or sending it.
@@ -1382,6 +1726,63 @@ fn price_1e9(price: i64) -> String {
 )]
 mod tests {
     use super::*;
+
+    /// **A declined offer can never sit where an accepted one must.**
+    ///
+    /// `accept_offer` creates the mandate at the accepted offer's own seq, and a revoked offer's
+    /// account is never closed. If the opening offer of one negotiation shared an address with the
+    /// accepted offer of any other, that later run could not post its offer at all. Checked for
+    /// every seq `--via-market` accepts, rather than for one example.
+    #[test]
+    fn declined_offers_never_take_an_accepted_offers_address() {
+        let investor = Pubkey::new_unique();
+        let trader = Pubkey::new_unique();
+        let accepted: std::collections::HashSet<Pubkey> = (0..DECLINED_SEQ_OFFSET)
+            .map(|s| offer_pda(&investor, &trader, s))
+            .collect();
+        for seq in 0..DECLINED_SEQ_OFFSET {
+            let declined = seq.checked_add(DECLINED_SEQ_OFFSET).expect("room above");
+            assert!(
+                !accepted.contains(&offer_pda(&investor, &trader, declined)),
+                "the declined offer for seq {seq} collides with an accepted offer"
+            );
+        }
+        assert_eq!(accepted.len(), usize::from(DECLINED_SEQ_OFFSET));
+    }
+
+    /// A zeroed offer, as an account the program has just created would read before any field is
+    /// set. Borsh-decoded rather than built by hand, so a new field on `MandateOffer` cannot make
+    /// this silently stale.
+    fn blank_offer() -> MandateOffer {
+        let zeros = vec![0u8; MandateOffer::INIT_SPACE];
+        anchor_lang::AnchorDeserialize::deserialize(&mut zeros.as_slice())
+            .expect("a zeroed MandateOffer decodes")
+    }
+
+    #[test]
+    fn a_reply_reads_back_exactly_as_stored() {
+        let mut o = blank_offer();
+        let reason = b"70/30, as the listing says.";
+        o.reply[..reason.len()].copy_from_slice(reason);
+        o.reply_len = u8::try_from(reason.len()).unwrap();
+        assert_eq!(offer_reply(&o), "70/30, as the listing says.");
+    }
+
+    /// The account is read from a cluster, so its bytes are not ours to trust. A length past the
+    /// field, or bytes that are not UTF-8, must print as nothing rather than panic mid-run.
+    #[test]
+    fn a_malformed_reply_reads_as_empty_rather_than_panicking() {
+        let mut o = blank_offer();
+        o.reply_len = u8::MAX;
+        // Clamped to the 180-byte field instead of reading past it. The zeros are valid UTF-8, so
+        // what comes back is the whole field — the property is that it comes back at all. (An
+        // earlier draft expected "" here; NUL bytes are UTF-8, so the test was wrong, not the code.)
+        assert_eq!(offer_reply(&o).len(), o.reply.len(), "clamped to the field");
+
+        o.reply[0] = 0xff;
+        o.reply_len = 1;
+        assert_eq!(offer_reply(&o), "", "invalid UTF-8");
+    }
 
     /// The addresses this tool derives, against what devnet actually holds.
     #[test]
