@@ -14,8 +14,24 @@
  * own parser: push on `Program <id> invoke [n]`, pop on `success`/`failed`, and only decode
  * while our program is on top.
  */
+import {
+  getAddressDecoder,
+  getBooleanDecoder,
+  getI64Decoder,
+  getStructDecoder,
+  getU8Decoder,
+  getU16Decoder,
+  getU64Decoder,
+  type Decoder,
+} from "@solana/kit";
+
 import { SOLFX_CORE_PROGRAM_ADDRESS } from "../generated/programs/solfxCore.js";
-import { SOLFX_EVENTS, type SolfxEventName } from "./generated.js";
+import {
+  POSITION_DECREASED_DISCRIMINATOR,
+  SOLFX_EVENTS,
+  TRIGGER_ORDER_EXECUTED_DISCRIMINATOR,
+  type SolfxEventName,
+} from "./generated.js";
 
 const PROGRAM_DATA = "Program data: ";
 const INVOKE = /^Program ([1-9A-HJ-NP-Za-km-z]{32,44}) invoke \[\d+\]$/;
@@ -47,15 +63,85 @@ function fromBase64(b64: string): Uint8Array {
 const sameBytes = (a: Uint8Array, b: Uint8Array) =>
   a.length === b.length && a.every((x, i) => x === b[i]);
 
+/**
+ * The two events as they were emitted **before** the Phase 10 upgrade, which inserted
+ * `entry_price` into both.
+ *
+ * A transaction is a permanent record: every close and every fired stop from before that
+ * upgrade is still on chain in the old shape, and the current codec runs out of bytes trying
+ * to read the field that was not there yet. The whole history panel died on it with
+ * `SOLANA_ERROR__CODECS__...` naming an `i64` — one old trade made every newer one
+ * unreadable too.
+ *
+ * `entryPrice` comes back as `0n`. Nothing in the history or summary reads it (the positions
+ * table takes entry price from the position account), so a zero is honest about what the old
+ * event does not carry rather than a guess at what it might have been.
+ */
+const LEGACY_DECODERS: ReadonlyArray<{
+  readonly discriminator: Uint8Array;
+  readonly decoder: Decoder<Record<string, unknown>>;
+}> = [
+  {
+    discriminator: POSITION_DECREASED_DISCRIMINATOR,
+    decoder: getStructDecoder([
+      ["position", getAddressDecoder()],
+      ["userAccount", getAddressDecoder()],
+      ["marketIndex", getU16Decoder()],
+      ["sizeClosed", getU64Decoder()],
+      ["remainingSize", getU64Decoder()],
+      ["oraclePrice", getI64Decoder()],
+      ["execPrice", getI64Decoder()],
+      ["realizedPnl", getI64Decoder()],
+      ["fee", getU64Decoder()],
+      ["collateralReturned", getU64Decoder()],
+      ["fullyClosed", getBooleanDecoder()],
+      ["ts", getI64Decoder()],
+    ]) as Decoder<Record<string, unknown>>,
+  },
+  {
+    discriminator: TRIGGER_ORDER_EXECUTED_DISCRIMINATOR,
+    decoder: getStructDecoder([
+      ["order", getAddressDecoder()],
+      ["position", getAddressDecoder()],
+      ["keeper", getAddressDecoder()],
+      ["marketIndex", getU16Decoder()],
+      ["orderId", getU8Decoder()],
+      ["kind", getU8Decoder()],
+      ["triggerPrice", getI64Decoder()],
+      ["oraclePrice", getI64Decoder()],
+      ["sizeBase", getU64Decoder()],
+      ["keeperTipLamports", getU64Decoder()],
+      ["ts", getI64Decoder()],
+    ]) as Decoder<Record<string, unknown>>,
+  },
+];
+
+function decodeLegacy(disc: Uint8Array, body: Uint8Array): Record<string, unknown> | undefined {
+  for (const legacy of LEGACY_DECODERS) {
+    if (!sameBytes(disc, legacy.discriminator)) continue;
+    try {
+      return { ...legacy.decoder.decode(body), entryPrice: 0n };
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function decodeOne(payload: Uint8Array): SolfxEvent | undefined {
   if (payload.length < 8) return undefined;
   const disc = payload.subarray(0, 8);
   for (const ev of SOLFX_EVENTS) {
-    if (sameBytes(disc, ev.discriminator)) {
-      return {
-        name: ev.name,
-        data: ev.decoder.decode(payload.subarray(8)) as Record<string, unknown>,
-      };
+    if (!sameBytes(disc, ev.discriminator)) continue;
+    const body = payload.subarray(8);
+    try {
+      return { name: ev.name, data: ev.decoder.decode(body) as Record<string, unknown> };
+    } catch {
+      // An event whose shape changed in an upgrade, or one this client cannot read. Try the
+      // older layout, and failing that skip it — **one undecodable event must never cost the
+      // caller every other event in the transaction.**
+      const data = decodeLegacy(disc, body);
+      return data ? { name: ev.name, data } : undefined;
     }
   }
   return undefined; // another program's event, or one added after this client was generated

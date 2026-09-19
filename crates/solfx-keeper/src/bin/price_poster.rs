@@ -193,6 +193,13 @@ struct Args {
     /// Build and log transactions without sending them.
     #[arg(long)]
     dry_run: bool,
+    /// Post every listed feed regardless of whether its market is in session.
+    ///
+    /// The default reads each market's session calendar and posts only what is open, because a
+    /// closed market's price cannot be refreshed — Pyth carries the last one forward — and the
+    /// send is taken from whatever ration the open markets are sharing.
+    #[arg(long)]
+    ignore_sessions: bool,
     /// Post only the feeds named in this deployment file.
     ///
     /// The full-verification path costs ~5 transactions per feed, so a 33-feed sweep takes
@@ -326,10 +333,41 @@ async fn run(args: Args) -> Result<()> {
     write_map(&args.map_out, &feeds, &accounts)?;
     println!("wrote {}\n", args.map_out.display());
 
+    // Sessions are read from the market accounts, so the poster follows the calendar on its
+    // own: FX and metals stop being posted at the Friday close and resume at the Sunday open
+    // with nothing to switch by hand.
+    let mut sessions = Sessions::new(&listed_markets(&args.deployment).unwrap_or_default());
+    let mut sessions_read_at = std::time::Instant::now();
+    if !args.ignore_sessions {
+        if let Err(e) = sessions.refresh(&rpc, unix_now()?).await {
+            eprintln!("  could not read market sessions ({e:#}); posting every feed");
+        }
+    }
+
     loop {
-        match post_pass(&rpc, &args, &payer, &config, &feeds, &accounts).await {
-            Ok((ok, failed)) => println!("pass complete: {ok} posted, {failed} failed"),
-            Err(e) => eprintln!("pass failed: {e:#}"),
+        if !args.ignore_sessions && sessions_read_at.elapsed() >= SESSION_REFRESH {
+            if let Err(e) = sessions.refresh(&rpc, unix_now()?).await {
+                eprintln!("  could not re-read market sessions ({e:#}); keeping the last answer");
+            }
+            sessions_read_at = std::time::Instant::now();
+        }
+        let posting = if args.ignore_sessions {
+            feeds.clone()
+        } else {
+            sessions.open_feeds(&feeds)
+        };
+
+        if posting.is_empty() {
+            println!("pass skipped: every listed market is outside its session");
+        } else {
+            match post_pass(&rpc, &args, &payer, &config, &posting, &accounts).await {
+                Ok((ok, failed)) => println!(
+                    "pass complete: {ok} posted, {failed} failed ({} of {} in session)",
+                    posting.len(),
+                    feeds.len()
+                ),
+                Err(e) => eprintln!("pass failed: {e:#}"),
+            }
         }
         if args.once {
             return Ok(());
@@ -337,6 +375,10 @@ async fn run(args: Args) -> Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(args.interval_secs)).await;
     }
 }
+
+/// How often the market accounts are re-read. A session boundary is a weekly event, so a
+/// minute's granularity costs one RPC call and loses nothing.
+const SESSION_REFRESH: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// One full sweep: **one** Hermes fetch, **one** VAA verified, then every feed posted against
 /// it concurrently.
@@ -899,6 +941,11 @@ async fn print_clone_args(args: &Args) -> Result<()> {
 
 /// Symbols from a deployment written by `init-protocol`.
 fn listed_symbols(path: &PathBuf) -> Result<Vec<String>> {
+    Ok(listed_markets(path)?.into_iter().map(|(s, _)| s).collect())
+}
+
+/// Symbol and market index for everything the deployment lists.
+fn listed_markets(path: &PathBuf) -> Result<Vec<(String, u16)>> {
     #[derive(serde::Deserialize)]
     struct Deployment {
         markets: Vec<Entry>,
@@ -906,10 +953,98 @@ fn listed_symbols(path: &PathBuf) -> Result<Vec<String>> {
     #[derive(serde::Deserialize)]
     struct Entry {
         symbol: String,
+        market_index: u16,
     }
     let text = std::fs::read_to_string(path)?;
     let d: Deployment = serde_json::from_str(&text)?;
-    Ok(d.markets.into_iter().map(|m| m.symbol).collect())
+    Ok(d.markets
+        .into_iter()
+        .map(|m| (m.symbol, m.market_index))
+        .collect())
+}
+
+// --- sessions ---------------------------------------------------------------------------
+//
+// Posting a closed market does nothing and costs everything. Pyth carries a shut market's last
+// price forward, so `publish_time` stays at Friday's close whether it is republished or not —
+// the write cannot make the price newer, it only spends a send from a ration the open markets
+// need. Measured on devnet 2026-09-19, six feeds with five of them shut: BTC/USD, the only
+// tradeable market, sawtoothed to 53 s against the 60 s staleness gate. Posting it alone put
+// the same feed at 15–31 s.
+//
+// Which markets are open is the venue's own question, so it is answered with the venue's own
+// function rather than a calendar copied into this file.
+
+/// The market accounts, re-read periodically so a session change needs no restart.
+struct Sessions {
+    markets: Vec<(String, Pubkey)>,
+    open: HashMap<String, bool>,
+}
+
+impl Sessions {
+    fn new(listed: &[(String, u16)]) -> Self {
+        let markets = listed
+            .iter()
+            .map(|(symbol, index)| {
+                let pda = Pubkey::find_program_address(
+                    &[solfx_core::constants::MARKET_SEED, &index.to_le_bytes()],
+                    &solfx_core::ID,
+                )
+                .0;
+                (symbol.clone(), pda)
+            })
+            .collect();
+        Self {
+            markets,
+            open: HashMap::new(),
+        }
+    }
+
+    /// Re-read every listed market and recompute what is in session.
+    ///
+    /// One `getMultipleAccounts` for all of them, so following the calendar costs a single RPC
+    /// call a minute rather than one per market per pass.
+    async fn refresh(&mut self, rpc: &RpcClient, now: i64) -> Result<()> {
+        let keys: Vec<Pubkey> = self.markets.iter().map(|(_, k)| *k).collect();
+        let accounts = rpc.get_multiple_accounts(&keys).await?;
+        for ((symbol, _), account) in self.markets.iter().zip(accounts) {
+            let Some(account) = account else { continue };
+            let Ok(market) =
+                solfx_core::state::Market::try_deserialize(&mut account.data.as_slice())
+            else {
+                continue;
+            };
+            let is_open = solfx_core::instructions::keeper::session::session_is_open(&market, now);
+            if self.open.insert(symbol.clone(), is_open) != Some(is_open) {
+                println!(
+                    "  session: {symbol} is {}",
+                    if is_open { "open" } else { "closed" }
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Feeds worth posting right now.
+    ///
+    /// A market this has never managed to read is posted anyway. Not posting is the more
+    /// expensive mistake: a market whose price stops being published cannot trade at all,
+    /// while posting one that is shut wastes a send.
+    fn open_feeds(&self, feeds: &[(String, String)]) -> Vec<(String, String)> {
+        feeds
+            .iter()
+            .filter(|(symbol, _)| self.open.get(symbol).copied().unwrap_or(true))
+            .cloned()
+            .collect()
+    }
+}
+
+/// Seconds since the epoch, as the program counts them.
+fn unix_now() -> Result<i64> {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
+    i64::try_from(secs).map_err(|_| anyhow!("the clock is beyond what an i64 can hold"))
 }
 
 // --- Hermes ------------------------------------------------------------------------------

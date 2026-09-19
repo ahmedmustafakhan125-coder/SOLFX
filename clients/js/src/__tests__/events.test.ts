@@ -342,3 +342,77 @@ describe("the events the upgrade changed decode at the right offsets", () => {
     expect(d.oraclePrice - d.entryPrice).toBe(11_390_000_000n);
   });
 });
+
+describe("events whose shape changed in an upgrade", () => {
+  // A `PositionDecreased` exactly as the program emitted it before Phase 10 inserted
+  // `entry_price`: the same discriminator, one i64 shorter. Built field by field rather than
+  // pasted, so what is being asserted is the layout and not a blob nobody can read.
+  const legacyPositionDecreased = () => {
+    const parts: number[] = [];
+    const push = (bytes: readonly number[]) => parts.push(...bytes);
+    const i64 = (v: bigint) => {
+      const b = new Uint8Array(8);
+      new DataView(b.buffer).setBigInt64(0, v, true);
+      return Array.from(b);
+    };
+    const u64 = (v: bigint) => {
+      const b = new Uint8Array(8);
+      new DataView(b.buffer).setBigUint64(0, v, true);
+      return Array.from(b);
+    };
+    push(
+      Array.from(
+        SOLFX_EVENTS.find((e) => e.name === "PositionDecreased")!.discriminator,
+      ),
+    );
+    push(new Array(32).fill(1)); // position
+    push(new Array(32).fill(2)); // userAccount
+    push([3, 0]); // marketIndex
+    push(u64(1_000n)); // sizeClosed
+    push(u64(0n)); // remainingSize
+    push(i64(4_354_000_000_000n)); // oraclePrice
+    // no entryPrice — this is the whole point
+    push(i64(4_351_000_000_000n)); // execPrice
+    push(i64(-2_100_000n)); // realizedPnl
+    push(u64(100_000n)); // fee
+    push(u64(197_900_000n)); // collateralReturned
+    push([1]); // fullyClosed
+    push(i64(1_789_000_000n)); // ts
+    return Buffer.from(parts).toString("base64");
+  };
+
+  it("still reads a close from before the upgrade, with no entry price to report", () => {
+    const events = parseEvents([
+      `Program ${PROGRAM} invoke [1]`,
+      `Program data: ${legacyPositionDecreased()}`,
+      `Program ${PROGRAM} success`,
+    ]);
+    expect(events).toHaveLength(1);
+    const d = events[0]!.data as Record<string, unknown>;
+    expect(events[0]!.name).toBe("PositionDecreased");
+    expect(d.realizedPnl).toBe(-2_100_000n);
+    expect(d.collateralReturned).toBe(197_900_000n);
+    expect(d.fullyClosed).toBe(true);
+    expect(d.entryPrice).toBe(0n);
+  });
+
+  // The failure this replaces: the whole history panel showed an error because one event in
+  // one transaction could not be decoded.
+  it("skips a payload it cannot read rather than losing the rest of the transaction", () => {
+    const truncated = Buffer.from([
+      ...Array.from(
+        SOLFX_EVENTS.find((e) => e.name === "PositionDecreased")!.discriminator,
+      ),
+      1,
+      2,
+      3,
+    ]).toString("base64");
+    const events = parseEvents([
+      `Program ${PROGRAM} invoke [1]`,
+      `Program data: ${truncated}`,
+      "Program data: NUig0Q/eLp0BAAEDAPRCk2oAAAAA",
+      `Program ${PROGRAM} success`,
+    ]);
+    expect(events.map((e) => e.name)).toEqual(["MarketStatusChanged"]);
+  });
+});
