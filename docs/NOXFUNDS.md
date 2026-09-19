@@ -569,6 +569,24 @@ There is no chat. The offer *is* the message, the escrow is the proof it is seri
 acceptance is the signature — so the terms the trader accepted are provably the terms the
 investor published, with no step in between where either could substitute a number.
 
+### An evaluation, on chain
+
+`9WTKz4b1QmQTfkVoqfiaUfSoBCLFr6sMoc3gsionDp1A` — Phase 1 of an evaluation on a simulated
+$10,000 account, read back from the account:
+
+| | |
+|---|---|
+| Stake | **$50 of real USDC**, held by the evaluation's own vault — the only real money involved |
+| The trade | one simulated BTC/USD long, $1,000.999974 notional, entry 81,196.08 against an oracle of 81,114.97 — above it, because a buy crosses the spread exactly as a real fill does |
+| Fee | 0.100100, the same fee a real open of that size pays |
+| Hold | closed after **602 seconds**, against a 600-second minimum |
+| Result | balance 9,996.236574; 1 trade, 0 wins, 1 loss; still `Active` in Phase 1 |
+
+The 602 seconds is worth a sentence. The minimum hold is judged against the cluster's clock,
+which is a stake-weighted estimate that may run ahead of or behind wall time, so the client
+waited on the Clock sysvar rather than its own clock and closed two seconds after the minimum —
+not early, which would have been refused, and not needlessly late.
+
 ### Check the accounts
 
 ```bash
@@ -617,11 +635,13 @@ This section exists because a document that only lists what works is marketing.
 
 **Not built:**
 
-- **The evaluation is deployed but has not yet been run on devnet.** The upgrade carrying it and
-  the marketplace landed at slot 501,032,312 on 19 Sep 2026, and the marketplace has since run
-  end to end (Part 9). The evaluation passes its 20 tests in LiteSVM; `nox eval` exists to run
-  one on the cluster, and until it has, "works on devnet" is not a claim this document makes
-  about it.
+- **Passing an evaluation has never happened on devnet.** One has been staked, traded, marked
+  and closed there (Part 9), but a stage passes only on an 8% target over at least ten trades on
+  five distinct days, so `claim_stage_pass` and the stake refund are proven in LiteSVM only.
+- **Half of the marketplace has not run on a cluster.** The investor-to-trader direction —
+  listing, offer, decline, revoke, accept — ran end to end on devnet. The other direction —
+  an investor's listing and a trader's funding request — has zero accounts on devnet and is
+  proven in LiteSVM only.
 - **The evaluation's simplifications.** A simulated trade does not move open interest; the
   whole simulated balance is the margin, so there is no simulated liquidation; fees are the
   entry tier's; only single-leg markets can be traded; and the $50 stake is flat — the plan says
