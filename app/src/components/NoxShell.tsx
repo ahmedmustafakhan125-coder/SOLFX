@@ -7,10 +7,22 @@ import { WalletButton } from "@/components/WalletButton";
 const SPEC =
   "https://github.com/ahmedmustafakhan125-coder/SOLFX/blob/main/docs/NOXFUNDS.md";
 
+/**
+ * The tabs, mirrored from SolFX's header: where SolFX links across to NOXFUNDS, NOXFUNDS links
+ * back to SolFX, and both reach About. Same order of importance, same style, so moving between
+ * the two products changes the colour and nothing else.
+ */
 const ROUTES = [
   { to: "/nox", label: "Overview" },
   { to: "/nox/market", label: "Marketplace" },
+  { to: "/", label: "SolFX" },
+  { to: "/about", label: "About" },
 ] as const;
+
+/** SolFX's tab classes, verbatim — active is bold and underlined, the rest muted. */
+const TAB = "whitespace-nowrap uppercase tracking-wider";
+const TAB_ACTIVE = `${TAB} border-b-2 border-brand-soft pb-1 font-bold text-brand-soft`;
+const TAB_IDLE = `${TAB} text-ink-muted transition-colors hover:text-ink`;
 
 /**
  * The NOXFUNDS frame: backdrop, product switcher, nav, footer.
@@ -45,26 +57,27 @@ export function NoxShell({
               <Wordmark product="nox" />
             </Link>
 
-            <nav className="hidden items-center gap-7 text-[13px] lg:flex">
+            <nav className="hidden items-center gap-6 text-sm md:flex">
               {ROUTES.map(({ to, label }) => (
                 <Link
                   key={to}
                   to={to}
                   aria-current={pathname === to ? "page" : undefined}
-                  className={
-                    pathname === to
-                      ? "border-b-2 border-brand pb-0.5 font-medium text-brand"
-                      : "text-ink-muted transition-colors hover:text-brand"
-                  }
+                  className={pathname === to ? TAB_ACTIVE : TAB_IDLE}
                 >
                   {label}
                 </Link>
               ))}
+              {/*
+               * In-page tabs only where there is room for them. Eight uppercase tabs, the wordmark
+               * and the wallet button do not fit a medium screen, and a header that wraps is worse
+               * than one that shows the four that matter.
+               */}
               {anchors.map(([href, label]) => (
                 <a
                   key={href}
                   href={href}
-                  className="text-ink-dim transition-colors hover:text-brand"
+                  className={`${TAB_IDLE} hidden xl:inline`}
                 >
                   {label}
                 </a>
