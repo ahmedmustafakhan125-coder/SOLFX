@@ -436,8 +436,11 @@ export function closeRequestIx(
 }
 
 /**
- * Compute limit for marketplace transactions. **Not measured** — `accept_offer` does two
- * `init`s, a token account `init` and a token CPI, so this is set generously rather than from a
- * figure. The program's pinned budgets in `tests/budgets.rs` do not cover the marketplace yet.
+ * Compute limit for marketplace transactions.
+ *
+ * The heaviest is `accept_offer`: 35,927–44,927 CU measured over eight runs, with a ceiling of
+ * 90,000 asserted in `programs/noxfunds/tests/stage7.rs` (the spread is the bump search on its
+ * three new accounts). This sits above that asserted ceiling, so a request can never be the
+ * reason a valid transaction fails.
  */
-export const MARKET_CU = 200_000;
+export const MARKET_CU = 100_000;

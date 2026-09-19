@@ -150,6 +150,16 @@ struct Market {
     investor: solana_keypair::Keypair,
     trader: solana_keypair::Keypair,
     investor_token: Pubkey,
+    /// When set, every instruction is metered instead of merely sent — see the budget test.
+    meter: Option<Vec<Metered>>,
+}
+
+/// One marketplace instruction as the SVM actually charged it.
+struct Metered {
+    name: &'static str,
+    cu: u64,
+    wire: usize,
+    accounts: usize,
 }
 
 fn setup() -> Market {
@@ -205,6 +215,7 @@ fn setup() -> Market {
         investor,
         trader,
         investor_token,
+        meter: None,
     }
 }
 
@@ -224,6 +235,34 @@ fn create_profile(env: &mut Env, payer: &solana_keypair::Keypair, trader: &Pubke
 }
 
 impl Market {
+    /// Send, or — when metering — measure the compute charged and the wire size, then send.
+    ///
+    /// Wire size is taken with `measure_keeper_tx`, the helper `budgets.rs` and `solfx-core`'s
+    /// packet test use, so the figures are comparable: it includes the two compute-budget
+    /// instructions a real client puts in front.
+    fn dispatch(
+        &mut self,
+        name: &'static str,
+        ix: Instruction,
+        signers: &[&solana_keypair::Keypair],
+    ) -> TestResult {
+        if self.meter.is_none() {
+            return self.env.send(ix, signers);
+        }
+        let wire = self.env.measure_keeper_tx(ix.clone(), signers[0]);
+        let accounts = ix.accounts.len();
+        let cu = self.env.send_metered(ix, signers);
+        if let Some(rows) = self.meter.as_mut() {
+            rows.push(Metered {
+                name,
+                cu,
+                wire,
+                accounts,
+            });
+        }
+        Ok(())
+    }
+
     fn post_listing(&mut self, t: ListingTerms) -> TestResult {
         let trader = self.trader.insecure_clone();
         let ix = Instruction {
@@ -238,7 +277,22 @@ impl Market {
             .to_account_metas(None),
             data: noxfunds::instruction::PostListing { terms: t }.data(),
         };
-        self.env.send(ix, &[&trader])
+        self.dispatch("post_listing", ix, &[&trader])
+    }
+
+    fn update_listing(&mut self, t: ListingTerms, open: bool) -> TestResult {
+        let trader = self.trader.insecure_clone();
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::UpdateListing {
+                trader: trader.pubkey(),
+                config: config_pda(),
+                listing: listing_pda(&trader.pubkey()),
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::UpdateListing { terms: t, open }.data(),
+        };
+        self.dispatch("update_listing", ix, &[&trader])
     }
 
     fn post_offer(&mut self, seq: u8, principal: u64, expires_at: i64, note: &str) -> TestResult {
@@ -269,7 +323,7 @@ impl Market {
             }
             .data(),
         };
-        self.env.send(ix, &[&investor])
+        self.dispatch("post_offer", ix, &[&investor])
     }
 
     fn revoke(&mut self, seq: u8) -> TestResult {
@@ -288,7 +342,7 @@ impl Market {
             .to_account_metas(None),
             data: noxfunds::instruction::RevokeOffer {}.data(),
         };
-        self.env.send(ix, &[&investor])
+        self.dispatch("revoke_offer", ix, &[&investor])
     }
 
     fn accept_as(&mut self, who: &solana_keypair::Keypair, seq: u8) -> TestResult {
@@ -314,7 +368,7 @@ impl Market {
             .to_account_metas(None),
             data: noxfunds::instruction::AcceptOffer {}.data(),
         };
-        self.env.send(ix, &[who])
+        self.dispatch("accept_offer", ix, &[who])
     }
 
     fn accept(&mut self, seq: u8) -> TestResult {
@@ -680,7 +734,7 @@ impl Market {
             }
             .data(),
         };
-        self.env.send(ix, &[who])
+        self.dispatch("decline_offer", ix, &[who])
     }
 
     fn decline(&mut self, seq: u8, reason: &str) -> TestResult {
@@ -704,7 +758,7 @@ impl Market {
             .to_account_metas(None),
             data: noxfunds::instruction::PostInvestorListing { terms: t }.data(),
         };
-        self.env.send(ix, &[&investor])
+        self.dispatch("post_investor_listing", ix, &[&investor])
     }
 
     fn update_investor_listing_as(
@@ -723,7 +777,7 @@ impl Market {
             .to_account_metas(None),
             data: noxfunds::instruction::UpdateInvestorListing { terms: t, open }.data(),
         };
-        self.env.send(ix, &[who])
+        self.dispatch("update_investor_listing", ix, &[who])
     }
 
     fn post_request(&mut self, principal: u64, note: &str) -> TestResult {
@@ -746,7 +800,7 @@ impl Market {
             }
             .data(),
         };
-        self.env.send(ix, &[&trader])
+        self.dispatch("post_request", ix, &[&trader])
     }
 
     fn close_request_as(&mut self, who: &solana_keypair::Keypair) -> TestResult {
@@ -760,7 +814,7 @@ impl Market {
             .to_account_metas(None),
             data: noxfunds::instruction::CloseRequest {}.data(),
         };
-        self.env.send(ix, &[who])
+        self.dispatch("close_request", ix, &[who])
     }
 
     fn lamports(&self, key: &Pubkey) -> u64 {
@@ -967,4 +1021,96 @@ fn a_stranger_cannot_close_someone_elses_request() {
     // only the two parties may end the exchange
 
     refused(m.close_request_as(&stranger), &["NotARequestParty"]);
+}
+
+// --- the budget -------------------------------------------------------------------------------
+
+/// Ceilings, derived rather than picked. Measured over eight runs on 2026-09-19.
+///
+/// Two kinds of instruction, and the table says which is which:
+///
+/// - **Deterministic** — no `init`, every seed checked against a stored bump. Eight runs gave
+///   the same figure to the unit, so the ceiling is that figure plus about 30%.
+/// - **Searched** — each `init` without a stored bump runs `find_program_address`, which counts
+///   down from 255 and pays ~1,500 CU per on-curve miss. With fresh random keys the misses
+///   differ every run (spreads of 7,500–10,521 CU were measured). A miss happens with
+///   probability ≈ ½, so allowing **12 misses per search** puts a spurious failure at about
+///   2⁻¹² per search. The ceiling is the lowest measured figure plus 12 × 1,500 per search.
+///
+/// Searches per instruction, from its `#[derive(Accounts)]`: `post_listing`,
+/// `post_investor_listing` and `post_request` one each (the new account); `post_offer` two
+/// (offer, offer vault); `accept_offer` three (mandate, mandate signer, mandate vault).
+const MARKET_CU_CEILINGS: &[(&str, u64)] = &[
+    // deterministic                   measured
+    ("close_request", 6_000),            //  4,629
+    ("decline_offer", 7_500),            //  5,790
+    ("update_listing", 10_000),          //  7,578
+    ("update_investor_listing", 10_000), // 7,642
+    ("revoke_offer", 16_000),            // 12,198
+    // searched                        lowest measured + 12 × 1,500 × searches
+    ("post_investor_listing", 29_000), // 10,534 + 18,000
+    ("post_listing", 31_000),          // 12,694 + 18,000
+    ("post_request", 33_000),          // 14,639 + 18,000
+    ("post_offer", 62_000),            // 25,402 + 36,000
+    ("accept_offer", 90_000),          // 35,927 + 54,000
+];
+
+/// **Every marketplace instruction, metered, along the whole negotiation loop.**
+///
+/// Run with `-- --nocapture` for the table.
+#[test]
+fn every_marketplace_instruction_stays_within_its_budget() {
+    let mut m = setup();
+    m.meter = Some(Vec::new());
+
+    m.post_listing(terms()).unwrap();
+    m.update_listing(terms(), true).unwrap();
+    m.post_investor_listing(investor_terms()).unwrap();
+    let investor = m.investor.insecure_clone();
+    m.update_investor_listing_as(&investor, investor_terms(), true)
+        .unwrap();
+    m.post_request(10_000 * ONE_USDC, "four years of EUR/USD")
+        .unwrap();
+    m.close_request_as(&investor).unwrap();
+
+    let expiry = m.env.now + HOUR;
+    m.post_offer(0, PRINCIPAL, expiry, "first terms").unwrap();
+    m.decline(0, "split too low").unwrap();
+    m.revoke(0).unwrap();
+    m.post_offer(1, PRINCIPAL, expiry, "revised").unwrap();
+    m.accept(1).unwrap();
+
+    let rows = m.meter.take().unwrap();
+    println!(
+        "\n  {:<26} {:>9} {:>9} {:>9}",
+        "instruction", "CU", "bytes", "accounts"
+    );
+    for r in &rows {
+        println!(
+            "  {:<26} {:>9} {:>9} {:>9}",
+            r.name, r.cu, r.wire, r.accounts
+        );
+    }
+
+    for (name, ceiling) in MARKET_CU_CEILINGS {
+        let r = rows
+            .iter()
+            .find(|r| r.name == *name)
+            .unwrap_or_else(|| panic!("{name} was never metered — the loop above must cover it"));
+        assert!(
+            r.cu <= *ceiling,
+            "{name} consumed {} CU, above its {ceiling} ceiling",
+            r.cu
+        );
+        assert!(
+            r.wire <= 1_232,
+            "{name} serialises to {} bytes, over the 1,232 packet limit",
+            r.wire
+        );
+        assert!(
+            r.accounts <= 64,
+            "{name} locks {} accounts, over the 64 limit",
+            r.accounts
+        );
+    }
 }

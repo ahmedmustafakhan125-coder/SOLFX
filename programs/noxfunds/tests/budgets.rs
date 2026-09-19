@@ -37,7 +37,9 @@
 //! also a live demonstration of why `.claude/rules/solana.md` §3 says to store bumps — every
 //! seed constraint NOXFUNDS owns uses `bump = account.bump` and costs a flat ~1,500 once.
 //!
-//! Run `cargo test -p noxfunds --test budgets -- --nocapture` to print the table.
+//! Run `cargo test -p noxfunds --test budgets -- --nocapture` to print the table. The ten
+//! marketplace instructions are metered separately, along the full negotiation loop, in
+//! `stage7.rs` (`every_marketplace_instruction_stays_within_its_budget`).
 
 // Test code asserts against known values and unwraps expected-Ok results. See the same block
 // in `solfx-core/tests/compute_budget.rs` for the argument: in a program a panic is a failed

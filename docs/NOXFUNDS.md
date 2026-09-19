@@ -556,8 +556,6 @@ This section exists because a document that only lists what works is marketing.
   offers, decline with a reason, requests — 30 tests) and the browser page are built; the
   program upgrade that carries them has not been deployed as of 19 Sep 2026. Until it is, the
   page reads everything and refuses to send.
-- **The marketplace's compute cost is unmeasured.** The budgets test pins the trading path; the
-  ten marketplace instructions are not in it yet.
 - **The public verification page.** The claim in Part 8 that every statistic is re-derivable
   from events is true of the event data; the page that does the re-deriving does not exist.
 - **The off-chain keeper.** The cranks are public instructions, but nothing runs them
