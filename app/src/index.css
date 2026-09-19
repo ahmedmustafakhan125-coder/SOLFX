@@ -85,3 +85,97 @@ body {
     linear-gradient(90deg, rgba(76, 69, 70, 0.35) 1px, transparent 1px);
   background-size: 64px 64px;
 }
+
+/*
+ * NOXFUNDS is a second product on the same surface, so it gets a second accent rather than a
+ * second stylesheet. Scoped to `[data-product="nox"]`, which the NOXFUNDS pages set on their
+ * root element — everything built from `--color-brand` retints with no new class names.
+ *
+ * Cyan rather than the obvious green: `--sf-green` is already load-bearing as "long" on the
+ * terminal, and a brand colour a trader can confuse with a direction is a bad brand colour.
+ */
+[data-product="nox"] {
+  --sf-purple: #00e5ff;
+  --sf-purple-dim: #00b4cc;
+  --sf-purple-soft: #7df3ff;
+  /* The NOXFUNDS surface runs darker than the terminal — closer to true black. */
+  --sf-bg: #050607;
+  --sf-surface: #0b0d0e;
+  --sf-surface-high: #14181a;
+  --sf-border: #1f2b2e;
+  --sf-border-soft: #162022;
+}
+
+/*
+ * The hero backdrop from the reference: a cyan engineering grid that fades out downward, with
+ * a glow bleeding in from the left edge. Two layers rather than one image, so it scales to any
+ * viewport and costs nothing to download.
+ */
+.nox-grid {
+  background-image:
+    linear-gradient(rgba(0, 229, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  /* Lightning CSS adds the -webkit- prefix from browserslist; verified in the built bundle. */
+  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+}
+
+.nox-glow {
+  background:
+    radial-gradient(
+      60% 70% at 0% 35%,
+      rgba(0, 229, 255, 0.16),
+      transparent 70%
+    ),
+    radial-gradient(
+      45% 55% at 100% 0%,
+      rgba(0, 229, 255, 0.07),
+      transparent 70%
+    );
+}
+
+/* Solid cyan call to action, black text — the primary button in the reference. */
+.nox-cta {
+  background: var(--sf-purple);
+  color: #04080a;
+  border: 1px solid var(--sf-purple);
+  transition: background 150ms ease;
+}
+.nox-cta:hover {
+  background: var(--sf-purple-soft);
+}
+
+/*
+ * Diagram tokens. Named apart from the theme tokens because an SVG needs them resolved as
+ * paint values, and because the flow diagram should keep its meaning if the accent moves.
+ */
+:root {
+  --nox-brand: var(--sf-purple);
+  --nox-long: var(--sf-green);
+  --nox-short: var(--sf-red);
+  --nox-ink: var(--sf-text);
+}
+
+/*
+ * A packet travelling a wire in the NOXFUNDS flow diagram. The pause at each end is what makes
+ * the direction readable — a dot that restarts the instant it arrives reads as a dotted line,
+ * not as movement.
+ */
+@keyframes nox-travel {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  78% {
+    offset-distance: 100%;
+    opacity: 1;
+  }
+  90%,
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}

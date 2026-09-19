@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { ProductSwitcher } from "@/components/ProductSwitcher";
 import { TICKER, useTicker } from "@/hooks/useTicker";
 
 const PROGRAM_ID = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi";
@@ -26,6 +27,12 @@ function Nav() {
             className="uppercase tracking-wider text-ink-muted hover:text-ink"
           >
             Markets
+          </Link>
+          <Link
+            to="/nox"
+            className="uppercase tracking-wider text-ink-muted hover:text-ink"
+          >
+            Noxfunds
           </Link>
           <Link
             to="/about"
@@ -324,6 +331,7 @@ function Band({
 export function Landing() {
   return (
     <div className="min-h-screen bg-[#0e0e0e] text-ink">
+      <ProductSwitcher active="solfx" />
       <Nav />
 
       {/* Hero */}
