@@ -82,6 +82,10 @@ export function PriceChart({ symbol, live, levels }: Props) {
         borderColor: "#4c4546",
         timeVisible: true,
         secondsVisible: false,
+        // Keep the *time range* when the panel resizes, not the bar spacing. Without this, a
+        // range set while the panel is still settling into its width is replaced by whatever
+        // number of bars fits at the default spacing — which is how a week became a day.
+        lockVisibleTimeRangeOnResize: true,
       },
       crosshair: { mode: 1 },
       autoSize: true,
@@ -122,11 +126,21 @@ export function PriceChart({ symbol, live, levels }: Props) {
         setState("empty");
         return;
       }
-      last.current = bars[bars.length - 1];
+      const newest = bars[bars.length - 1];
+      last.current = newest;
       series.current?.setData(
         bars.map((b) => ({ ...b, time: b.time as never }))
       );
-      chart.current?.timeScale().fitContent();
+      // Open on the timeframe's window — at least a week — ending at the newest bar, rather
+      // than fitting everything loaded. The rest is there to scroll back into.
+      const ts = chart.current?.timeScale();
+      if (ts && newest) {
+        const oldest = bars[0]?.time ?? newest.time;
+        ts.setVisibleRange({
+          from: Math.max(oldest, newest.time - tf.view) as never,
+          to: newest.time as never,
+        });
+      }
       setState("ready");
     })();
     return () => {

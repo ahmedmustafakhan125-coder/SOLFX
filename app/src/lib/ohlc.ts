@@ -30,13 +30,58 @@ export type Ohlc = {
   readonly close: number;
 };
 
-/** Resolutions the History API accepts, with how far back each is worth asking for. */
+const DAY = 86_400;
+
+/**
+ * Resolutions the History API accepts, with how far back to load and how much to show.
+ *
+ * Both are calendar time, not bar counts. Spans were once `200 × seconds`, which made 15m two
+ * days deep — and FX is closed at weekends, so on EUR/USD that came back as 1.3 days. Measured
+ * against the live endpoint on 2026-09-19: it served 2,880 bars / 30 days in one request with no
+ * cap, so asking for more is cheap.
+ *
+ * - `span` is what is **loaded**. Intraday loads two weeks so that a week survives a weekend.
+ * - `view` is what is **shown** on open: at least a week everywhere. Everything loaded beyond it
+ *   is one scroll away rather than one request away.
+ *
+ * History starts in April 2025 (Pyth Pro docs), so the daily span simply returns what exists.
+ */
 export const TIMEFRAMES = [
-  { label: "15m", resolution: "15", seconds: 900, span: 900 * 200 },
-  { label: "30m", resolution: "30", seconds: 1_800, span: 1_800 * 200 },
-  { label: "1H", resolution: "60", seconds: 3_600, span: 3_600 * 200 },
-  { label: "4H", resolution: "240", seconds: 14_400, span: 14_400 * 200 },
-  { label: "1D", resolution: "D", seconds: 86_400, span: 86_400 * 200 },
+  {
+    label: "15m",
+    resolution: "15",
+    seconds: 900,
+    span: 14 * DAY,
+    view: 7 * DAY,
+  },
+  {
+    label: "30m",
+    resolution: "30",
+    seconds: 1_800,
+    span: 14 * DAY,
+    view: 7 * DAY,
+  },
+  {
+    label: "1H",
+    resolution: "60",
+    seconds: 3_600,
+    span: 30 * DAY,
+    view: 7 * DAY,
+  },
+  {
+    label: "4H",
+    resolution: "240",
+    seconds: 14_400,
+    span: 120 * DAY,
+    view: 30 * DAY,
+  },
+  {
+    label: "1D",
+    resolution: "D",
+    seconds: DAY,
+    span: 730 * DAY,
+    view: 365 * DAY,
+  },
 ] as const;
 
 export type Timeframe = (typeof TIMEFRAMES)[number];
