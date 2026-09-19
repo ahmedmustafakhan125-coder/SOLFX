@@ -311,3 +311,95 @@ pub struct RequestClosed {
     pub closed_by: Pubkey,
     pub timestamp: i64,
 }
+
+// --- the evaluation (Stage 3) -----------------------------------------------------------------
+
+#[event]
+pub struct EvaluationStarted {
+    pub evaluation: Pubkey,
+    pub trader: Pubkey,
+    pub seq: u8,
+    pub account_size: u64,
+    pub stake: u64,
+    pub ts: i64,
+}
+
+/// A simulated fill. `entry_price` and `fee` are exactly what a real SolFX fill would have been
+/// on the same price update and market state.
+#[event]
+pub struct EvaluationTradeOpened {
+    pub evaluation: Pubkey,
+    pub position: Pubkey,
+    pub market_index: u16,
+    pub direction: u8,
+    pub size_base: u64,
+    pub entry_price: i64,
+    pub notional: u64,
+    pub fee: u64,
+    pub stop_price: i64,
+    pub risk_used_bps: u64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct EvaluationTradeClosed {
+    pub evaluation: Pubkey,
+    pub position: Pubkey,
+    pub exit_price: i64,
+    /// Net of the open fee, the close fee and carry — the trade's whole result.
+    pub result: i64,
+    /// A stop-out rather than a voluntary close: exempt from the hold rules.
+    pub stop_out: bool,
+    pub held_secs: i64,
+    pub balance: i64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct EvaluationEquityObserved {
+    pub evaluation: Pubkey,
+    pub equity: u64,
+    pub peak_equity: u64,
+    pub drawdown_bps: u64,
+    pub daily_loss_bps: u64,
+    pub observer: Pubkey,
+    pub ts: i64,
+}
+
+#[event]
+pub struct StagePassed {
+    pub evaluation: Pubkey,
+    pub trader: Pubkey,
+    pub stage: u8,
+    pub equity: u64,
+    pub trades: u32,
+    pub trading_days: u16,
+    pub ts: i64,
+}
+
+/// Why it failed is `rule`, never a generic failure.
+#[event]
+pub struct EvaluationFailed {
+    pub evaluation: Pubkey,
+    pub trader: Pubkey,
+    pub stage: u8,
+    pub rule: u8,
+    pub equity: u64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct StakeRefunded {
+    pub evaluation: Pubkey,
+    pub trader: Pubkey,
+    pub amount: u64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct StakeForfeited {
+    pub evaluation: Pubkey,
+    pub treasury: Pubkey,
+    pub amount: u64,
+    pub ts: i64,
+}

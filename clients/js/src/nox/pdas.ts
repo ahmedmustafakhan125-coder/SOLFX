@@ -31,6 +31,9 @@ export const NOX_SEEDS = {
   offerVault: "offer_vault",
   investorListing: "inv_listing",
   request: "request",
+  evaluation: "eval",
+  evaluationVault: "eval_vault",
+  virtualPosition: "vpos",
 } as const;
 
 const utf8 = new TextEncoder();
@@ -102,3 +105,34 @@ export const findRequest = async (trader: Address, investor: Address) =>
     addr.encode(trader) as Uint8Array,
     addr.encode(investor) as Uint8Array,
   ]);
+
+export const findEvaluation = async (trader: Address, seq: number) =>
+  pda([
+    tag(NOX_SEEDS.evaluation),
+    addr.encode(trader) as Uint8Array,
+    seqByte(seq),
+  ]);
+
+export const findEvaluationVault = async (evaluation: Address) =>
+  pda([tag(NOX_SEEDS.evaluationVault), addr.encode(evaluation) as Uint8Array]);
+
+/** `market_index` is a little-endian `u16` in the seeds, as the program writes it. */
+export const findVirtualPosition = async (
+  evaluation: Address,
+  marketIndex: number,
+  nonce: number,
+) => {
+  if (
+    !Number.isInteger(marketIndex) ||
+    marketIndex < 0 ||
+    marketIndex > 0xffff
+  ) {
+    throw new RangeError(`market index must be a u16, got ${marketIndex}`);
+  }
+  return pda([
+    tag(NOX_SEEDS.virtualPosition),
+    addr.encode(evaluation) as Uint8Array,
+    Uint8Array.of(marketIndex & 0xff, marketIndex >> 8),
+    seqByte(nonce),
+  ]);
+};

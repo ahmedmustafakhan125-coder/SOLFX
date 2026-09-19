@@ -17,11 +17,18 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
+  parseAbandonEvaluationInstruction,
   parseAcceptOfferInstruction,
   parseClaimSettlementInstruction,
+  parseClaimStagePassInstruction,
   parseCloseRequestInstruction,
   parseCreateSolfxAccountInstruction,
   parseDeclineOfferInstruction,
+  parseEvalClosePositionInstruction,
+  parseEvalObserveEquityInstruction,
+  parseEvalOpenPositionInstruction,
+  parseEvalTriggerStopInstruction,
+  parseForfeitStakeInstruction,
   parseFundedCancelStopInstruction,
   parseFundedClosePositionInstruction,
   parseFundedOpenPositionInstruction,
@@ -39,15 +46,23 @@ import {
   parseRequestSettlementInstruction,
   parseRevokeOfferInstruction,
   parseSetPausedInstruction,
+  parseStartEvaluationInstruction,
   parseUpdateInvestorListingInstruction,
   parseUpdateListingInstruction,
   parseWindDownCancelStopInstruction,
   parseWindDownPositionInstruction,
+  type ParsedAbandonEvaluationInstruction,
   type ParsedAcceptOfferInstruction,
   type ParsedClaimSettlementInstruction,
+  type ParsedClaimStagePassInstruction,
   type ParsedCloseRequestInstruction,
   type ParsedCreateSolfxAccountInstruction,
   type ParsedDeclineOfferInstruction,
+  type ParsedEvalClosePositionInstruction,
+  type ParsedEvalObserveEquityInstruction,
+  type ParsedEvalOpenPositionInstruction,
+  type ParsedEvalTriggerStopInstruction,
+  type ParsedForfeitStakeInstruction,
   type ParsedFundedCancelStopInstruction,
   type ParsedFundedClosePositionInstruction,
   type ParsedFundedOpenPositionInstruction,
@@ -65,6 +80,7 @@ import {
   type ParsedRequestSettlementInstruction,
   type ParsedRevokeOfferInstruction,
   type ParsedSetPausedInstruction,
+  type ParsedStartEvaluationInstruction,
   type ParsedUpdateInvestorListingInstruction,
   type ParsedUpdateListingInstruction,
   type ParsedWindDownCancelStopInstruction,
@@ -75,6 +91,7 @@ export const NOXFUNDS_PROGRAM_ADDRESS =
   "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx" as Address<"9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx">;
 
 export enum NoxfundsAccount {
+  Evaluation,
   FundingRequest,
   InvestorListing,
   Mandate,
@@ -82,12 +99,24 @@ export enum NoxfundsAccount {
   NoxConfig,
   TraderListing,
   TraderProfile,
+  VirtualPosition,
 }
 
 export function identifyNoxfundsAccount(
   account: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): NoxfundsAccount {
   const data = "data" in account ? account.data : account;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([212, 70, 25, 106, 239, 24, 93, 220]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsAccount.Evaluation;
+  }
   if (
     containsBytes(
       data,
@@ -165,17 +194,35 @@ export function identifyNoxfundsAccount(
   ) {
     return NoxfundsAccount.TraderProfile;
   }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([197, 31, 155, 182, 114, 82, 179, 126]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsAccount.VirtualPosition;
+  }
   throw new Error(
     "The provided account could not be identified as a noxfunds account.",
   );
 }
 
 export enum NoxfundsInstruction {
+  AbandonEvaluation,
   AcceptOffer,
   ClaimSettlement,
+  ClaimStagePass,
   CloseRequest,
   CreateSolfxAccount,
   DeclineOffer,
+  EvalClosePosition,
+  EvalObserveEquity,
+  EvalOpenPosition,
+  EvalTriggerStop,
+  ForfeitStake,
   FundMandate,
   FundSolfxCollateral,
   FundedCancelStop,
@@ -193,6 +240,7 @@ export enum NoxfundsInstruction {
   RequestSettlement,
   RevokeOffer,
   SetPaused,
+  StartEvaluation,
   UpdateInvestorListing,
   UpdateListing,
   WindDownCancelStop,
@@ -203,6 +251,17 @@ export function identifyNoxfundsInstruction(
   instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): NoxfundsInstruction {
   const data = "data" in instruction ? instruction.data : instruction;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([115, 34, 15, 195, 27, 14, 4, 206]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.AbandonEvaluation;
+  }
   if (
     containsBytes(
       data,
@@ -224,6 +283,17 @@ export function identifyNoxfundsInstruction(
     )
   ) {
     return NoxfundsInstruction.ClaimSettlement;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([31, 92, 188, 154, 205, 34, 118, 4]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.ClaimStagePass;
   }
   if (
     containsBytes(
@@ -257,6 +327,61 @@ export function identifyNoxfundsInstruction(
     )
   ) {
     return NoxfundsInstruction.DeclineOffer;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([40, 137, 84, 57, 105, 46, 100, 9]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalClosePosition;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([71, 249, 117, 82, 47, 216, 124, 7]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalObserveEquity;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([44, 175, 249, 12, 240, 36, 239, 100]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalOpenPosition;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([43, 85, 122, 170, 91, 181, 194, 204]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalTriggerStop;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([27, 161, 131, 64, 84, 25, 41, 228]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.ForfeitStake;
   }
   if (
     containsBytes(
@@ -449,6 +574,17 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([155, 126, 223, 83, 56, 34, 155, 210]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.StartEvaluation;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([150, 88, 208, 182, 78, 177, 166, 218]),
       ),
       0,
@@ -498,11 +634,17 @@ export type ParsedNoxfundsInstruction<
   TProgram extends string = "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx",
 > =
   | ({
+      instructionType: NoxfundsInstruction.AbandonEvaluation;
+    } & ParsedAbandonEvaluationInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.AcceptOffer;
     } & ParsedAcceptOfferInstruction<TProgram>)
   | ({
       instructionType: NoxfundsInstruction.ClaimSettlement;
     } & ParsedClaimSettlementInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.ClaimStagePass;
+    } & ParsedClaimStagePassInstruction<TProgram>)
   | ({
       instructionType: NoxfundsInstruction.CloseRequest;
     } & ParsedCloseRequestInstruction<TProgram>)
@@ -512,6 +654,21 @@ export type ParsedNoxfundsInstruction<
   | ({
       instructionType: NoxfundsInstruction.DeclineOffer;
     } & ParsedDeclineOfferInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.EvalClosePosition;
+    } & ParsedEvalClosePositionInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.EvalObserveEquity;
+    } & ParsedEvalObserveEquityInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.EvalOpenPosition;
+    } & ParsedEvalOpenPositionInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.EvalTriggerStop;
+    } & ParsedEvalTriggerStopInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.ForfeitStake;
+    } & ParsedForfeitStakeInstruction<TProgram>)
   | ({
       instructionType: NoxfundsInstruction.FundMandate;
     } & ParsedFundMandateInstruction<TProgram>)
@@ -564,6 +721,9 @@ export type ParsedNoxfundsInstruction<
       instructionType: NoxfundsInstruction.SetPaused;
     } & ParsedSetPausedInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.StartEvaluation;
+    } & ParsedStartEvaluationInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.UpdateInvestorListing;
     } & ParsedUpdateInvestorListingInstruction<TProgram>)
   | ({
@@ -581,6 +741,13 @@ export function parseNoxfundsInstruction<TProgram extends string>(
 ): ParsedNoxfundsInstruction<TProgram> {
   const instructionType = identifyNoxfundsInstruction(instruction);
   switch (instructionType) {
+    case NoxfundsInstruction.AbandonEvaluation: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.AbandonEvaluation,
+        ...parseAbandonEvaluationInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.AcceptOffer: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -593,6 +760,13 @@ export function parseNoxfundsInstruction<TProgram extends string>(
       return {
         instructionType: NoxfundsInstruction.ClaimSettlement,
         ...parseClaimSettlementInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.ClaimStagePass: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.ClaimStagePass,
+        ...parseClaimStagePassInstruction(instruction),
       };
     }
     case NoxfundsInstruction.CloseRequest: {
@@ -614,6 +788,41 @@ export function parseNoxfundsInstruction<TProgram extends string>(
       return {
         instructionType: NoxfundsInstruction.DeclineOffer,
         ...parseDeclineOfferInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.EvalClosePosition: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalClosePosition,
+        ...parseEvalClosePositionInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.EvalObserveEquity: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalObserveEquity,
+        ...parseEvalObserveEquityInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.EvalOpenPosition: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalOpenPosition,
+        ...parseEvalOpenPositionInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.EvalTriggerStop: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalTriggerStop,
+        ...parseEvalTriggerStopInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.ForfeitStake: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.ForfeitStake,
+        ...parseForfeitStakeInstruction(instruction),
       };
     }
     case NoxfundsInstruction.FundMandate: {
@@ -733,6 +942,13 @@ export function parseNoxfundsInstruction<TProgram extends string>(
       return {
         instructionType: NoxfundsInstruction.SetPaused,
         ...parseSetPausedInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.StartEvaluation: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.StartEvaluation,
+        ...parseStartEvaluationInstruction(instruction),
       };
     }
     case NoxfundsInstruction.UpdateInvestorListing: {

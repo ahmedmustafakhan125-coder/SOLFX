@@ -12,9 +12,12 @@ import type { Address } from "@solana/kit";
 import { nox } from "../index.js";
 import {
   NOX_SEEDS,
+  findEvaluation,
+  findEvaluationVault,
   findMandate,
   findNoxConfig,
   findProfile,
+  findVirtualPosition,
 } from "../nox/pdas.js";
 
 const TRADER = "Fa3M8NweDi4ZHNzzi1PbqHC32knbFTtAzskvxpSkcSNy" as Address;
@@ -40,6 +43,20 @@ describe("NOXFUNDS addresses match devnet", () => {
     [2, "5qyCdLD2NXCK5jJuHryVwkwvjkxtc2CjeP34DgUohwEs"],
   ])("mandate seq %i", async (seq, want) => {
     expect(await findMandate(INVESTOR, TRADER, seq)).toBe(want);
+  });
+
+  it("evaluation addresses match an independent derivation", async () => {
+    // No evaluation exists on devnet yet, so these are pinned against a separate Python
+    // implementation of the PDA rules — validated by reproducing the real trader profile above.
+    const evaluation = await findEvaluation(TRADER, 3);
+    expect(evaluation).toBe("6RGjAEmBDByuYqgFEZmYZLrzSmCb3znbEGCS8hxYNXGM");
+    expect(await findEvaluationVault(evaluation)).toBe(
+      "2wNhhQr1TMMcnL6mQGgattp1TUcv57u5VwcbnLnrFu37",
+    );
+    // Market 258 is 0x0102, so the byte order shows. The program writes `to_le_bytes()`.
+    const vpos = await findVirtualPosition(evaluation, 258, 7);
+    expect(vpos).toBe("FwykutPdcVvHe5YbDhSrUL1BYmVkb56ajJmqoDER3RhA");
+    expect(vpos).not.toBe("A2umvJtwkFnqyBuFGcY5txfAZuw7zwQAaj4eW38WFZqs"); // big-endian
   });
 
   it("refuses a seq that is not a u8", async () => {
@@ -75,6 +92,9 @@ describe("NOXFUNDS addresses match devnet", () => {
         OFFER_VAULT_SEED: NOX_SEEDS.offerVault,
         INVESTOR_LISTING_SEED: NOX_SEEDS.investorListing,
         REQUEST_SEED: NOX_SEEDS.request,
+        EVAL_SEED: NOX_SEEDS.evaluation,
+        EVAL_VAULT_SEED: NOX_SEEDS.evaluationVault,
+        VPOS_SEED: NOX_SEEDS.virtualPosition,
       };
       for (const [name, value] of Object.entries(expected)) {
         expect(inRust.get(name), name).toBe(value);

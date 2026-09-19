@@ -917,3 +917,146 @@ pub struct FundingRequest {
     pub bump: u8,
     pub _reserved: [u8; 16],
 }
+
+// --- the evaluation (Stage 3) ----------------------------------------------------------------
+//
+// # A simulation priced by the real venue's own code
+//
+// An evaluation holds a virtual USDC balance. Its trades are priced by the functions a real
+// SolFX fill uses — `load_validated_price`, `execution_price_for`, the `solfx_math` notional,
+// PnL, fee and carry functions — called, not copied. So a simulated fill is not an
+// approximation of a SolFX fill; on the same price update and the same market state it *is*
+// one, to the unit, and `tests/stage3.rs` holds that.
+//
+// No token moves in the simulation. The only token account an evaluation ever touches is its
+// own stake escrow, which is what keeps SolFX's invariants untouched by construction.
+
+#[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EvaluationState {
+    Active,
+    /// Both phases passed. Terminal; the stake was refunded.
+    Passed,
+    /// A rule broke, or the trader walked away. Terminal; the stake is forfeit.
+    Failed,
+}
+
+/// Why an evaluation failed, recorded on the account and in the event. Never a generic
+/// "rule violation" — a trader who failed must be able to read which rule ended it.
+#[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EvalRule {
+    None,
+    DailyLoss,
+    Drawdown,
+    Abandoned,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Evaluation {
+    pub trader: Pubkey,
+    pub seq: u8,
+    /// 1 or 2.
+    pub stage: u8,
+    pub state: EvaluationState,
+    pub failed_rule: EvalRule,
+
+    /// The simulated starting balance for the current stage, in USDC.
+    pub account_size: u64,
+    /// Realised cash: starting balance plus every closed trade's net result, minus every fee.
+    /// Signed, because a gap through a stop can in principle take it below zero and the record
+    /// must not wrap.
+    pub balance: i64,
+    /// High-water mark of equity. Only ever rises.
+    pub peak_equity: u64,
+
+    /// The UTC day (`unix_timestamp / 86_400`) that `day_start_equity` belongs to.
+    pub day: i64,
+    pub day_start_equity: u64,
+    /// Realised result so far today, and the best single day of the stage — the consistency
+    /// rule's inputs.
+    pub day_pnl: i64,
+    pub best_day_pnl: i64,
+
+    // --- the record ---------------------------------------------------------------------
+    pub trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub gross_profit: u64,
+    pub gross_loss: u64,
+    /// Voluntary closes only: stop-outs are exempt from the hold rules (§3.2.1).
+    pub voluntary_closes: u32,
+    pub voluntary_hold_secs: u64,
+    pub trading_days: u16,
+    pub last_trade_day: i64,
+
+    pub open_positions: u8,
+    pub last_equity: u64,
+    pub last_observed_at: i64,
+    pub started_at: i64,
+    pub bump: u8,
+    pub vault_bump: u8,
+    pub _reserved: [u8; 64],
+}
+
+impl Evaluation {
+    /// Equity as a non-negative figure: what the simulated account would be worth, floored at
+    /// zero because an account cannot be worth less than nothing.
+    #[must_use]
+    pub fn floor_equity(value: i128) -> u64 {
+        u64::try_from(value.max(0)).unwrap_or(u64::MAX)
+    }
+
+    /// Trailing drawdown from the peak, in bps, rounded **up** — a limit the account must stay
+    /// under, so rounding down would admit a drawdown fractionally past it. Returns `u64::MAX` on
+    /// an arithmetic failure, which every caller reads as "breached".
+    #[must_use]
+    pub fn drawdown_bps(&self, equity: u64) -> u64 {
+        let peak = self.peak_equity.max(1);
+        let lost = peak.saturating_sub(equity);
+        solfx_math::fixed::mul_div_ceil(
+            u128::from(lost),
+            u128::from(crate::constants::BPS),
+            u128::from(peak),
+        )
+        .and_then(solfx_math::fixed::to_u64)
+        .unwrap_or(u64::MAX)
+    }
+
+    /// Loss since the start of today, in bps of the day's opening equity, rounded up.
+    #[must_use]
+    pub fn daily_loss_bps(&self, equity: u64) -> u64 {
+        let start = self.day_start_equity.max(1);
+        let lost = start.saturating_sub(equity);
+        solfx_math::fixed::mul_div_ceil(
+            u128::from(lost),
+            u128::from(crate::constants::BPS),
+            u128::from(start),
+        )
+        .and_then(solfx_math::fixed::to_u64)
+        .unwrap_or(u64::MAX)
+    }
+}
+
+/// One simulated position, at `["vpos", evaluation, market_index (LE), nonce]`.
+///
+/// Mirrors the fields of SolFX's `Position` that pricing and carry read, so closing it runs the
+/// same arithmetic a real close runs.
+#[account]
+#[derive(InitSpace)]
+pub struct VirtualPosition {
+    pub evaluation: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub direction: solfx_core::state::Direction,
+    pub size_base: u64,
+    /// The execution price — spread and skew included — exactly as `open_position` fills.
+    pub entry_price: i64,
+    /// Notional at entry, in USDC. The carry basis, as on a real position.
+    pub entry_notional: u64,
+    pub stop_price: i64,
+    pub open_fee: u64,
+    /// `Market::cum_borrow_index` at entry, so carry accrues exactly as a real position's does.
+    pub cum_borrow_entry: u128,
+    pub opened_at: i64,
+    pub bump: u8,
+}

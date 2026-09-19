@@ -13,4 +13,5 @@ export * from "./mandateVault";
 export * from "./offerVault";
 export * from "./postListingListing";
 export * from "./profile";
+export * from "./stakeVault";
 export * from "./traderProfile";

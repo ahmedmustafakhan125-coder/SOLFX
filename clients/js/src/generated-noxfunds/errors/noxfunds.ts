@@ -96,11 +96,40 @@ export const NOXFUNDS_ERROR__NOT_THE_LISTING_INVESTOR = 0x1796; // 6038
 export const NOXFUNDS_ERROR__LISTING_NOT_OPEN = 0x1797; // 6039
 /** NotARequestParty: Signer is neither the trader nor the investor on this request */
 export const NOXFUNDS_ERROR__NOT_A_REQUEST_PARTY = 0x1798; // 6040
+/** EvaluationNotActive: Evaluation is not active */
+export const NOXFUNDS_ERROR__EVALUATION_NOT_ACTIVE = 0x1799; // 6041
+/** InvalidAccountSize: Simulated account size must be between $10,000 and $200,000 */
+export const NOXFUNDS_ERROR__INVALID_ACCOUNT_SIZE = 0x179a; // 6042
+/** EvaluationLeverageTooHigh: Trade is more leveraged than this market allows against the simulated balance */
+export const NOXFUNDS_ERROR__EVALUATION_LEVERAGE_TOO_HIGH = 0x179b; // 6043
+/** DailyLossExceeded: Evaluation has lost more than its daily limit today */
+export const NOXFUNDS_ERROR__DAILY_LOSS_EXCEEDED = 0x179c; // 6044
+/** StopNotTriggered: The oracle price has not reached this stop */
+export const NOXFUNDS_ERROR__STOP_NOT_TRIGGERED = 0x179d; // 6045
+/** EvaluationIncomplete: Evaluation has not yet met every requirement of this stage */
+export const NOXFUNDS_ERROR__EVALUATION_INCOMPLETE = 0x179e; // 6046
+/** ConsistencyRuleViolated: A single day accounts for more than half the profit target */
+export const NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED = 0x179f; // 6047
+/** EvaluationNotFailed: Only a failed evaluation's stake can be forfeited */
+export const NOXFUNDS_ERROR__EVALUATION_NOT_FAILED = 0x17a0; // 6048
+/** PositionSizeOutOfBounds: Position size is outside the market's bounds */
+export const NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS = 0x17a1; // 6049
+/** MarketNotOpen: Market is not open for this action */
+export const NOXFUNDS_ERROR__MARKET_NOT_OPEN = 0x17a2; // 6050
+/** PositionNotInEvaluation: This simulated position does not belong to this evaluation */
+export const NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION = 0x17a3; // 6051
 
 export type NoxfundsError =
+  | typeof NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED
+  | typeof NOXFUNDS_ERROR__DAILY_LOSS_EXCEEDED
   | typeof NOXFUNDS_ERROR__DRAWDOWN_EXCEEDED
+  | typeof NOXFUNDS_ERROR__EVALUATION_INCOMPLETE
+  | typeof NOXFUNDS_ERROR__EVALUATION_LEVERAGE_TOO_HIGH
+  | typeof NOXFUNDS_ERROR__EVALUATION_NOT_ACTIVE
+  | typeof NOXFUNDS_ERROR__EVALUATION_NOT_FAILED
   | typeof NOXFUNDS_ERROR__INCOMPLETE_OBSERVATION
   | typeof NOXFUNDS_ERROR__INSUFFICIENT_PRINCIPAL
+  | typeof NOXFUNDS_ERROR__INVALID_ACCOUNT_SIZE
   | typeof NOXFUNDS_ERROR__INVALID_LISTING_TERMS
   | typeof NOXFUNDS_ERROR__INVALID_MANDATE_RULES
   | typeof NOXFUNDS_ERROR__LISTING_NOT_OPEN
@@ -108,6 +137,7 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__MANDATE_NOT_ACTIVE
   | typeof NOXFUNDS_ERROR__MANDATE_NOT_SETTLEABLE
   | typeof NOXFUNDS_ERROR__MANDATE_NOT_WINDING_DOWN
+  | typeof NOXFUNDS_ERROR__MARKET_NOT_OPEN
   | typeof NOXFUNDS_ERROR__MARKET_NOT_PERMITTED
   | typeof NOXFUNDS_ERROR__MATH_OVERFLOW
   | typeof NOXFUNDS_ERROR__MINIMUM_HOLD_NOT_MET
@@ -124,7 +154,9 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY
   | typeof NOXFUNDS_ERROR__OFFER_EXPIRED
   | typeof NOXFUNDS_ERROR__OFFER_NOT_OPEN
+  | typeof NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION
   | typeof NOXFUNDS_ERROR__POSITION_NOT_TRACKED
+  | typeof NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS
   | typeof NOXFUNDS_ERROR__POSITIONS_STILL_OPEN
   | typeof NOXFUNDS_ERROR__POSITION_STILL_OPEN
   | typeof NOXFUNDS_ERROR__PROFILE_MISMATCH
@@ -132,6 +164,7 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__RISK_PER_TRADE_EXCEEDED
   | typeof NOXFUNDS_ERROR__SLOT_NOT_RECONCILED
   | typeof NOXFUNDS_ERROR__STOP_LOSS_REQUIRED
+  | typeof NOXFUNDS_ERROR__STOP_NOT_TRIGGERED
   | typeof NOXFUNDS_ERROR__STOP_ON_WRONG_SIDE
   | typeof NOXFUNDS_ERROR__STOP_TOO_FAR
   | typeof NOXFUNDS_ERROR__TOO_MANY_ACTIVE_MANDATES
@@ -143,9 +176,16 @@ export type NoxfundsError =
 let noxfundsErrorMessages: Record<NoxfundsError, string> | undefined;
 if (process.env.NODE_ENV !== "production") {
   noxfundsErrorMessages = {
+    [NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED]: `A single day accounts for more than half the profit target`,
+    [NOXFUNDS_ERROR__DAILY_LOSS_EXCEEDED]: `Evaluation has lost more than its daily limit today`,
     [NOXFUNDS_ERROR__DRAWDOWN_EXCEEDED]: `Mandate has breached its maximum drawdown`,
+    [NOXFUNDS_ERROR__EVALUATION_INCOMPLETE]: `Evaluation has not yet met every requirement of this stage`,
+    [NOXFUNDS_ERROR__EVALUATION_LEVERAGE_TOO_HIGH]: `Trade is more leveraged than this market allows against the simulated balance`,
+    [NOXFUNDS_ERROR__EVALUATION_NOT_ACTIVE]: `Evaluation is not active`,
+    [NOXFUNDS_ERROR__EVALUATION_NOT_FAILED]: `Only a failed evaluation's stake can be forfeited`,
     [NOXFUNDS_ERROR__INCOMPLETE_OBSERVATION]: `Equity observation must supply every open position exactly once`,
     [NOXFUNDS_ERROR__INSUFFICIENT_PRINCIPAL]: `The investor's token account holds less than the principal`,
+    [NOXFUNDS_ERROR__INVALID_ACCOUNT_SIZE]: `Simulated account size must be between $10,000 and $200,000`,
     [NOXFUNDS_ERROR__INVALID_LISTING_TERMS]: `Listing terms are not internally consistent`,
     [NOXFUNDS_ERROR__INVALID_MANDATE_RULES]: `Mandate rules are not internally consistent`,
     [NOXFUNDS_ERROR__LISTING_NOT_OPEN]: `That listing is closed; it is not accepting requests`,
@@ -153,6 +193,7 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__MANDATE_NOT_ACTIVE]: `Mandate is not Active`,
     [NOXFUNDS_ERROR__MANDATE_NOT_SETTLEABLE]: `Mandate is not winding down or breached, so it cannot be settled`,
     [NOXFUNDS_ERROR__MANDATE_NOT_WINDING_DOWN]: `Only a breached or winding-down mandate may be wound down by a third party`,
+    [NOXFUNDS_ERROR__MARKET_NOT_OPEN]: `Market is not open for this action`,
     [NOXFUNDS_ERROR__MARKET_NOT_PERMITTED]: `This market is not in the mandate's permitted set`,
     [NOXFUNDS_ERROR__MATH_OVERFLOW]: `Arithmetic overflow`,
     [NOXFUNDS_ERROR__MINIMUM_HOLD_NOT_MET]: `Position has not been held for the mandate's minimum`,
@@ -169,7 +210,9 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY]: `Only the program's upgrade authority may initialise the configuration`,
     [NOXFUNDS_ERROR__OFFER_EXPIRED]: `Offer has expired`,
     [NOXFUNDS_ERROR__OFFER_NOT_OPEN]: `Offer is not open; it has already been accepted or revoked`,
+    [NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION]: `This simulated position does not belong to this evaluation`,
     [NOXFUNDS_ERROR__POSITION_NOT_TRACKED]: `This mandate is not tracking a position at that market and nonce`,
+    [NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS]: `Position size is outside the market's bounds`,
     [NOXFUNDS_ERROR__POSITIONS_STILL_OPEN]: `Mandate still holds open positions; close them before settling`,
     [NOXFUNDS_ERROR__POSITION_STILL_OPEN]: `That position still exists on SolFX, so there is nothing to reconcile`,
     [NOXFUNDS_ERROR__PROFILE_MISMATCH]: `This profile does not belong to the mandate's trader`,
@@ -177,6 +220,7 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__RISK_PER_TRADE_EXCEEDED]: `Risk at the stop exceeds the mandate's per-trade risk limit`,
     [NOXFUNDS_ERROR__SLOT_NOT_RECONCILED]: `A position at this market and nonce closed without being reconciled; reconcile it first`,
     [NOXFUNDS_ERROR__STOP_LOSS_REQUIRED]: `Every funded trade must carry a stop-loss`,
+    [NOXFUNDS_ERROR__STOP_NOT_TRIGGERED]: `The oracle price has not reached this stop`,
     [NOXFUNDS_ERROR__STOP_ON_WRONG_SIDE]: `Stop-loss is on the wrong side of the entry price`,
     [NOXFUNDS_ERROR__STOP_TOO_FAR]: `Stop-loss is further from entry than the mandate allows`,
     [NOXFUNDS_ERROR__TOO_MANY_ACTIVE_MANDATES]: `The trader already holds as many mandates as their tier permits`,

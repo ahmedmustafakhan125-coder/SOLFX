@@ -299,4 +299,65 @@ pub mod noxfunds {
     pub fn close_request(ctx: Context<CloseRequest>) -> Result<()> {
         instructions::marketplace::close_request(ctx)
     }
+    // --- the evaluation (Stage 3) ----------------------------------------------------------
+    //
+    // A simulated account, priced by SolFX's own functions. No token moves except the stake.
+
+    /// Stake $50 and start Phase 1 on a simulated balance of `account_size` USDC.
+    pub fn start_evaluation(
+        ctx: Context<StartEvaluation>,
+        seq: u8,
+        account_size: u64,
+    ) -> Result<()> {
+        instructions::evaluation::start_evaluation(ctx, seq, account_size)
+    }
+
+    /// Open a simulated position, with its stop, at exactly the price a real fill would get.
+    pub fn eval_open_position(
+        ctx: Context<EvalOpenPosition>,
+        market_index: u16,
+        nonce: u8,
+        direction: solfx_core::state::Direction,
+        size_base: u64,
+        stop_loss_price: i64,
+    ) -> Result<()> {
+        instructions::evaluation::eval_open_position(
+            ctx,
+            market_index,
+            nonce,
+            direction,
+            size_base,
+            stop_loss_price,
+        )
+    }
+
+    /// Close a simulated position by choice. Subject to the ten-minute minimum hold.
+    pub fn eval_close_position(ctx: Context<EvalClosePosition>) -> Result<()> {
+        instructions::evaluation::eval_close_position(ctx)
+    }
+
+    /// Fire a simulated stop the oracle has reached. **Permissionless.**
+    pub fn eval_trigger_stop(ctx: Context<EvalTriggerStop>) -> Result<()> {
+        instructions::evaluation::eval_trigger_stop(ctx)
+    }
+
+    /// Mark every open simulated position and judge the loss limits. **Permissionless.**
+    pub fn eval_observe_equity(ctx: Context<EvalObserveEquity>) -> Result<()> {
+        instructions::evaluation::eval_observe_equity(ctx)
+    }
+
+    /// Verify the current stage and advance; Phase 2 passed refunds the stake.
+    pub fn claim_stage_pass(ctx: Context<ClaimStagePass>) -> Result<()> {
+        instructions::evaluation::claim_stage_pass(ctx)
+    }
+
+    /// Send a failed evaluation's stake to the treasury. **Permissionless.**
+    pub fn forfeit_stake(ctx: Context<ForfeitStake>) -> Result<()> {
+        instructions::evaluation::forfeit_stake(ctx)
+    }
+
+    /// Walk away from an evaluation. The stake is forfeit.
+    pub fn abandon_evaluation(ctx: Context<AbandonEvaluation>) -> Result<()> {
+        instructions::evaluation::abandon_evaluation(ctx)
+    }
 }

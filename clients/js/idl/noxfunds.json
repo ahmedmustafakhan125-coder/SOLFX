@@ -2,6 +2,19 @@
   "accounts": [
     {
       "discriminator": [
+        212,
+        70,
+        25,
+        106,
+        239,
+        24,
+        93,
+        220
+      ],
+      "name": "Evaluation"
+    },
+    {
+      "discriminator": [
         78,
         109,
         168,
@@ -90,6 +103,19 @@
         169
       ],
       "name": "TraderProfile"
+    },
+    {
+      "discriminator": [
+        197,
+        31,
+        155,
+        182,
+        114,
+        82,
+        179,
+        126
+      ],
+      "name": "VirtualPosition"
     }
   ],
   "address": "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx",
@@ -298,6 +324,61 @@
       "code": 6040,
       "msg": "Signer is neither the trader nor the investor on this request",
       "name": "NotARequestParty"
+    },
+    {
+      "code": 6041,
+      "msg": "Evaluation is not active",
+      "name": "EvaluationNotActive"
+    },
+    {
+      "code": 6042,
+      "msg": "Simulated account size must be between $10,000 and $200,000",
+      "name": "InvalidAccountSize"
+    },
+    {
+      "code": 6043,
+      "msg": "Trade is more leveraged than this market allows against the simulated balance",
+      "name": "EvaluationLeverageTooHigh"
+    },
+    {
+      "code": 6044,
+      "msg": "Evaluation has lost more than its daily limit today",
+      "name": "DailyLossExceeded"
+    },
+    {
+      "code": 6045,
+      "msg": "The oracle price has not reached this stop",
+      "name": "StopNotTriggered"
+    },
+    {
+      "code": 6046,
+      "msg": "Evaluation has not yet met every requirement of this stage",
+      "name": "EvaluationIncomplete"
+    },
+    {
+      "code": 6047,
+      "msg": "A single day accounts for more than half the profit target",
+      "name": "ConsistencyRuleViolated"
+    },
+    {
+      "code": 6048,
+      "msg": "Only a failed evaluation's stake can be forfeited",
+      "name": "EvaluationNotFailed"
+    },
+    {
+      "code": 6049,
+      "msg": "Position size is outside the market's bounds",
+      "name": "PositionSizeOutOfBounds"
+    },
+    {
+      "code": 6050,
+      "msg": "Market is not open for this action",
+      "name": "MarketNotOpen"
+    },
+    {
+      "code": 6051,
+      "msg": "This simulated position does not belong to this evaluation",
+      "name": "PositionNotInEvaluation"
     }
   ],
   "events": [
@@ -326,6 +407,71 @@
         47
       ],
       "name": "EquityObserved"
+    },
+    {
+      "discriminator": [
+        154,
+        189,
+        251,
+        247,
+        185,
+        85,
+        6,
+        9
+      ],
+      "name": "EvaluationEquityObserved"
+    },
+    {
+      "discriminator": [
+        123,
+        79,
+        20,
+        208,
+        242,
+        153,
+        217,
+        11
+      ],
+      "name": "EvaluationFailed"
+    },
+    {
+      "discriminator": [
+        79,
+        55,
+        236,
+        234,
+        59,
+        42,
+        234,
+        189
+      ],
+      "name": "EvaluationStarted"
+    },
+    {
+      "discriminator": [
+        233,
+        217,
+        233,
+        180,
+        88,
+        96,
+        143,
+        92
+      ],
+      "name": "EvaluationTradeClosed"
+    },
+    {
+      "discriminator": [
+        139,
+        23,
+        163,
+        20,
+        111,
+        215,
+        114,
+        5
+      ],
+      "name": "EvaluationTradeOpened"
     },
     {
       "discriminator": [
@@ -563,6 +709,45 @@
     },
     {
       "discriminator": [
+        69,
+        2,
+        230,
+        75,
+        69,
+        215,
+        198,
+        172
+      ],
+      "name": "StagePassed"
+    },
+    {
+      "discriminator": [
+        76,
+        54,
+        239,
+        76,
+        201,
+        171,
+        246,
+        253
+      ],
+      "name": "StakeForfeited"
+    },
+    {
+      "discriminator": [
+        81,
+        188,
+        224,
+        106,
+        3,
+        59,
+        199,
+        216
+      ],
+      "name": "StakeRefunded"
+    },
+    {
+      "discriminator": [
         92,
         141,
         215,
@@ -615,6 +800,36 @@
     }
   ],
   "instructions": [
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "relations": [
+            "evaluation"
+          ],
+          "signer": true
+        },
+        {
+          "name": "evaluation",
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        115,
+        34,
+        15,
+        195,
+        27,
+        14,
+        4,
+        206
+      ],
+      "docs": [
+        "Walk away from an evaluation. The stake is forfeit."
+      ],
+      "name": "abandon_evaluation"
+    },
     {
       "accounts": [
         {
@@ -974,6 +1189,93 @@
     {
       "accounts": [
         {
+          "name": "trader",
+          "relations": [
+            "evaluation"
+          ],
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "evaluation",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "trader_token",
+          "writable": true
+        },
+        {
+          "name": "stake_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  118,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "evaluation"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        31,
+        92,
+        188,
+        154,
+        205,
+        34,
+        118,
+        4
+      ],
+      "docs": [
+        "Verify the current stage and advance; Phase 2 passed refunds the stake."
+      ],
+      "name": "claim_stage_pass"
+    },
+    {
+      "accounts": [
+        {
           "docs": [
             "Either party. The trader withdraws the ask; the investor dismisses it."
           ],
@@ -1154,6 +1456,312 @@
         "Say no to an offer, with a reason. Moves no money; the investor revokes to reclaim it."
       ],
       "name": "decline_offer"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "relations": [
+            "evaluation"
+          ],
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "evaluation",
+          "relations": [
+            "virtual_position"
+          ],
+          "writable": true
+        },
+        {
+          "name": "virtual_position",
+          "writable": true
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "price_update"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        40,
+        137,
+        84,
+        57,
+        105,
+        46,
+        100,
+        9
+      ],
+      "docs": [
+        "Close a simulated position by choice. Subject to the ten-minute minimum hold."
+      ],
+      "name": "eval_close_position"
+    },
+    {
+      "accounts": [
+        {
+          "name": "observer",
+          "signer": true
+        },
+        {
+          "name": "evaluation",
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        71,
+        249,
+        117,
+        82,
+        47,
+        216,
+        124,
+        7
+      ],
+      "docs": [
+        "Mark every open simulated position and judge the loss limits. **Permissionless.**"
+      ],
+      "name": "eval_observe_equity"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "relations": [
+            "evaluation"
+          ],
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "evaluation",
+          "writable": true
+        },
+        {
+          "name": "virtual_position",
+          "writable": true
+        },
+        {
+          "docs": [
+            "SolFX's own market account. `Account<Market>` checks it is owned by `solfx-core`, which",
+            "is the only program that can create one, so it cannot be forged."
+          ],
+          "name": "market"
+        },
+        {
+          "docs": [
+            "Pyth's price update. `load_validated_price` checks it is the market's own feed and",
+            "applies every staleness and confidence gate a real fill applies."
+          ],
+          "name": "price_update"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_index",
+          "type": "u16"
+        },
+        {
+          "name": "nonce",
+          "type": "u8"
+        },
+        {
+          "name": "direction",
+          "type": {
+            "defined": {
+              "name": "Direction"
+            }
+          }
+        },
+        {
+          "name": "size_base",
+          "type": "u64"
+        },
+        {
+          "name": "stop_loss_price",
+          "type": "i64"
+        }
+      ],
+      "discriminator": [
+        44,
+        175,
+        249,
+        12,
+        240,
+        36,
+        239,
+        100
+      ],
+      "docs": [
+        "Open a simulated position, with its stop, at exactly the price a real fill would get."
+      ],
+      "name": "eval_open_position"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "Anyone. A stop that only its owner can fire is a stop the owner can choose not to fire."
+          ],
+          "name": "keeper",
+          "signer": true
+        },
+        {
+          "docs": [
+            "keeper cannot redirect it."
+          ],
+          "name": "trader",
+          "writable": true
+        },
+        {
+          "name": "evaluation",
+          "relations": [
+            "virtual_position"
+          ],
+          "writable": true
+        },
+        {
+          "name": "virtual_position",
+          "writable": true
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "price_update"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        43,
+        85,
+        122,
+        170,
+        91,
+        181,
+        194,
+        204
+      ],
+      "docs": [
+        "Fire a simulated stop the oracle has reached. **Permissionless.**"
+      ],
+      "name": "eval_trigger_stop"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "Anyone. The treasury should not depend on the failed trader's cooperation."
+          ],
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "evaluation"
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "stake_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  118,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "evaluation"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "docs": [
+            "The treasury's USDC account, pinned to the configured treasury so a caller cannot send",
+            "the stake anywhere else."
+          ],
+          "name": "treasury_token",
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        27,
+        161,
+        131,
+        64,
+        84,
+        25,
+        41,
+        228
+      ],
+      "docs": [
+        "Send a failed evaluation's stake to the treasury. **Permissionless.**"
+      ],
+      "name": "forfeit_stake"
     },
     {
       "accounts": [
@@ -2916,6 +3524,133 @@
     {
       "accounts": [
         {
+          "name": "trader",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "Required: passing is recorded against a real profile, and an evaluation run by a wallet",
+            "with no profile would earn a record nobody could find."
+          ],
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "evaluation",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "trader_token",
+          "writable": true
+        },
+        {
+          "docs": [
+            "The stake escrow, owned by the evaluation PDA. Nobody else can move it: refunded to the",
+            "trader on a pass, forfeited to the treasury on a failure, and there is no third door."
+          ],
+          "name": "stake_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  118,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "evaluation"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "seq",
+          "type": "u8"
+        },
+        {
+          "name": "account_size",
+          "type": "u64"
+        }
+      ],
+      "discriminator": [
+        155,
+        126,
+        223,
+        83,
+        56,
+        34,
+        155,
+        210
+      ],
+      "docs": [
+        "Stake $50 and start Phase 1 on a simulated balance of `account_size` USDC."
+      ],
+      "name": "start_evaluation"
+    },
+    {
+      "accounts": [
+        {
           "name": "investor",
           "relations": [
             "listing"
@@ -3384,6 +4119,409 @@
           {
             "name": "observer",
             "type": "pubkey"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Why an evaluation failed, recorded on the account and in the event. Never a generic",
+        "\"rule violation\" \u2014 a trader who failed must be able to read which rule ended it."
+      ],
+      "name": "EvalRule",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "None"
+          },
+          {
+            "name": "DailyLoss"
+          },
+          {
+            "name": "Drawdown"
+          },
+          {
+            "name": "Abandoned"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Evaluation",
+      "type": {
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "1 or 2."
+            ],
+            "name": "stage",
+            "type": "u8"
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "EvaluationState"
+              }
+            }
+          },
+          {
+            "name": "failed_rule",
+            "type": {
+              "defined": {
+                "name": "EvalRule"
+              }
+            }
+          },
+          {
+            "docs": [
+              "The simulated starting balance for the current stage, in USDC."
+            ],
+            "name": "account_size",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Realised cash: starting balance plus every closed trade's net result, minus every fee.",
+              "Signed, because a gap through a stop can in principle take it below zero and the record",
+              "must not wrap."
+            ],
+            "name": "balance",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "High-water mark of equity. Only ever rises."
+            ],
+            "name": "peak_equity",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "The UTC day (`unix_timestamp / 86_400`) that `day_start_equity` belongs to."
+            ],
+            "name": "day",
+            "type": "i64"
+          },
+          {
+            "name": "day_start_equity",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Realised result so far today, and the best single day of the stage \u2014 the consistency",
+              "rule's inputs."
+            ],
+            "name": "day_pnl",
+            "type": "i64"
+          },
+          {
+            "name": "best_day_pnl",
+            "type": "i64"
+          },
+          {
+            "name": "trades",
+            "type": "u32"
+          },
+          {
+            "name": "wins",
+            "type": "u32"
+          },
+          {
+            "name": "losses",
+            "type": "u32"
+          },
+          {
+            "name": "gross_profit",
+            "type": "u64"
+          },
+          {
+            "name": "gross_loss",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Voluntary closes only: stop-outs are exempt from the hold rules (\u00a73.2.1)."
+            ],
+            "name": "voluntary_closes",
+            "type": "u32"
+          },
+          {
+            "name": "voluntary_hold_secs",
+            "type": "u64"
+          },
+          {
+            "name": "trading_days",
+            "type": "u16"
+          },
+          {
+            "name": "last_trade_day",
+            "type": "i64"
+          },
+          {
+            "name": "open_positions",
+            "type": "u8"
+          },
+          {
+            "name": "last_equity",
+            "type": "u64"
+          },
+          {
+            "name": "last_observed_at",
+            "type": "i64"
+          },
+          {
+            "name": "started_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "EvaluationEquityObserved",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "equity",
+            "type": "u64"
+          },
+          {
+            "name": "peak_equity",
+            "type": "u64"
+          },
+          {
+            "name": "drawdown_bps",
+            "type": "u64"
+          },
+          {
+            "name": "daily_loss_bps",
+            "type": "u64"
+          },
+          {
+            "name": "observer",
+            "type": "pubkey"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Why it failed is `rule`, never a generic failure."
+      ],
+      "name": "EvaluationFailed",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "stage",
+            "type": "u8"
+          },
+          {
+            "name": "rule",
+            "type": "u8"
+          },
+          {
+            "name": "equity",
+            "type": "u64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "EvaluationStarted",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u8"
+          },
+          {
+            "name": "account_size",
+            "type": "u64"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "EvaluationState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Passed"
+          },
+          {
+            "name": "Failed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvaluationTradeClosed",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "exit_price",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "Net of the open fee, the close fee and carry \u2014 the trade's whole result."
+            ],
+            "name": "result",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "A stop-out rather than a voluntary close: exempt from the hold rules."
+            ],
+            "name": "stop_out",
+            "type": "bool"
+          },
+          {
+            "name": "held_secs",
+            "type": "i64"
+          },
+          {
+            "name": "balance",
+            "type": "i64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "A simulated fill. `entry_price` and `fee` are exactly what a real SolFX fill would have been",
+        "on the same price update and market state."
+      ],
+      "name": "EvaluationTradeOpened",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "direction",
+            "type": "u8"
+          },
+          {
+            "name": "size_base",
+            "type": "u64"
+          },
+          {
+            "name": "entry_price",
+            "type": "i64"
+          },
+          {
+            "name": "notional",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "stop_price",
+            "type": "i64"
+          },
+          {
+            "name": "risk_used_bps",
+            "type": "u64"
           },
           {
             "name": "ts",
@@ -5654,6 +6792,90 @@
       }
     },
     {
+      "name": "StagePassed",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "stage",
+            "type": "u8"
+          },
+          {
+            "name": "equity",
+            "type": "u64"
+          },
+          {
+            "name": "trades",
+            "type": "u32"
+          },
+          {
+            "name": "trading_days",
+            "type": "u16"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "StakeForfeited",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "StakeRefunded",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
       "name": "StopCancelled",
       "type": {
         "fields": [
@@ -6218,6 +7440,81 @@
             "name": "Full"
           }
         ]
+      }
+    },
+    {
+      "docs": [
+        "One simulated position, at `[\"vpos\", evaluation, market_index (LE), nonce]`.",
+        "",
+        "Mirrors the fields of SolFX's `Position` that pricing and carry read, so closing it runs the",
+        "same arithmetic a real close runs."
+      ],
+      "name": "VirtualPosition",
+      "type": {
+        "fields": [
+          {
+            "name": "evaluation",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "nonce",
+            "type": "u8"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "Direction"
+              }
+            }
+          },
+          {
+            "name": "size_base",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "The execution price \u2014 spread and skew included \u2014 exactly as `open_position` fills."
+            ],
+            "name": "entry_price",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "Notional at entry, in USDC. The carry basis, as on a real position."
+            ],
+            "name": "entry_notional",
+            "type": "u64"
+          },
+          {
+            "name": "stop_price",
+            "type": "i64"
+          },
+          {
+            "name": "open_fee",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "`Market::cum_borrow_index` at entry, so carry accrues exactly as a real position's does."
+            ],
+            "name": "cum_borrow_entry",
+            "type": "u128"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
       }
     }
   ]

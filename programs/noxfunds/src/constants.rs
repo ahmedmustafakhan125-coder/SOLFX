@@ -82,3 +82,42 @@ pub const REQUEST_SEED: &[u8] = b"request";
 /// `(128 + len) × rate` — the rate being cut in stages under Agave 4.2's rent reduction: 5,080
 /// lamports per byte on devnet as measured on 2026-09-19, down from 6,960.
 pub const MAX_NOTE_LEN: usize = 180;
+
+// --- the evaluation (Stage 3) -----------------------------------------------------------------
+
+/// `Evaluation` — `["eval", trader, seq]`. `seq` lets a trader who failed try again.
+pub const EVAL_SEED: &[u8] = b"eval";
+/// The evaluation's stake escrow — `["eval_vault", evaluation]`.
+pub const EVAL_VAULT_SEED: &[u8] = b"eval_vault";
+/// `VirtualPosition` — `["vpos", evaluation, market_index (LE), nonce]`.
+pub const VPOS_SEED: &[u8] = b"vpos";
+
+/// The refundable stake, in USDC at 6 decimals: **$50**. Refunded in full on passing Phase 2,
+/// forfeited to the treasury on failure (`docs/NOXFUNDS-PLAN.md` §5.1). Flat — the plan says it
+/// "rises for larger evaluation sizes" but never says by how much, so no schedule is invented.
+pub const EVAL_STAKE: u64 = 50_000_000;
+
+/// Simulated balance bounds. $10,000 to $200,000 — the smallest and largest mandates a tier
+/// can hold, so an evaluation is never sized for capital no tier could receive.
+pub const EVAL_MIN_ACCOUNT: u64 = 10_000_000_000;
+pub const EVAL_MAX_ACCOUNT: u64 = 200_000_000_000;
+
+/// Profit target, per phase, in bps of the starting balance: 8% then 5% (§3.2).
+pub const EVAL_TARGET_BPS: [u16; 2] = [800, 500];
+/// Loss limits, both phases (§3.2): 3% in a UTC day, 6% trailing from peak.
+pub const EVAL_MAX_DAILY_LOSS_BPS: u16 = 300;
+pub const EVAL_MAX_DRAWDOWN_BPS: u16 = 600;
+/// Risk at the stop, as bps of balance (§3.2): 1%.
+pub const EVAL_MAX_RISK_BPS: u16 = 100;
+/// Activity floors (§3.2): ten trades over five distinct UTC days.
+pub const EVAL_MIN_TRADES: u32 = 10;
+pub const EVAL_MIN_DAYS: u16 = 5;
+/// Anti-scalping (§3.2): ten minutes per voluntary close, 45 minutes on average across them.
+/// Stop-outs are exempt from both and excluded from the average (§3.2.1).
+pub const EVAL_MIN_HOLD_SECS: i64 = 600;
+pub const EVAL_MIN_AVG_HOLD_SECS: u64 = 2_700;
+/// Consistency (§3.2): no single UTC day may account for more than half the target.
+pub const EVAL_CONSISTENCY_BPS: u16 = 5_000;
+/// Open simulated positions at once. Bounded so the equity crank can always mark every one of
+/// them in a single transaction — an unmarkable position is one the drawdown rule cannot see.
+pub const EVAL_MAX_OPEN: u8 = 5;

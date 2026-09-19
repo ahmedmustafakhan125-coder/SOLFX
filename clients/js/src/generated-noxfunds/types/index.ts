@@ -7,6 +7,8 @@
  */
 
 export * from "./direction";
+export * from "./evalRule";
+export * from "./evaluationState";
 export * from "./feedKind";
 export * from "./investorListingTerms";
 export * from "./listingTerms";

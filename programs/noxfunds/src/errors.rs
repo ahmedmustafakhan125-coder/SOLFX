@@ -106,6 +106,30 @@ pub enum NoxError {
     ListingNotOpen,
     #[msg("Signer is neither the trader nor the investor on this request")]
     NotARequestParty,
+
+    // --- the evaluation (Stage 3) — appended, for the same reason as every block above ----
+    #[msg("Evaluation is not active")]
+    EvaluationNotActive,
+    #[msg("Simulated account size must be between $10,000 and $200,000")]
+    InvalidAccountSize,
+    #[msg("Trade is more leveraged than this market allows against the simulated balance")]
+    EvaluationLeverageTooHigh,
+    #[msg("Evaluation has lost more than its daily limit today")]
+    DailyLossExceeded,
+    #[msg("The oracle price has not reached this stop")]
+    StopNotTriggered,
+    #[msg("Evaluation has not yet met every requirement of this stage")]
+    EvaluationIncomplete,
+    #[msg("A single day accounts for more than half the profit target")]
+    ConsistencyRuleViolated,
+    #[msg("Only a failed evaluation's stake can be forfeited")]
+    EvaluationNotFailed,
+    #[msg("Position size is outside the market's bounds")]
+    PositionSizeOutOfBounds,
+    #[msg("Market is not open for this action")]
+    MarketNotOpen,
+    #[msg("This simulated position does not belong to this evaluation")]
+    PositionNotInEvaluation,
 }
 
 /// Map `solfx-math`'s errors onto this program's. Total and explicit, so adding a variant
