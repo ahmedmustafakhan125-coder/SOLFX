@@ -1,6 +1,6 @@
 # Phase 1 — Test Cases (166 tests)
 
-**Guide:** [`../guides/phase-1-guide.md`](../guides/phase-1-guide.md) · **Flowchart:** [`../diagrams/phase-1.dot`](../diagrams/phase-1.dot)
+**Guide:** [`../guides/phase-1-guide.md`](../guides/phase-1-guide.md) · **Flowchart:** [`architecture/phase-1.png`](../../architecture/phase-1.png)
 
 Phase 1's suite is the foundation everything later trusts: **166 tests** over the pure
 maths — unit tests for known values (every worked example from the architecture is a test),

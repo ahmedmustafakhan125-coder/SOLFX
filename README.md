@@ -5,8 +5,9 @@ pip-denominated P&L, transparent swap rates, and a verifiable partner-rebate led
 the emerging-market pairs no venue on any chain lists, with collateral that never leaves your
 own account.
 
-**Status:** Phase 7 of 9 — two on-chain programs, an off-chain keeper, **490 tests**.
-Deployed and verified on a local validator; devnet next. No real funds involved.
+**Status: all nine phases complete, live on devnet, 889 tests green.** Three on-chain
+programs, an off-chain keeper, a browser terminal, and **NOXFUNDS** — a decentralized prop firm
+built on top of it, also live. Devnet only; no real funds involved, and no external audit.
 
 ---
 
@@ -25,8 +26,9 @@ Read in this order:
 | [`docs/guides/`](docs/guides/README.md) | Per-phase guides: every function, formula and financial rule, with a PNG flowchart each |
 | [`docs/test-cases/`](docs/test-cases/README.md) | The full test catalogue — automated tests documented per phase |
 | [`docs/test-cases/localnet-manual.md`](docs/test-cases/localnet-manual.md) | **100 manual cases** against a live validator — what LiteSVM cannot cover |
-| [`docs/diagrams/`](docs/diagrams/) | Flowcharts (PNG + editable Graphviz sources) |
-| [`docs/NOXFUNDS-PLAN.md`](docs/NOXFUNDS-PLAN.md) | **NOXFUNDS** — the prop-firm product built on top of SolFX. Design plan, not yet built |
+| [`architecture/`](architecture/) | Flowcharts, one per phase (PNG + editable Graphviz sources) |
+| [`docs/NOXFUNDS-PLAN.md`](docs/NOXFUNDS-PLAN.md) | **NOXFUNDS** — the prop-firm product built on top of SolFX. Design and economics |
+| [`docs/noxfunds-budgets.md`](docs/noxfunds-budgets.md) | NOXFUNDS compute, packet size and account locks, measured and asserted in CI |
 
 ## Progress
 
@@ -41,11 +43,68 @@ Read in this order:
 | 5 | LP vault | ✅ — the JIT liquidity attack fails |
 | 6 | IB referral programme | ✅ — a second program; the ledger IBs can audit |
 | **7** | **Keepers** | **✅ code complete** — 2 of 3 exit criteria; the rest needs devnet |
-| 8 | Frontend and SDK | — |
-| 9 | Market expansion and hardening | — |
+| 8 | Frontend and SDK | ✅ — browser terminal on [solfx.cloud](https://solfx.cloud); trades open and close with Phantom |
+| 9 | Market expansion and hardening | ✅ — 97.14 % coverage, a 24-hour clean fuzz run, nine crisis replays |
+
+### Live on devnet
+
+| | |
+|---|---|
+| `solfx_core` | `2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi` — 9 markets listed, 6 active, 38 instructions |
+| `solfx_referral` | `J7dwkNcyPjHtRyqkpnqq3wgE6XmYCaENhYZozX2MHsyt` |
+| `noxfunds` | `9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx` — 16 instructions |
+
+The off-chain half runs 24/7: price poster, keeper, RPC gateway and web tier.
+
+## NOXFUNDS — the prop firm on top
+
+Every other prop firm watches trades after they execute and punishes violations, because their
+contracts cannot see an order before the venue fills it. NOXFUNDS owns the venue, so a trade
+that breaks the mandate **is not detected and punished — it fails as a transaction.** It never
+existed, and the investor never took the loss.
+
+Live on devnet and initialised. What is built, and tested by 77 of the tests below:
+
+| | |
+|---|---|
+| Mandate | An investor's capital and a rule set fixed at funding and never mutable. The principal moves into the mandate's own vault in the same instruction that creates it |
+| Rules enforced before the fill | Market, concurrency, notional, stop distance, **risk at the stop** — the rule no centralized firm can check before a trade exists |
+| Mandatory stop | Position and stop-loss are placed in one transaction, so "every funded trade carries a stop" is true rather than monitored |
+| Track record and tiers | Realised P&L taken from the venue's own arithmetic, not recomputed. Drawdown cannot be hidden by refusing to close a loser |
+| Settlement | Principal first, 5 % of gross, then 70/30 — and **permissionless**, so an investor never waits on the trader or the operator |
+| Wind-down | A breached mandate reaches settlement with neither the trader nor the operator cooperating |
+
+**Not built yet:** the evaluation engine (paper-trading challenge before funding) and the web
+surfaces. Traders are funded directly for now.
+
+## What is deliberately *not* trusted to the operator
+
+Liquidations, stop execution, and NOXFUNDS' equity crank, wind-down and settlement are
+permissionless by design. A venue that needs its operator present to liquidate, or an investor
+who needs the operator to release their capital, fails exactly when the operator is absent.
 
 Commercial track (audits, legal, mainnet) is gated on traction or grant funding and is not
-started speculatively.
+started speculatively. **There has been no external audit**, and green tests mean the
+behaviours someone thought to test behave as expected — nothing more.
+
+## Verification — every figure measured, most of them asserted in CI
+
+| | |
+|---|---|
+| **889 tests, 0 failures** | 651 Rust · 216 SDK · 22 app, none ignored |
+| **97.14 %** | SBF line coverage of `programs/solfx-core/src/instructions` |
+| **56 property tests** | laws over the money paths, not examples — a round trip at an unchanged price always loses; fee splits conserve every unit |
+| **24-hour fuzz run, 0 crashes** | 14,255,080 executions, 9/9 actions reached, asserting invariants I1, I2, I4–I8 rather than "no panic" |
+| **9 crisis replays** | the 2015 CHF depeg, the 2016 sterling flash crash, COVID spreads, an EM devaluation, a weekend gap |
+| **758 / 1,232 bytes** | `liquidate_position` against Solana's packet limit |
+| **60,353 / 200,000 CU** | `open_position` on the widest market shape |
+| **~497 opens/second** | structural ceiling, bounded by the 12 M compute cap on the one LP pool every trade write-locks |
+| **99.88 % feed uptime** | 1,624 clean passes of 1,626 over a 16-hour soak |
+
+Compute, packet size and account locks are pinned per instruction by
+[`compute_budget.rs`](programs/solfx-core/tests/compute_budget.rs) and
+[`budgets.rs`](programs/noxfunds/tests/budgets.rs), so a regression fails the build rather than
+a transaction on a cluster.
 
 ## Layout
 
@@ -63,7 +122,7 @@ scratch/feed-probe/       Phase 0b Pyth measurement tooling
 
 ```bash
 anchor build                            # both programs
-cargo test --workspace                  # 490 tests
+cargo test --workspace                  # 651 tests
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all
 

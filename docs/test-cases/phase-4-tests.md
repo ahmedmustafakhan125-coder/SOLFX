@@ -1,6 +1,6 @@
 # Phase 4 — Test Cases (52 tests)
 
-**Guide:** [`../guides/phase-4-guide.md`](../guides/phase-4-guide.md) · **Flowchart:** [`../diagrams/phase-4.dot`](../diagrams/phase-4.dot)
+**Guide:** [`../guides/phase-4-guide.md`](../guides/phase-4-guide.md) · **Flowchart:** [`architecture/phase-4.png`](../../architecture/phase-4.png)
 
 Phase 4's suite is in three layers. **Unit** — the session state machine is a pure
 function, so its 27 transition tests need no SVM (the calendar tests pinned 2026-08-01 to a

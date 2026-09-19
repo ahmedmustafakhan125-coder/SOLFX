@@ -1,6 +1,6 @@
 # Phase 7 — Test Cases (27 tests)
 
-**Guide:** [`../guides/phase-7-guide.md`](../guides/phase-7-guide.md) · **Flowchart:** [`../diagrams/phase-7.dot`](../diagrams/phase-7.dot)
+**Guide:** [`../guides/phase-7-guide.md`](../guides/phase-7-guide.md) · **Flowchart:** [`architecture/phase-7.png`](../../architecture/phase-7.png)
 
 A stop-loss is the one order a trader places **hoping never to need it**, which means the day
 it matters is the day nobody is watching. So this suite does not check that trigger orders

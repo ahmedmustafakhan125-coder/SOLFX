@@ -1,6 +1,6 @@
 # Phase 5 Guide — the LP Vault
 
-**Flowchart:** [`../diagrams/phase-5.dot`](../diagrams/phase-5.dot)
+**Flowchart:** [`architecture/phase-5.png`](../../architecture/phase-5.png)
 **Deliverable:** the withdrawal path with its T6 defences, the LP fee pair, the pool-relative
 circuit breakers, and treasury sweeps. Plus `solfx-math::lp`, where the share arithmetic
 lives under property tests.

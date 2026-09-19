@@ -384,7 +384,7 @@ likelihood item in the register.
 | No FX background | [`FOREX-EXPLAINED.md`](FOREX-EXPLAINED.md) |
 | The full spec | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | What each phase built | [`guides/`](guides/README.md) — every function, formula and rule |
-| Visual overview | [`diagrams/`](diagrams/) — a flowchart per phase |
+| Visual overview | [`architecture/`](../architecture/) — a flowchart per phase |
 | What is tested | [`test-cases/`](test-cases/README.md) — all 452 catalogued |
 | Oracle measurements | [`oracle-feasibility.md`](oracle-feasibility.md) |
 | Performance | [`compute-budget.md`](compute-budget.md) |

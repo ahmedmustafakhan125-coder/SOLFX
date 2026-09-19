@@ -1,6 +1,6 @@
 # What Remains — Phases 7–9 and the Commercial Track
 
-**Flowchart:** [`../diagrams/phase-next.dot`](../diagrams/phase-next.dot)
+**Flowchart:** [`architecture/phase-next.png`](../../architecture/phase-next.png)
 **Where we stand:** Phases 0–6 complete. 454 tests, two programs (~905 KB + 257 KB), all
 invariants (I1, I2, I4–I8) asserted after every instruction, the CHF-depeg replay passing.
 Everything below is specified in `ARCHITECTURE.md` § 15 with **testable exit criteria** —

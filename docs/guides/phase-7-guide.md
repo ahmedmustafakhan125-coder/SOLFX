@@ -1,6 +1,6 @@
 # Phase 7 Guide — Keepers
 
-**Flowchart:** [`../diagrams/phase-7.dot`](../diagrams/phase-7.dot)
+**Flowchart:** [`architecture/phase-7.png`](../../architecture/phase-7.png)
 **Deliverable:** trigger orders on chain (take-profit / stop-loss), and
 [`crates/solfx-keeper`](../../crates/solfx-keeper) — the off-chain process that fires them,
 liquidates, and cranks.

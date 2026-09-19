@@ -42,7 +42,6 @@ CLAUDE-SESSION.md
 
 # Design dumps and generated diagram rasters. Source .dot files stay tracked.
 design/stitch/
-docs/diagrams/*.png
 app/og-image.png
 
 # API keys and local secrets. The Pyth Hermes key lives here from 26 Aug 2026, when the

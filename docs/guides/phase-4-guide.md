@@ -1,6 +1,6 @@
 # Phase 4 Guide — Risk Engine & Market Regimes
 
-**Flowchart:** [`../diagrams/phase-4.dot`](../diagrams/phase-4.dot)
+**Flowchart:** [`architecture/phase-4.png`](../../architecture/phase-4.png)
 **Deliverable:** funding & carry cranks, liquidation, the insurance fund, auto-deleveraging,
 both regime state machines, and the three-way oracle gate.
 **Exit criteria:** the CHF-depeg replay survives; a weekend, an EM holiday and the
