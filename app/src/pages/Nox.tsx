@@ -12,7 +12,7 @@ const explorer = (a: string) =>
 /**
  * Real mandates from devnet, read back off chain rather than typed from a spreadsheet.
  *
- * All three lost a little, which is the honest result of opening and closing a position in the
+ * All four lost a little, which is the honest result of opening and closing a position in the
  * same minute: you pay the spread and the fee in both directions. They are shown as they are
  * because a page that only lists wins is the thing this product exists to replace.
  */
@@ -21,16 +21,27 @@ const MANDATES = [
     address: "Bf7aVemJQwTq5trPgqo6t7vjmHy4M3FcxjjHSp1BCyrc",
     principal: "200.000000",
     returned: "199.797874",
+    viaMarket: false,
   },
   {
     address: "5mhW6R4pZ5vjspS7kPGaojAf3NMaqkRrvgofSHuRBhd7",
     principal: "200.000000",
     returned: "199.770001",
+    viaMarket: false,
   },
   {
     address: "5qyCdLD2NXCK5jJuHryVwkwvjkxtc2CjeP34DgUohwEs",
     principal: "200.000000",
     returned: "199.790000",
+    viaMarket: false,
+  },
+  {
+    // Not funded but agreed: a listing, a 60/40 offer declined with a reason, the capital
+    // revoked, a 70/30 offer, and an acceptance — six transactions, then the same trade.
+    address: "ECji8hWgCxXqqsnSeT6CPJo9hMnvEX3dvRae7wvCLWbZ",
+    principal: "200.000000",
+    returned: "199.794167",
+    viaMarket: true,
   },
 ];
 
@@ -145,7 +156,7 @@ export function Nox() {
               ["Rules checked", "before the fill"],
               ["Trader can withdraw", "never"],
               ["Protocol fee on a loss", "zero"],
-              ["Mandates settled", "3 on devnet"],
+              ["Mandates settled", "4 on devnet"],
             ].map(([k, v]) => (
               <div key={k} className="bg-bg p-4">
                 <dt className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
@@ -412,13 +423,14 @@ export function Nox() {
       <Section
         id="proof"
         eyebrow="Proof"
-        title="Three mandates have run end to end on devnet. Go and read them."
+        title="Four mandates have run end to end on devnet — one of them agreed through the marketplace. Go and read them."
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] border border-line text-sm">
             <thead>
               <tr className="bg-surface text-left text-[10px] uppercase tracking-[0.16em] text-ink-dim">
                 <th className="px-4 py-3 font-medium">Mandate</th>
+                <th className="px-4 py-3 font-medium">Reached by</th>
                 <th className="px-4 py-3 text-right font-medium">Principal</th>
                 <th className="px-4 py-3 text-right font-medium">
                   Returned to investor
@@ -439,6 +451,11 @@ export function Nox() {
                       {m.address}
                     </a>
                   </td>
+                  <td
+                    className={`px-4 py-3 text-xs uppercase tracking-wider ${m.viaMarket ? "text-brand" : "text-ink-dim"}`}
+                  >
+                    {m.viaMarket ? "Marketplace" : "Direct"}
+                  </td>
                   <td className="tnum px-4 py-3 text-right text-ink-muted">
                     {m.principal}
                   </td>
@@ -455,9 +472,9 @@ export function Nox() {
         </div>
 
         <p className="mt-6 max-w-3xl text-sm leading-relaxed text-ink-muted">
-          All three lost a small amount. That is the honest result of opening
-          and closing a position in the same minute: you pay the spread and the
-          fee in both directions. The protocol earned nothing from any of them,
+          All four lost a small amount. That is the honest result of opening and
+          closing a position in the same minute: you pay the spread and the fee
+          in both directions. The protocol earned nothing from any of them,
           exactly as designed. They are shown as they are because a page that
           only lists wins is the thing this product exists to replace.
         </p>

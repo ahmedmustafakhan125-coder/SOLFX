@@ -526,21 +526,48 @@ any operator cooperating. If the trader disappears mid-position, the investor is
 
 ## 9. What is live, and how to verify it yourself
 
-Three complete mandates have run end to end on Solana devnet — funded, traded, marked, closed
-and settled. They are public accounts. Nothing below requires trusting this document.
+Four complete mandates have run end to end on Solana devnet — funded, traded, marked, closed
+and settled. The fourth was reached through the marketplace rather than funded directly. They
+are public accounts. Nothing below requires trusting this document.
 
-| Mandate | Principal | Returned to investor | State |
-|---|---:|---:|---|
-| `Bf7aVemJQwTq5trPgqo6t7vjmHy4M3FcxjjHSp1BCyrc` | 200.000000 | 199.797874 | Settled |
-| `5mhW6R4pZ5vjspS7kPGaojAf3NMaqkRrvgofSHuRBhd7` | 200.000000 | 199.770001 | Settled |
-| `5qyCdLD2NXCK5jJuHryVwkwvjkxtc2CjeP34DgUohwEs` | 200.000000 | 199.790000 | Settled |
+| Mandate | Reached by | Principal | Returned to investor | State |
+|---|---|---:|---:|---|
+| `Bf7aVemJQwTq5trPgqo6t7vjmHy4M3FcxjjHSp1BCyrc` | direct funding | 200.000000 | 199.797874 | Settled |
+| `5mhW6R4pZ5vjspS7kPGaojAf3NMaqkRrvgofSHuRBhd7` | direct funding | 200.000000 | 199.770001 | Settled |
+| `5qyCdLD2NXCK5jJuHryVwkwvjkxtc2CjeP34DgUohwEs` | direct funding | 200.000000 | 199.790000 | Settled |
+| `ECji8hWgCxXqqsnSeT6CPJo9hMnvEX3dvRae7wvCLWbZ` | **the marketplace** | 200.000000 | 199.794167 | Settled |
 
-Trader profile: `85FqmY8snMoFvtKyrLYhXFJW6jCPxBoKfKSzzpEP8F8g` — 3 trades, 0 wins, 3 losses,
-gross loss 0.632116, largest loss 0.229999, worst drawdown 12 bps.
+Trader profile: `85FqmY8snMoFvtKyrLYhXFJW6jCPxBoKfKSzzpEP8F8g` — 4 trades, 0 wins, 4 losses,
+gross loss 0.837949, largest loss 0.229999, worst drawdown 12 bps, 4 mandates funded. Each
+trade's recorded loss equals its mandate's actual loss to the unit, open fee included.
 
-All three lost a small amount, which is the honest outcome of opening and immediately closing a
+All four lost a small amount, which is the honest outcome of opening and immediately closing a
 position: you pay the spread and the fee both ways. The protocol earned nothing from any of
 them, exactly as designed.
+
+### The negotiation, on chain
+
+The fourth mandate was not funded — it was agreed. Six transactions, in consecutive slots from
+501,038,400 to 501,038,482, about 33 seconds, on the upgrade deployed at slot 501,032,312:
+
+| # | Move | Account | What the chain holds now |
+|---|---|---|---|
+| 1 | Trader lists, asking 70/30 | listing `9HyC3HA9xXHr2P2G39JgK7VSyFPhj1BxrYtdYZmtKDU5` | open |
+| 2 | Investor offers 60/40, $200 into escrow | offer `GcmUAhtoUWoEs6kyK8A9x9m7v8bncPpcWFC1BMnXgFV5` | |
+| 3 | Trader declines, with a reason | same offer | reply stored on the offer |
+| 4 | Investor revokes; $200 back out | same offer | `Revoked` |
+| 5 | Investor offers 70/30, $200 into escrow | offer `3yBsqe9yPdUMcehak79K55uRGfcJr8DTxUZ2majZ1ezg` | |
+| 6 | Trader accepts: mandate, vault and transfer in one transaction | same offer | `Accepted` |
+
+Both sides' words are on the opening offer, decoded from the account rather than quoted from
+the client that sent them:
+
+> **Investor:** "60/40. The capital and the risk are both mine."
+> **Trader:** "70/30, as the listing says. Happy to trade it at that."
+
+There is no chat. The offer *is* the message, the escrow is the proof it is serious, and the
+acceptance is the signature — so the terms the trader accepted are provably the terms the
+investor published, with no step in between where either could substitute a number.
 
 ### Check the accounts
 
@@ -573,11 +600,14 @@ party.
 ### Run the whole lifecycle yourself
 
 ```bash
-cargo run -p solfx-keeper --bin nox -- lifecycle
+cargo run -p solfx-keeper --bin nox -- lifecycle                 # fund a mandate directly
+cargo run -p solfx-keeper --bin nox -- lifecycle --via-market    # reach it by negotiating
+cargo run -p solfx-keeper --bin nox -- eval                      # stake and trade an evaluation
 ```
 
-Without `--execute` this sends nothing. It reads the chain, checks every rule the trade would
-be judged against, and prints the plan.
+Without `--execute` none of these sends anything. Each reads the chain, checks every rule the
+trade would be judged against, and prints the plan. With it, every move is simulated before it
+is sent, so a refusal prints the program's own reason and costs nothing.
 
 ---
 
@@ -587,10 +617,11 @@ This section exists because a document that only lists what works is marketing.
 
 **Not built:**
 
-- **The marketplace and the evaluation are written but not yet on devnet.** Both are built and
-  tested (the marketplace 31 tests, the evaluation 20); the program upgrade that carries them
-  has not been deployed as of 19 Sep 2026. Until it is, the marketplace page reads everything
-  and refuses to send.
+- **The evaluation is deployed but has not yet been run on devnet.** The upgrade carrying it and
+  the marketplace landed at slot 501,032,312 on 19 Sep 2026, and the marketplace has since run
+  end to end (Part 9). The evaluation passes its 20 tests in LiteSVM; `nox eval` exists to run
+  one on the cluster, and until it has, "works on devnet" is not a claim this document makes
+  about it.
 - **The evaluation's simplifications.** A simulated trade does not move open interest; the
   whole simulated balance is the margin, so there is no simulated liquidation; fees are the
   entry tier's; only single-leg markets can be traded; and the $50 stake is flat — the plan says
