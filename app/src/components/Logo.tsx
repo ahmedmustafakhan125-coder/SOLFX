@@ -146,7 +146,7 @@ export function Wordmark({
   className?: string;
 }) {
   return (
-    <span className={`flex items-center gap-2.5 ${className}`}>
+    <span className={`font-display flex items-center gap-2.5 ${className}`}>
       <Logo className="h-7 w-7 shrink-0 text-brand" />
       {product === "solfx" ? (
         <span className="text-xl font-extrabold tracking-tighter">SOL-FX</span>

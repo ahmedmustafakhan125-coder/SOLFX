@@ -45,7 +45,22 @@
   --color-short: var(--sf-red);
   --color-warn: var(--sf-amber);
 
-  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  /*
+   * Body text is Times New Roman, everywhere. It is a system font, not a web font — it ships
+   * with Windows and macOS and cannot be self-hosted (Monotype licence), so there is nothing to
+   * download. Where it is absent, Liberation Serif and Tinos are metric-compatible stand-ins, so
+   * line lengths and wrapping do not shift on Linux or Android.
+   */
+  --font-sans: "Times New Roman", Times, "Liberation Serif", Tinos, serif;
+  /*
+   * The one exception: the home page's headline, and the wordmark beside the logo. A logo is
+   * an identity rather than content, and the headline is the first thing anyone reads.
+   */
+  --font-display: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  /*
+   * Kept monospace, deliberately: prices, addresses and code. This is function rather than
+   * style — a proportional face makes a live price shift width every time a digit changes.
+   */
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 }
 

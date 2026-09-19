@@ -348,7 +348,7 @@ export function Landing() {
                 </span>
               </div>
 
-              <h1 className="text-4xl font-extrabold leading-[1.05] tracking-tight md:text-6xl">
+              <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight md:text-6xl">
                 A Decentralized
                 <br />
                 Forex <span className="text-brand">Brokerage.</span>
