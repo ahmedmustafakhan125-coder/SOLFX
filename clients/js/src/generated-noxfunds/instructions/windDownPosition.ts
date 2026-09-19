@@ -189,6 +189,7 @@ export type WindDownPositionAsyncInput<
   TAccountTokenProgram extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** **Anyone.** No relation to the mandate is required or checked. */
   closer: TransactionSigner<TAccountCloser>;
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
@@ -196,6 +197,10 @@ export type WindDownPositionAsyncInput<
   protocol: Address<TAccountProtocol>;
   userAccount: Address<TAccountUserAccount>;
   market: Address<TAccountMarket>;
+  /**
+   * Deserialized: its direction decides the slippage bound, and its market and nonce decide
+   * which slot to release. Bound to this mandate's SolFX account.
+   */
   position: Address<TAccountPosition>;
   collateralVault: Address<TAccountCollateralVault>;
   lpPool: Address<TAccountLpPool>;
@@ -203,6 +208,10 @@ export type WindDownPositionAsyncInput<
   insuranceFund: Address<TAccountInsuranceFund>;
   insuranceVault: Address<TAccountInsuranceVault>;
   feeVault: Address<TAccountFeeVault>;
+  /**
+   * Validated by `solfx-core` against the market's feed id and its staleness gate, so an
+   * untrusted caller cannot supply a stale or foreign price to close at.
+   */
   priceUpdate: Address<TAccountPriceUpdate>;
   secondaryPriceUpdate?: Address<TAccountSecondaryPriceUpdate>;
   quoteConversionPriceUpdate?: Address<TAccountQuoteConversionPriceUpdate>;
@@ -405,6 +414,7 @@ export type WindDownPositionInput<
   TAccountTokenProgram extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** **Anyone.** No relation to the mandate is required or checked. */
   closer: TransactionSigner<TAccountCloser>;
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
@@ -412,6 +422,10 @@ export type WindDownPositionInput<
   protocol: Address<TAccountProtocol>;
   userAccount: Address<TAccountUserAccount>;
   market: Address<TAccountMarket>;
+  /**
+   * Deserialized: its direction decides the slippage bound, and its market and nonce decide
+   * which slot to release. Bound to this mandate's SolFX account.
+   */
   position: Address<TAccountPosition>;
   collateralVault: Address<TAccountCollateralVault>;
   lpPool: Address<TAccountLpPool>;
@@ -419,6 +433,10 @@ export type WindDownPositionInput<
   insuranceFund: Address<TAccountInsuranceFund>;
   insuranceVault: Address<TAccountInsuranceVault>;
   feeVault: Address<TAccountFeeVault>;
+  /**
+   * Validated by `solfx-core` against the market's feed id and its staleness gate, so an
+   * untrusted caller cannot supply a stale or foreign price to close at.
+   */
   priceUpdate: Address<TAccountPriceUpdate>;
   secondaryPriceUpdate?: Address<TAccountSecondaryPriceUpdate>;
   quoteConversionPriceUpdate?: Address<TAccountQuoteConversionPriceUpdate>;
@@ -596,6 +614,7 @@ export type ParsedWindDownPositionInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /** **Anyone.** No relation to the mandate is required or checked. */
     closer: TAccountMetas[0];
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];
@@ -603,6 +622,10 @@ export type ParsedWindDownPositionInstruction<
     protocol: TAccountMetas[4];
     userAccount: TAccountMetas[5];
     market: TAccountMetas[6];
+    /**
+     * Deserialized: its direction decides the slippage bound, and its market and nonce decide
+     * which slot to release. Bound to this mandate's SolFX account.
+     */
     position: TAccountMetas[7];
     collateralVault: TAccountMetas[8];
     lpPool: TAccountMetas[9];
@@ -610,6 +633,10 @@ export type ParsedWindDownPositionInstruction<
     insuranceFund: TAccountMetas[11];
     insuranceVault: TAccountMetas[12];
     feeVault: TAccountMetas[13];
+    /**
+     * Validated by `solfx-core` against the market's feed id and its staleness gate, so an
+     * untrusted caller cannot supply a stale or foreign price to close at.
+     */
     priceUpdate: TAccountMetas[14];
     secondaryPriceUpdate?: TAccountMetas[15] | undefined;
     quoteConversionPriceUpdate?: TAccountMetas[16] | undefined;

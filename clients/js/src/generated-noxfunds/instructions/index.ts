@@ -6,8 +6,11 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./acceptOffer";
 export * from "./claimSettlement";
+export * from "./closeRequest";
 export * from "./createSolfxAccount";
+export * from "./declineOffer";
 export * from "./fundedCancelStop";
 export * from "./fundedClosePosition";
 export * from "./fundedOpenPosition";
@@ -16,9 +19,16 @@ export * from "./fundSolfxCollateral";
 export * from "./initializeConfig";
 export * from "./initializeTraderProfile";
 export * from "./observeMandateEquity";
+export * from "./postInvestorListing";
+export * from "./postListing";
+export * from "./postOffer";
+export * from "./postRequest";
 export * from "./recomputeTier";
 export * from "./reconcilePosition";
 export * from "./requestSettlement";
+export * from "./revokeOffer";
 export * from "./setPaused";
+export * from "./updateInvestorListing";
+export * from "./updateListing";
 export * from "./windDownCancelStop";
 export * from "./windDownPosition";

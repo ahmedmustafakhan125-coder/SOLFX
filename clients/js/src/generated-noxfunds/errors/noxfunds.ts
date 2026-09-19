@@ -76,12 +76,34 @@ export const NOXFUNDS_ERROR__PROFILE_MISMATCH = 0x178c; // 6028
 export const NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY = 0x178d; // 6029
 /** InsufficientPrincipal: The investor's token account holds less than the principal */
 export const NOXFUNDS_ERROR__INSUFFICIENT_PRINCIPAL = 0x178e; // 6030
+/** NoteTooLong: Note is longer than the on-chain field allows */
+export const NOXFUNDS_ERROR__NOTE_TOO_LONG = 0x178f; // 6031
+/** InvalidListingTerms: Listing terms are not internally consistent */
+export const NOXFUNDS_ERROR__INVALID_LISTING_TERMS = 0x1790; // 6032
+/** NotTheListingTrader: Signer is not this listing's trader */
+export const NOXFUNDS_ERROR__NOT_THE_LISTING_TRADER = 0x1791; // 6033
+/** NotTheOfferInvestor: Signer is not the investor who posted this offer */
+export const NOXFUNDS_ERROR__NOT_THE_OFFER_INVESTOR = 0x1792; // 6034
+/** NotTheOfferTrader: Signer is not the trader this offer is addressed to */
+export const NOXFUNDS_ERROR__NOT_THE_OFFER_TRADER = 0x1793; // 6035
+/** OfferNotOpen: Offer is not open; it has already been accepted or revoked */
+export const NOXFUNDS_ERROR__OFFER_NOT_OPEN = 0x1794; // 6036
+/** OfferExpired: Offer has expired */
+export const NOXFUNDS_ERROR__OFFER_EXPIRED = 0x1795; // 6037
+/** NotTheListingInvestor: Signer is not this listing's investor */
+export const NOXFUNDS_ERROR__NOT_THE_LISTING_INVESTOR = 0x1796; // 6038
+/** ListingNotOpen: That listing is closed; it is not accepting requests */
+export const NOXFUNDS_ERROR__LISTING_NOT_OPEN = 0x1797; // 6039
+/** NotARequestParty: Signer is neither the trader nor the investor on this request */
+export const NOXFUNDS_ERROR__NOT_A_REQUEST_PARTY = 0x1798; // 6040
 
 export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__DRAWDOWN_EXCEEDED
   | typeof NOXFUNDS_ERROR__INCOMPLETE_OBSERVATION
   | typeof NOXFUNDS_ERROR__INSUFFICIENT_PRINCIPAL
+  | typeof NOXFUNDS_ERROR__INVALID_LISTING_TERMS
   | typeof NOXFUNDS_ERROR__INVALID_MANDATE_RULES
+  | typeof NOXFUNDS_ERROR__LISTING_NOT_OPEN
   | typeof NOXFUNDS_ERROR__MANDATE_EXCEEDS_TIER_LIMIT
   | typeof NOXFUNDS_ERROR__MANDATE_NOT_ACTIVE
   | typeof NOXFUNDS_ERROR__MANDATE_NOT_SETTLEABLE
@@ -89,11 +111,19 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__MARKET_NOT_PERMITTED
   | typeof NOXFUNDS_ERROR__MATH_OVERFLOW
   | typeof NOXFUNDS_ERROR__MINIMUM_HOLD_NOT_MET
+  | typeof NOXFUNDS_ERROR__NOT_A_REQUEST_PARTY
   | typeof NOXFUNDS_ERROR__NOT_BREACHED
+  | typeof NOXFUNDS_ERROR__NOTE_TOO_LONG
   | typeof NOXFUNDS_ERROR__NOT_THE_ADMIN
   | typeof NOXFUNDS_ERROR__NOT_THE_INVESTOR
+  | typeof NOXFUNDS_ERROR__NOT_THE_LISTING_INVESTOR
+  | typeof NOXFUNDS_ERROR__NOT_THE_LISTING_TRADER
+  | typeof NOXFUNDS_ERROR__NOT_THE_OFFER_INVESTOR
+  | typeof NOXFUNDS_ERROR__NOT_THE_OFFER_TRADER
   | typeof NOXFUNDS_ERROR__NOT_THE_TRADER
   | typeof NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY
+  | typeof NOXFUNDS_ERROR__OFFER_EXPIRED
+  | typeof NOXFUNDS_ERROR__OFFER_NOT_OPEN
   | typeof NOXFUNDS_ERROR__POSITION_NOT_TRACKED
   | typeof NOXFUNDS_ERROR__POSITIONS_STILL_OPEN
   | typeof NOXFUNDS_ERROR__POSITION_STILL_OPEN
@@ -116,7 +146,9 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__DRAWDOWN_EXCEEDED]: `Mandate has breached its maximum drawdown`,
     [NOXFUNDS_ERROR__INCOMPLETE_OBSERVATION]: `Equity observation must supply every open position exactly once`,
     [NOXFUNDS_ERROR__INSUFFICIENT_PRINCIPAL]: `The investor's token account holds less than the principal`,
+    [NOXFUNDS_ERROR__INVALID_LISTING_TERMS]: `Listing terms are not internally consistent`,
     [NOXFUNDS_ERROR__INVALID_MANDATE_RULES]: `Mandate rules are not internally consistent`,
+    [NOXFUNDS_ERROR__LISTING_NOT_OPEN]: `That listing is closed; it is not accepting requests`,
     [NOXFUNDS_ERROR__MANDATE_EXCEEDS_TIER_LIMIT]: `This mandate is larger than the trader's tier permits`,
     [NOXFUNDS_ERROR__MANDATE_NOT_ACTIVE]: `Mandate is not Active`,
     [NOXFUNDS_ERROR__MANDATE_NOT_SETTLEABLE]: `Mandate is not winding down or breached, so it cannot be settled`,
@@ -124,11 +156,19 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__MARKET_NOT_PERMITTED]: `This market is not in the mandate's permitted set`,
     [NOXFUNDS_ERROR__MATH_OVERFLOW]: `Arithmetic overflow`,
     [NOXFUNDS_ERROR__MINIMUM_HOLD_NOT_MET]: `Position has not been held for the mandate's minimum`,
+    [NOXFUNDS_ERROR__NOT_A_REQUEST_PARTY]: `Signer is neither the trader nor the investor on this request`,
     [NOXFUNDS_ERROR__NOT_BREACHED]: `Mandate has not breached anything; there is nothing to flag`,
+    [NOXFUNDS_ERROR__NOTE_TOO_LONG]: `Note is longer than the on-chain field allows`,
     [NOXFUNDS_ERROR__NOT_THE_ADMIN]: `Only the admin may do this`,
     [NOXFUNDS_ERROR__NOT_THE_INVESTOR]: `Only the investor who funded this mandate may do this`,
+    [NOXFUNDS_ERROR__NOT_THE_LISTING_INVESTOR]: `Signer is not this listing's investor`,
+    [NOXFUNDS_ERROR__NOT_THE_LISTING_TRADER]: `Signer is not this listing's trader`,
+    [NOXFUNDS_ERROR__NOT_THE_OFFER_INVESTOR]: `Signer is not the investor who posted this offer`,
+    [NOXFUNDS_ERROR__NOT_THE_OFFER_TRADER]: `Signer is not the trader this offer is addressed to`,
     [NOXFUNDS_ERROR__NOT_THE_TRADER]: `Signer is not this mandate's trader`,
     [NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY]: `Only the program's upgrade authority may initialise the configuration`,
+    [NOXFUNDS_ERROR__OFFER_EXPIRED]: `Offer has expired`,
+    [NOXFUNDS_ERROR__OFFER_NOT_OPEN]: `Offer is not open; it has already been accepted or revoked`,
     [NOXFUNDS_ERROR__POSITION_NOT_TRACKED]: `This mandate is not tracking a position at that market and nonce`,
     [NOXFUNDS_ERROR__POSITIONS_STILL_OPEN]: `Mandate still holds open positions; close them before settling`,
     [NOXFUNDS_ERROR__POSITION_STILL_OPEN]: `That position still exists on SolFX, so there is nothing to reconcile`,

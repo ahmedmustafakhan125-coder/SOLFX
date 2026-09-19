@@ -125,6 +125,7 @@ export type WindDownCancelStopAsyncInput<
   TAccountTriggerOrder extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** **Anyone.** */
   closer: TransactionSigner<TAccountCloser>;
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
@@ -227,6 +228,7 @@ export type WindDownCancelStopInput<
   TAccountTriggerOrder extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** **Anyone.** */
   closer: TransactionSigner<TAccountCloser>;
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
@@ -317,6 +319,7 @@ export type ParsedWindDownCancelStopInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /** **Anyone.** */
     closer: TAccountMetas[0];
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];

@@ -52,10 +52,17 @@ export function getNoxConfigDiscriminatorBytes() {
 export type NoxConfig = {
   discriminator: ReadonlyUint8Array;
   admin: Address;
+  /** May pause, may not move funds. Same split as SolFX's guardian. */
   guardian: Address;
+  /** Where the 5% performance fee and forfeited stakes accumulate. */
   treasury: Address;
+  /**
+   * The venue this program trades on. Checked on every CPI so a mandate cannot be pointed
+   * at an impostor program that happens to share an instruction layout.
+   */
   solfxProgram: Address;
   usdcMint: Address;
+  /** Protocol share of **gross** profit. 500 = 5%. */
   protocolFeeBps: number;
   paused: boolean;
   bump: number;
@@ -64,10 +71,17 @@ export type NoxConfig = {
 
 export type NoxConfigArgs = {
   admin: Address;
+  /** May pause, may not move funds. Same split as SolFX's guardian. */
   guardian: Address;
+  /** Where the 5% performance fee and forfeited stakes accumulate. */
   treasury: Address;
+  /**
+   * The venue this program trades on. Checked on every CPI so a mandate cannot be pointed
+   * at an impostor program that happens to share an instruction layout.
+   */
   solfxProgram: Address;
   usdcMint: Address;
+  /** Protocol share of **gross** profit. 500 = 5%. */
   protocolFeeBps: number;
   paused: boolean;
   bump: number;

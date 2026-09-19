@@ -95,6 +95,11 @@ export type RecomputeTierInput<
   TAccountCaller extends string = string,
   TAccountProfile extends string = string,
 > = {
+  /**
+   * **Anyone.** The computation is pure and the inputs are all on the account, so there is
+   * nothing a caller could bias by choosing when to run it — and an investor who suspects a
+   * listing is stale should not have to ask the trader to refresh it.
+   */
   caller: TransactionSigner<TAccountCaller>;
   profile: Address<TAccountProfile>;
 };
@@ -141,6 +146,11 @@ export type ParsedRecomputeTierInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /**
+     * **Anyone.** The computation is pure and the inputs are all on the account, so there is
+     * nothing a caller could bias by choosing when to run it — and an investor who suspects a
+     * listing is stale should not have to ask the trader to refresh it.
+     */
     caller: TAccountMetas[0];
     profile: TAccountMetas[1];
   };

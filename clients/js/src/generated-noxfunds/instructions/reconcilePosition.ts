@@ -122,8 +122,13 @@ export type ReconcilePositionInput<
   TAccountPosition extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** **Anyone.** */
   caller: TransactionSigner<TAccountCaller>;
   mandate: Address<TAccountMandate>;
+  /**
+   * the nonce, under `solfx-core`'s program id — so it can only be the position this slot
+   * describes. Only whether it still exists is read.
+   */
   position: Address<TAccountPosition>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
   marketIndex: ReconcilePositionInstructionDataArgs["marketIndex"];
@@ -205,8 +210,13 @@ export type ParsedReconcilePositionInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /** **Anyone.** */
     caller: TAccountMetas[0];
     mandate: TAccountMetas[1];
+    /**
+     * the nonce, under `solfx-core`'s program id — so it can only be the position this slot
+     * describes. Only whether it still exists is read.
+     */
     position: TAccountMetas[2];
     solfxCoreProgram: TAccountMetas[3];
   };

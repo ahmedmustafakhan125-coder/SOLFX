@@ -41,22 +41,70 @@ import {
   type DirectionArgs,
 } from ".";
 
+/**
+ * One isolated position. PDA at `["position", user_account, market_index, nonce]`.
+ *
+ * # Isolated margin (ADR-004)
+ *
+ * `collateral` is moved *out* of `UserAccount.free_collateral` when the position opens and
+ * lives here until it closes. Nothing else can draw on it, and liquidating this position
+ * touches only this account — which is what keeps liquidation a single-account operation
+ * cheap enough to stay profitable during the congestion that causes it.
+ *
+ * It is also why `withdraw_collateral` needs no margin check: free collateral is genuinely
+ * free, because a position's margin is not in it.
+ *
+ * **Append-only**, like every other account struct (§ 5.6).
+ */
 export type Position = {
   userAccount: Address;
   marketIndex: number;
+  /** Lets one trader hold several positions in the same market. */
   nonce: number;
   direction: Direction;
+  /**
+   * Size in base-currency units at `BASE_PRECISION`, never in lots. Lots are a
+   * presentation concept; storing base units lets the engine handle micro-lots and
+   * arbitrary sizes through one code path (§ 6.1).
+   */
   sizeBase: bigint;
+  /** Volume-weighted average entry, at `PRICE_PRECISION`, in the market's quote currency. */
   entryPrice: bigint;
+  /** Isolated margin, in USDC at `QUOTE_PRECISION`. */
   collateral: bigint;
+  /**
+   * The USDC notional this position contributed to `Market.oi_*` when it opened.
+   *
+   * Stored rather than recomputed because open interest must be *removed* at exactly the
+   * figure it was added at. Recomputing it at close would use the current price and, on a
+   * non-USD-quoted market, the current conversion rate — so the counter would drift with
+   * every price move and invariant I4 would fail on a market that had merely traded.
+   */
   entryNotional: bigint;
   cumFundingEntry: bigint;
   cumBorrowEntry: bigint;
+  /**
+   * Funding already settled into `collateral` by a modify. Signed: the light side of the
+   * book receives.
+   */
   realizedFunding: bigint;
   openedAt: bigint;
+  /**
+   * Slot at open, for the minimum-hold check (§ 6.6).
+   *
+   * A trader who opens and closes inside one slot pays two fees but takes zero risk. If
+   * the protocol's spread is ever narrower than the true market spread, that is a riskless
+   * profit repeated by bots until the vault is empty. Requiring a few slots of exposure
+   * closes it, and costs an honest trader nothing.
+   */
   openedAtSlot: bigint;
   lastUpdatedAt: bigint;
+  /** Cumulative open fees paid, for the portfolio view. */
   openFeePaid: bigint;
+  /**
+   * Copied from `UserAccount` at open so a rebate can be attributed without loading the
+   * user account (§ 8.5). Immutable, like the binding it copies.
+   */
   referrer: Address;
   bump: number;
   reserved: ReadonlyUint8Array;
@@ -65,19 +113,52 @@ export type Position = {
 export type PositionArgs = {
   userAccount: Address;
   marketIndex: number;
+  /** Lets one trader hold several positions in the same market. */
   nonce: number;
   direction: DirectionArgs;
+  /**
+   * Size in base-currency units at `BASE_PRECISION`, never in lots. Lots are a
+   * presentation concept; storing base units lets the engine handle micro-lots and
+   * arbitrary sizes through one code path (§ 6.1).
+   */
   sizeBase: number | bigint;
+  /** Volume-weighted average entry, at `PRICE_PRECISION`, in the market's quote currency. */
   entryPrice: number | bigint;
+  /** Isolated margin, in USDC at `QUOTE_PRECISION`. */
   collateral: number | bigint;
+  /**
+   * The USDC notional this position contributed to `Market.oi_*` when it opened.
+   *
+   * Stored rather than recomputed because open interest must be *removed* at exactly the
+   * figure it was added at. Recomputing it at close would use the current price and, on a
+   * non-USD-quoted market, the current conversion rate — so the counter would drift with
+   * every price move and invariant I4 would fail on a market that had merely traded.
+   */
   entryNotional: number | bigint;
   cumFundingEntry: number | bigint;
   cumBorrowEntry: number | bigint;
+  /**
+   * Funding already settled into `collateral` by a modify. Signed: the light side of the
+   * book receives.
+   */
   realizedFunding: number | bigint;
   openedAt: number | bigint;
+  /**
+   * Slot at open, for the minimum-hold check (§ 6.6).
+   *
+   * A trader who opens and closes inside one slot pays two fees but takes zero risk. If
+   * the protocol's spread is ever narrower than the true market spread, that is a riskless
+   * profit repeated by bots until the vault is empty. Requiring a few slots of exposure
+   * closes it, and costs an honest trader nothing.
+   */
   openedAtSlot: number | bigint;
   lastUpdatedAt: number | bigint;
+  /** Cumulative open fees paid, for the portfolio view. */
   openFeePaid: number | bigint;
+  /**
+   * Copied from `UserAccount` at open so a rebate can be attributed without loading the
+   * user account (§ 8.5). Immutable, like the binding it copies.
+   */
   referrer: Address;
   bump: number;
   reserved: ReadonlyUint8Array;

@@ -14,10 +14,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
-  getU8Decoder,
-  getU8Encoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
@@ -38,6 +34,7 @@ import {
   findConfigPda,
   findMandateSignerPda,
   findMandateVaultPda,
+  findOfferVaultPda,
   findTraderProfilePda,
 } from "../pdas";
 import { NOXFUNDS_PROGRAM_ADDRESS } from "../programs";
@@ -46,34 +43,28 @@ import {
   getAccountMetaFactory,
   type ResolvedAccount,
 } from "../shared";
-import {
-  getMandateRulesDecoder,
-  getMandateRulesEncoder,
-  type MandateRules,
-  type MandateRulesArgs,
-} from "../types";
 
-export const FUND_MANDATE_DISCRIMINATOR = new Uint8Array([
-  233, 15, 136, 238, 108, 122, 197, 29,
+export const ACCEPT_OFFER_DISCRIMINATOR = new Uint8Array([
+  227, 82, 234, 131, 1, 18, 48, 2,
 ]);
 
-export function getFundMandateDiscriminatorBytes() {
+export function getAcceptOfferDiscriminatorBytes() {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    FUND_MANDATE_DISCRIMINATOR,
+    ACCEPT_OFFER_DISCRIMINATOR,
   );
 }
 
-export type FundMandateInstruction<
+export type AcceptOfferInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
-  TAccountInvestor extends string | AccountMeta<string> = string,
-  TAccountConfig extends string | AccountMeta<string> = string,
   TAccountTrader extends string | AccountMeta<string> = string,
+  TAccountConfig extends string | AccountMeta<string> = string,
+  TAccountOffer extends string | AccountMeta<string> = string,
   TAccountTraderProfile extends string | AccountMeta<string> = string,
   TAccountMandate extends string | AccountMeta<string> = string,
   TAccountMandateSigner extends string | AccountMeta<string> = string,
   TAccountSolfxUserAccount extends string | AccountMeta<string> = string,
   TAccountUsdcMint extends string | AccountMeta<string> = string,
-  TAccountInvestorToken extends string | AccountMeta<string> = string,
+  TAccountOfferVault extends string | AccountMeta<string> = string,
   TAccountMandateVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -84,16 +75,16 @@ export type FundMandateInstruction<
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountInvestor extends string
-        ? WritableSignerAccount<TAccountInvestor> &
-            AccountSignerMeta<TAccountInvestor>
-        : TAccountInvestor,
+      TAccountTrader extends string
+        ? WritableSignerAccount<TAccountTrader> &
+            AccountSignerMeta<TAccountTrader>
+        : TAccountTrader,
       TAccountConfig extends string
         ? ReadonlyAccount<TAccountConfig>
         : TAccountConfig,
-      TAccountTrader extends string
-        ? ReadonlyAccount<TAccountTrader>
-        : TAccountTrader,
+      TAccountOffer extends string
+        ? WritableAccount<TAccountOffer>
+        : TAccountOffer,
       TAccountTraderProfile extends string
         ? WritableAccount<TAccountTraderProfile>
         : TAccountTraderProfile,
@@ -109,9 +100,9 @@ export type FundMandateInstruction<
       TAccountUsdcMint extends string
         ? ReadonlyAccount<TAccountUsdcMint>
         : TAccountUsdcMint,
-      TAccountInvestorToken extends string
-        ? WritableAccount<TAccountInvestorToken>
-        : TAccountInvestorToken,
+      TAccountOfferVault extends string
+        ? WritableAccount<TAccountOfferVault>
+        : TAccountOfferVault,
       TAccountMandateVault extends string
         ? WritableAccount<TAccountMandateVault>
         : TAccountMandateVault,
@@ -125,152 +116,117 @@ export type FundMandateInstruction<
     ]
   >;
 
-export type FundMandateInstructionData = {
-  discriminator: ReadonlyUint8Array;
-  seq: number;
-  principal: bigint;
-  rules: MandateRules;
-};
+export type AcceptOfferInstructionData = { discriminator: ReadonlyUint8Array };
 
-export type FundMandateInstructionDataArgs = {
-  seq: number;
-  principal: number | bigint;
-  rules: MandateRulesArgs;
-};
+export type AcceptOfferInstructionDataArgs = {};
 
-export function getFundMandateInstructionDataEncoder(): FixedSizeEncoder<FundMandateInstructionDataArgs> {
+export function getAcceptOfferInstructionDataEncoder(): FixedSizeEncoder<AcceptOfferInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([
-      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["seq", getU8Encoder()],
-      ["principal", getU64Encoder()],
-      ["rules", getMandateRulesEncoder()],
-    ]),
-    (value) => ({ ...value, discriminator: FUND_MANDATE_DISCRIMINATOR }),
+    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    (value) => ({ ...value, discriminator: ACCEPT_OFFER_DISCRIMINATOR }),
   );
 }
 
-export function getFundMandateInstructionDataDecoder(): FixedSizeDecoder<FundMandateInstructionData> {
+export function getAcceptOfferInstructionDataDecoder(): FixedSizeDecoder<AcceptOfferInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["seq", getU8Decoder()],
-    ["principal", getU64Decoder()],
-    ["rules", getMandateRulesDecoder()],
   ]);
 }
 
-export function getFundMandateInstructionDataCodec(): FixedSizeCodec<
-  FundMandateInstructionDataArgs,
-  FundMandateInstructionData
+export function getAcceptOfferInstructionDataCodec(): FixedSizeCodec<
+  AcceptOfferInstructionDataArgs,
+  AcceptOfferInstructionData
 > {
   return combineCodec(
-    getFundMandateInstructionDataEncoder(),
-    getFundMandateInstructionDataDecoder(),
+    getAcceptOfferInstructionDataEncoder(),
+    getAcceptOfferInstructionDataDecoder(),
   );
 }
 
-export type FundMandateAsyncInput<
-  TAccountInvestor extends string = string,
-  TAccountConfig extends string = string,
+export type AcceptOfferAsyncInput<
   TAccountTrader extends string = string,
+  TAccountConfig extends string = string,
+  TAccountOffer extends string = string,
   TAccountTraderProfile extends string = string,
   TAccountMandate extends string = string,
   TAccountMandateSigner extends string = string,
   TAccountSolfxUserAccount extends string = string,
   TAccountUsdcMint extends string = string,
-  TAccountInvestorToken extends string = string,
+  TAccountOfferVault extends string = string,
   TAccountMandateVault extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  investor: TransactionSigner<TAccountInvestor>;
+  /** The trader the offer is addressed to, and the only account that can do this. */
+  trader: TransactionSigner<TAccountTrader>;
   config?: Address<TAccountConfig>;
-  /** nothing here, which is the point — an investor funds a trader without their cooperation. */
-  trader: Address<TAccountTrader>;
-  /**
-   * The trader's record. Required, so a mandate can never be opened against a trader with
-   * no tier — and so the tier's size and concurrency limits have something to bind to.
-   */
+  offer: Address<TAccountOffer>;
   traderProfile?: Address<TAccountTraderProfile>;
+  /**
+   * The mandate the offer becomes.
+   *
+   * Note the payer: the **trader**. An offer's escrow holds exactly the principal and nothing
+   * for rent, and the investor is not a signer on this transaction, so the account cannot be
+   * funded from either. That is the right incentive anyway — accepting capital costs the
+   * trader the rent, which prices in a trader who accepts offers they do not intend to trade.
+   */
   mandate: Address<TAccountMandate>;
   /**
-   * The dataless PDA that will be the SolFX authority.
-   *
-   * Created here with zero data so the System Program will later accept it as the `from` of
-   * the rent transfers `open_position` and `place_trigger_order` perform. A data-bearing
-   * account cannot serve — see `Mandate`'s documentation.
+   * Dataless, so the System Program will accept it as the `from` of the rent transfers that
+   * `open_position` and `place_trigger_order` perform. See `Mandate`'s documentation.
    */
   mandateSigner?: Address<TAccountMandateSigner>;
-  /** `solfx-core` on every CPI; only its address is recorded here. */
+  /** on every CPI; only its address is recorded. */
   solfxUserAccount: Address<TAccountSolfxUserAccount>;
   usdcMint: Address<TAccountUsdcMint>;
-  /** Where the principal comes from. Must be the investor's own USDC. */
-  investorToken: Address<TAccountInvestorToken>;
-  /**
-   * The mandate's one and only vault, at `["vault", mandate]`, owned by the signer PDA.
-   *
-   * # Why this is created here and not left to the client
-   *
-   * Before this existed, `fund_mandate` recorded `principal` as a number and moved nothing,
-   * and "the vault" was any token account the signer happened to own. Measured on the
-   * deployed program: a stranger holding no USDC funded a $10,000 mandate for a Bronze trader,
-   * and the trader's only slot was taken — a real investor was then refused with
-   * `TooManyActiveMandates`. Settlement also pays `principal` back first, so a principal that
-   * was never deposited turned an investor's own later deposit into "profit" for the trader.
-   *
-   * Creating the vault at a fixed address and filling it in the same instruction makes
-   * `principal` a fact about money rather than a claim about it.
-   */
+  offerVault?: Address<TAccountOfferVault>;
   mandateVault?: Address<TAccountMandateVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
-  seq: FundMandateInstructionDataArgs["seq"];
-  principal: FundMandateInstructionDataArgs["principal"];
-  rules: FundMandateInstructionDataArgs["rules"];
 };
 
-export async function getFundMandateInstructionAsync<
-  TAccountInvestor extends string,
-  TAccountConfig extends string,
+export async function getAcceptOfferInstructionAsync<
   TAccountTrader extends string,
+  TAccountConfig extends string,
+  TAccountOffer extends string,
   TAccountTraderProfile extends string,
   TAccountMandate extends string,
   TAccountMandateSigner extends string,
   TAccountSolfxUserAccount extends string,
   TAccountUsdcMint extends string,
-  TAccountInvestorToken extends string,
+  TAccountOfferVault extends string,
   TAccountMandateVault extends string,
   TAccountTokenProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
-  input: FundMandateAsyncInput<
-    TAccountInvestor,
-    TAccountConfig,
+  input: AcceptOfferAsyncInput<
     TAccountTrader,
+    TAccountConfig,
+    TAccountOffer,
     TAccountTraderProfile,
     TAccountMandate,
     TAccountMandateSigner,
     TAccountSolfxUserAccount,
     TAccountUsdcMint,
-    TAccountInvestorToken,
+    TAccountOfferVault,
     TAccountMandateVault,
     TAccountTokenProgram,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  FundMandateInstruction<
+  AcceptOfferInstruction<
     TProgramAddress,
-    TAccountInvestor,
-    TAccountConfig,
     TAccountTrader,
+    TAccountConfig,
+    TAccountOffer,
     TAccountTraderProfile,
     TAccountMandate,
     TAccountMandateSigner,
     TAccountSolfxUserAccount,
     TAccountUsdcMint,
-    TAccountInvestorToken,
+    TAccountOfferVault,
     TAccountMandateVault,
     TAccountTokenProgram,
     TAccountSystemProgram
@@ -281,9 +237,9 @@ export async function getFundMandateInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    investor: { value: input.investor ?? null, isWritable: true },
+    trader: { value: input.trader ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
-    trader: { value: input.trader ?? null, isWritable: false },
+    offer: { value: input.offer ?? null, isWritable: true },
     traderProfile: { value: input.traderProfile ?? null, isWritable: true },
     mandate: { value: input.mandate ?? null, isWritable: true },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
@@ -292,7 +248,7 @@ export async function getFundMandateInstructionAsync<
       isWritable: false,
     },
     usdcMint: { value: input.usdcMint ?? null, isWritable: false },
-    investorToken: { value: input.investorToken ?? null, isWritable: true },
+    offerVault: { value: input.offerVault ?? null, isWritable: true },
     mandateVault: { value: input.mandateVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -301,9 +257,6 @@ export async function getFundMandateInstructionAsync<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
-
-  // Original args.
-  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.config.value) {
@@ -317,6 +270,11 @@ export async function getFundMandateInstructionAsync<
   if (!accounts.mandateSigner.value) {
     accounts.mandateSigner.value = await findMandateSignerPda({
       mandate: expectAddress(accounts.mandate.value),
+    });
+  }
+  if (!accounts.offerVault.value) {
+    accounts.offerVault.value = await findOfferVaultPda({
+      offer: expectAddress(accounts.offer.value),
     });
   }
   if (!accounts.mandateVault.value) {
@@ -336,141 +294,121 @@ export async function getFundMandateInstructionAsync<
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta(accounts.investor),
-      getAccountMeta(accounts.config),
       getAccountMeta(accounts.trader),
+      getAccountMeta(accounts.config),
+      getAccountMeta(accounts.offer),
       getAccountMeta(accounts.traderProfile),
       getAccountMeta(accounts.mandate),
       getAccountMeta(accounts.mandateSigner),
       getAccountMeta(accounts.solfxUserAccount),
       getAccountMeta(accounts.usdcMint),
-      getAccountMeta(accounts.investorToken),
+      getAccountMeta(accounts.offerVault),
       getAccountMeta(accounts.mandateVault),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getFundMandateInstructionDataEncoder().encode(
-      args as FundMandateInstructionDataArgs,
-    ),
+    data: getAcceptOfferInstructionDataEncoder().encode({}),
     programAddress,
-  } as FundMandateInstruction<
+  } as AcceptOfferInstruction<
     TProgramAddress,
-    TAccountInvestor,
-    TAccountConfig,
     TAccountTrader,
+    TAccountConfig,
+    TAccountOffer,
     TAccountTraderProfile,
     TAccountMandate,
     TAccountMandateSigner,
     TAccountSolfxUserAccount,
     TAccountUsdcMint,
-    TAccountInvestorToken,
+    TAccountOfferVault,
     TAccountMandateVault,
     TAccountTokenProgram,
     TAccountSystemProgram
   >);
 }
 
-export type FundMandateInput<
-  TAccountInvestor extends string = string,
-  TAccountConfig extends string = string,
+export type AcceptOfferInput<
   TAccountTrader extends string = string,
+  TAccountConfig extends string = string,
+  TAccountOffer extends string = string,
   TAccountTraderProfile extends string = string,
   TAccountMandate extends string = string,
   TAccountMandateSigner extends string = string,
   TAccountSolfxUserAccount extends string = string,
   TAccountUsdcMint extends string = string,
-  TAccountInvestorToken extends string = string,
+  TAccountOfferVault extends string = string,
   TAccountMandateVault extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  investor: TransactionSigner<TAccountInvestor>;
+  /** The trader the offer is addressed to, and the only account that can do this. */
+  trader: TransactionSigner<TAccountTrader>;
   config: Address<TAccountConfig>;
-  /** nothing here, which is the point — an investor funds a trader without their cooperation. */
-  trader: Address<TAccountTrader>;
-  /**
-   * The trader's record. Required, so a mandate can never be opened against a trader with
-   * no tier — and so the tier's size and concurrency limits have something to bind to.
-   */
+  offer: Address<TAccountOffer>;
   traderProfile: Address<TAccountTraderProfile>;
+  /**
+   * The mandate the offer becomes.
+   *
+   * Note the payer: the **trader**. An offer's escrow holds exactly the principal and nothing
+   * for rent, and the investor is not a signer on this transaction, so the account cannot be
+   * funded from either. That is the right incentive anyway — accepting capital costs the
+   * trader the rent, which prices in a trader who accepts offers they do not intend to trade.
+   */
   mandate: Address<TAccountMandate>;
   /**
-   * The dataless PDA that will be the SolFX authority.
-   *
-   * Created here with zero data so the System Program will later accept it as the `from` of
-   * the rent transfers `open_position` and `place_trigger_order` perform. A data-bearing
-   * account cannot serve — see `Mandate`'s documentation.
+   * Dataless, so the System Program will accept it as the `from` of the rent transfers that
+   * `open_position` and `place_trigger_order` perform. See `Mandate`'s documentation.
    */
   mandateSigner: Address<TAccountMandateSigner>;
-  /** `solfx-core` on every CPI; only its address is recorded here. */
+  /** on every CPI; only its address is recorded. */
   solfxUserAccount: Address<TAccountSolfxUserAccount>;
   usdcMint: Address<TAccountUsdcMint>;
-  /** Where the principal comes from. Must be the investor's own USDC. */
-  investorToken: Address<TAccountInvestorToken>;
-  /**
-   * The mandate's one and only vault, at `["vault", mandate]`, owned by the signer PDA.
-   *
-   * # Why this is created here and not left to the client
-   *
-   * Before this existed, `fund_mandate` recorded `principal` as a number and moved nothing,
-   * and "the vault" was any token account the signer happened to own. Measured on the
-   * deployed program: a stranger holding no USDC funded a $10,000 mandate for a Bronze trader,
-   * and the trader's only slot was taken — a real investor was then refused with
-   * `TooManyActiveMandates`. Settlement also pays `principal` back first, so a principal that
-   * was never deposited turned an investor's own later deposit into "profit" for the trader.
-   *
-   * Creating the vault at a fixed address and filling it in the same instruction makes
-   * `principal` a fact about money rather than a claim about it.
-   */
+  offerVault: Address<TAccountOfferVault>;
   mandateVault: Address<TAccountMandateVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
-  seq: FundMandateInstructionDataArgs["seq"];
-  principal: FundMandateInstructionDataArgs["principal"];
-  rules: FundMandateInstructionDataArgs["rules"];
 };
 
-export function getFundMandateInstruction<
-  TAccountInvestor extends string,
-  TAccountConfig extends string,
+export function getAcceptOfferInstruction<
   TAccountTrader extends string,
+  TAccountConfig extends string,
+  TAccountOffer extends string,
   TAccountTraderProfile extends string,
   TAccountMandate extends string,
   TAccountMandateSigner extends string,
   TAccountSolfxUserAccount extends string,
   TAccountUsdcMint extends string,
-  TAccountInvestorToken extends string,
+  TAccountOfferVault extends string,
   TAccountMandateVault extends string,
   TAccountTokenProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
-  input: FundMandateInput<
-    TAccountInvestor,
-    TAccountConfig,
+  input: AcceptOfferInput<
     TAccountTrader,
+    TAccountConfig,
+    TAccountOffer,
     TAccountTraderProfile,
     TAccountMandate,
     TAccountMandateSigner,
     TAccountSolfxUserAccount,
     TAccountUsdcMint,
-    TAccountInvestorToken,
+    TAccountOfferVault,
     TAccountMandateVault,
     TAccountTokenProgram,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): FundMandateInstruction<
+): AcceptOfferInstruction<
   TProgramAddress,
-  TAccountInvestor,
-  TAccountConfig,
   TAccountTrader,
+  TAccountConfig,
+  TAccountOffer,
   TAccountTraderProfile,
   TAccountMandate,
   TAccountMandateSigner,
   TAccountSolfxUserAccount,
   TAccountUsdcMint,
-  TAccountInvestorToken,
+  TAccountOfferVault,
   TAccountMandateVault,
   TAccountTokenProgram,
   TAccountSystemProgram
@@ -480,9 +418,9 @@ export function getFundMandateInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    investor: { value: input.investor ?? null, isWritable: true },
+    trader: { value: input.trader ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
-    trader: { value: input.trader ?? null, isWritable: false },
+    offer: { value: input.offer ?? null, isWritable: true },
     traderProfile: { value: input.traderProfile ?? null, isWritable: true },
     mandate: { value: input.mandate ?? null, isWritable: true },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
@@ -491,7 +429,7 @@ export function getFundMandateInstruction<
       isWritable: false,
     },
     usdcMint: { value: input.usdcMint ?? null, isWritable: false },
-    investorToken: { value: input.investorToken ?? null, isWritable: true },
+    offerVault: { value: input.offerVault ?? null, isWritable: true },
     mandateVault: { value: input.mandateVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -500,9 +438,6 @@ export function getFundMandateInstruction<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
-
-  // Original args.
-  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.tokenProgram.value) {
@@ -517,99 +452,82 @@ export function getFundMandateInstruction<
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta(accounts.investor),
-      getAccountMeta(accounts.config),
       getAccountMeta(accounts.trader),
+      getAccountMeta(accounts.config),
+      getAccountMeta(accounts.offer),
       getAccountMeta(accounts.traderProfile),
       getAccountMeta(accounts.mandate),
       getAccountMeta(accounts.mandateSigner),
       getAccountMeta(accounts.solfxUserAccount),
       getAccountMeta(accounts.usdcMint),
-      getAccountMeta(accounts.investorToken),
+      getAccountMeta(accounts.offerVault),
       getAccountMeta(accounts.mandateVault),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getFundMandateInstructionDataEncoder().encode(
-      args as FundMandateInstructionDataArgs,
-    ),
+    data: getAcceptOfferInstructionDataEncoder().encode({}),
     programAddress,
-  } as FundMandateInstruction<
+  } as AcceptOfferInstruction<
     TProgramAddress,
-    TAccountInvestor,
-    TAccountConfig,
     TAccountTrader,
+    TAccountConfig,
+    TAccountOffer,
     TAccountTraderProfile,
     TAccountMandate,
     TAccountMandateSigner,
     TAccountSolfxUserAccount,
     TAccountUsdcMint,
-    TAccountInvestorToken,
+    TAccountOfferVault,
     TAccountMandateVault,
     TAccountTokenProgram,
     TAccountSystemProgram
   >);
 }
 
-export type ParsedFundMandateInstruction<
+export type ParsedAcceptOfferInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    investor: TAccountMetas[0];
+    /** The trader the offer is addressed to, and the only account that can do this. */
+    trader: TAccountMetas[0];
     config: TAccountMetas[1];
-    /** nothing here, which is the point — an investor funds a trader without their cooperation. */
-    trader: TAccountMetas[2];
-    /**
-     * The trader's record. Required, so a mandate can never be opened against a trader with
-     * no tier — and so the tier's size and concurrency limits have something to bind to.
-     */
+    offer: TAccountMetas[2];
     traderProfile: TAccountMetas[3];
+    /**
+     * The mandate the offer becomes.
+     *
+     * Note the payer: the **trader**. An offer's escrow holds exactly the principal and nothing
+     * for rent, and the investor is not a signer on this transaction, so the account cannot be
+     * funded from either. That is the right incentive anyway — accepting capital costs the
+     * trader the rent, which prices in a trader who accepts offers they do not intend to trade.
+     */
     mandate: TAccountMetas[4];
     /**
-     * The dataless PDA that will be the SolFX authority.
-     *
-     * Created here with zero data so the System Program will later accept it as the `from` of
-     * the rent transfers `open_position` and `place_trigger_order` perform. A data-bearing
-     * account cannot serve — see `Mandate`'s documentation.
+     * Dataless, so the System Program will accept it as the `from` of the rent transfers that
+     * `open_position` and `place_trigger_order` perform. See `Mandate`'s documentation.
      */
     mandateSigner: TAccountMetas[5];
-    /** `solfx-core` on every CPI; only its address is recorded here. */
+    /** on every CPI; only its address is recorded. */
     solfxUserAccount: TAccountMetas[6];
     usdcMint: TAccountMetas[7];
-    /** Where the principal comes from. Must be the investor's own USDC. */
-    investorToken: TAccountMetas[8];
-    /**
-     * The mandate's one and only vault, at `["vault", mandate]`, owned by the signer PDA.
-     *
-     * # Why this is created here and not left to the client
-     *
-     * Before this existed, `fund_mandate` recorded `principal` as a number and moved nothing,
-     * and "the vault" was any token account the signer happened to own. Measured on the
-     * deployed program: a stranger holding no USDC funded a $10,000 mandate for a Bronze trader,
-     * and the trader's only slot was taken — a real investor was then refused with
-     * `TooManyActiveMandates`. Settlement also pays `principal` back first, so a principal that
-     * was never deposited turned an investor's own later deposit into "profit" for the trader.
-     *
-     * Creating the vault at a fixed address and filling it in the same instruction makes
-     * `principal` a fact about money rather than a claim about it.
-     */
+    offerVault: TAccountMetas[8];
     mandateVault: TAccountMetas[9];
     tokenProgram: TAccountMetas[10];
     systemProgram: TAccountMetas[11];
   };
-  data: FundMandateInstructionData;
+  data: AcceptOfferInstructionData;
 };
 
-export function parseFundMandateInstruction<
+export function parseAcceptOfferInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedFundMandateInstruction<TProgram, TAccountMetas> {
+): ParsedAcceptOfferInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 12) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
@@ -623,19 +541,19 @@ export function parseFundMandateInstruction<
   return {
     programAddress: instruction.programAddress,
     accounts: {
-      investor: getNextAccount(),
-      config: getNextAccount(),
       trader: getNextAccount(),
+      config: getNextAccount(),
+      offer: getNextAccount(),
       traderProfile: getNextAccount(),
       mandate: getNextAccount(),
       mandateSigner: getNextAccount(),
       solfxUserAccount: getNextAccount(),
       usdcMint: getNextAccount(),
-      investorToken: getNextAccount(),
+      offerVault: getNextAccount(),
       mandateVault: getNextAccount(),
       tokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
     },
-    data: getFundMandateInstructionDataDecoder().decode(instruction.data),
+    data: getAcceptOfferInstructionDataDecoder().decode(instruction.data),
   };
 }

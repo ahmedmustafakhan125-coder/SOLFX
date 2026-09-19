@@ -15,6 +15,12 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * Which regime state machine a market follows (`ARCHITECTURE.md` § 7.3).
+ *
+ * A new asset class is a new variant plus its regime rules — never new maths. That is the
+ * § 5.6 generic-engine constraint expressed as a type.
+ */
 export enum FeedKind {
   SpotFx,
   ContinuousIndex,

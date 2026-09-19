@@ -15,6 +15,12 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * How to turn a PnL denominated in the market's quote currency into USDC (correction C-3).
+ *
+ * The on-chain mirror of `solfx_math::QuoteConversion`. Getting this wrong mis-prices every
+ * position by the FX rate — for USD/INR at ~88, by a factor of 88.
+ */
 export enum QuoteConversionKind {
   None,
   QuotePerUsd,

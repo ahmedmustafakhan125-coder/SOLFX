@@ -223,9 +223,23 @@ export type FundedClosePositionAsyncInput<
   mandate: Address<TAccountMandate>;
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
+  /**
+   * Deserialized, unlike on the open path, and reloaded after the CPI: the change in
+   * `free_collateral` across the close is how this program learns what the trade actually
+   * made. `solfx-core` owns it, so Anchor never writes it back on exit.
+   */
   userAccount: Address<TAccountUserAccount>;
   market: Address<TAccountMarket>;
+  /**
+   * Deserialized here, unlike on the open path: the minimum-hold rule is judged against
+   * `opened_at_slot`, and the position's booked notional is what leaves the mandate's open
+   * book when it closes.
+   */
   position: Address<TAccountPosition>;
+  /**
+   * The trader's record. Bound to the mandate's trader by its seed, so a trader cannot
+   * direct their losses onto somebody else's profile.
+   */
   traderProfile: Address<TAccountTraderProfile>;
   collateralVault: Address<TAccountCollateralVault>;
   lpPool: Address<TAccountLpPool>;
@@ -455,9 +469,23 @@ export type FundedClosePositionInput<
   mandate: Address<TAccountMandate>;
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
+  /**
+   * Deserialized, unlike on the open path, and reloaded after the CPI: the change in
+   * `free_collateral` across the close is how this program learns what the trade actually
+   * made. `solfx-core` owns it, so Anchor never writes it back on exit.
+   */
   userAccount: Address<TAccountUserAccount>;
   market: Address<TAccountMarket>;
+  /**
+   * Deserialized here, unlike on the open path: the minimum-hold rule is judged against
+   * `opened_at_slot`, and the position's booked notional is what leaves the mandate's open
+   * book when it closes.
+   */
   position: Address<TAccountPosition>;
+  /**
+   * The trader's record. Bound to the mandate's trader by its seed, so a trader cannot
+   * direct their losses onto somebody else's profile.
+   */
   traderProfile: Address<TAccountTraderProfile>;
   collateralVault: Address<TAccountCollateralVault>;
   lpPool: Address<TAccountLpPool>;
@@ -661,9 +689,23 @@ export type ParsedFundedClosePositionInstruction<
     mandate: TAccountMetas[2];
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];
+    /**
+     * Deserialized, unlike on the open path, and reloaded after the CPI: the change in
+     * `free_collateral` across the close is how this program learns what the trade actually
+     * made. `solfx-core` owns it, so Anchor never writes it back on exit.
+     */
     userAccount: TAccountMetas[5];
     market: TAccountMetas[6];
+    /**
+     * Deserialized here, unlike on the open path: the minimum-hold rule is judged against
+     * `opened_at_slot`, and the position's booked notional is what leaves the mandate's open
+     * book when it closes.
+     */
     position: TAccountMetas[7];
+    /**
+     * The trader's record. Bound to the mandate's trader by its seed, so a trader cannot
+     * direct their losses onto somebody else's profile.
+     */
     traderProfile: TAccountMetas[8];
     collateralVault: TAccountMetas[9];
     lpPool: TAccountMetas[10];

@@ -133,7 +133,12 @@ export type InitializeConfigAsyncInput<
 > = {
   admin: TransactionSigner<TAccountAdmin>;
   config?: Address<TAccountConfig>;
+  /** This program's own account. Its only job is to name the real `program_data`. */
   program?: Address<TAccountProgram>;
+  /**
+   * The loader's record of who may upgrade this program. Anchor checks it is owned by the
+   * upgradeable loader and is genuinely a `ProgramData` account.
+   */
   programData: Address<TAccountProgramData>;
   systemProgram?: Address<TAccountSystemProgram>;
   guardian: InitializeConfigInstructionDataArgs["guardian"];
@@ -231,7 +236,12 @@ export type InitializeConfigInput<
 > = {
   admin: TransactionSigner<TAccountAdmin>;
   config: Address<TAccountConfig>;
+  /** This program's own account. Its only job is to name the real `program_data`. */
   program?: Address<TAccountProgram>;
+  /**
+   * The loader's record of who may upgrade this program. Anchor checks it is owned by the
+   * upgradeable loader and is genuinely a `ProgramData` account.
+   */
   programData: Address<TAccountProgramData>;
   systemProgram?: Address<TAccountSystemProgram>;
   guardian: InitializeConfigInstructionDataArgs["guardian"];
@@ -323,7 +333,12 @@ export type ParsedInitializeConfigInstruction<
   accounts: {
     admin: TAccountMetas[0];
     config: TAccountMetas[1];
+    /** This program's own account. Its only job is to name the real `program_data`. */
     program: TAccountMetas[2];
+    /**
+     * The loader's record of who may upgrade this program. Anchor checks it is owned by the
+     * upgradeable loader and is genuinely a `ProgramData` account.
+     */
     programData: TAccountMetas[3];
     systemProgram: TAccountMetas[4];
   };

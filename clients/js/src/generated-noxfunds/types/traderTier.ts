@@ -15,6 +15,14 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * What a trader has earned the right to be trusted with.
+ *
+ * Assigned by [`TraderTier::for_stats`], recomputed on demand, and **able to fall**. A tier
+ * that only ever rises is a tier that rewards getting lucky once; recomputation after every
+ * settled mandate is what makes copying your way to funded and then trading badly cost
+ * something.
+ */
 export enum TraderTier {
   Bronze,
   Silver,

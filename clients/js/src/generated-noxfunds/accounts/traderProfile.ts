@@ -70,14 +70,34 @@ export type TraderProfile = {
   trades: number;
   wins: number;
   losses: number;
+  /** Sum of every winning trade's realised PnL, net of fees, in USDC. */
   grossProfit: bigint;
+  /** Sum of the absolute value of every losing trade's realised PnL, in USDC. */
   grossLoss: bigint;
+  /**
+   * Kept so one lucky trade cannot masquerade as a record. A $50,000 profit factor built
+   * from a single trade reads very differently beside `largest_win`.
+   */
   largestWin: bigint;
   largestLoss: bigint;
+  /**
+   * Sum of every closed trade's hold time, in slots. Divided by `trades` this is the average
+   * hold — the anti-scalping statistic, and the one a copy-trader cannot fake without
+   * actually holding.
+   */
   totalHoldSlots: bigint;
+  /**
+   * Worst drawdown ever observed across all of this trader's mandates, in bps.
+   *
+   * Updated by the permissionless equity crank as well as by closes, which is the point: a
+   * trader cannot hide a drawdown by refusing to close the losing position, because the
+   * crank marks it anyway.
+   */
   maxDrawdownBps: number;
   mandatesFunded: number;
+  /** Mandates currently open. Bounded by the tier's `max_concurrent_mandates`. */
   activeMandates: number;
+  /** Mandates that reached `Settled` with final equity above principal. */
   mandatesSettledInProfit: number;
   createdAt: bigint;
   bump: number;
@@ -90,14 +110,34 @@ export type TraderProfileArgs = {
   trades: number;
   wins: number;
   losses: number;
+  /** Sum of every winning trade's realised PnL, net of fees, in USDC. */
   grossProfit: number | bigint;
+  /** Sum of the absolute value of every losing trade's realised PnL, in USDC. */
   grossLoss: number | bigint;
+  /**
+   * Kept so one lucky trade cannot masquerade as a record. A $50,000 profit factor built
+   * from a single trade reads very differently beside `largest_win`.
+   */
   largestWin: number | bigint;
   largestLoss: number | bigint;
+  /**
+   * Sum of every closed trade's hold time, in slots. Divided by `trades` this is the average
+   * hold — the anti-scalping statistic, and the one a copy-trader cannot fake without
+   * actually holding.
+   */
   totalHoldSlots: number | bigint;
+  /**
+   * Worst drawdown ever observed across all of this trader's mandates, in bps.
+   *
+   * Updated by the permissionless equity crank as well as by closes, which is the point: a
+   * trader cannot hide a drawdown by refusing to close the losing position, because the
+   * crank marks it anyway.
+   */
   maxDrawdownBps: number;
   mandatesFunded: number;
+  /** Mandates currently open. Bounded by the tier's `max_concurrent_mandates`. */
   activeMandates: number;
+  /** Mandates that reached `Settled` with final equity above principal. */
   mandatesSettledInProfit: number;
   createdAt: number | bigint;
   bump: number;

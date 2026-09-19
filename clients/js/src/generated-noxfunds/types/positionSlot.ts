@@ -23,10 +23,32 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * One open position, as NOXFUNDS booked it.
+ *
+ * # Why the mandate tracks positions individually
+ *
+ * A counter and a running notional total were not enough, and three bugs proved it:
+ *
+ * - **A stop-out never came back.** A stop fires through `solfx-core`'s own
+ * `execute_trigger_order`, which never enters NOXFUNDS, so the counter stayed high forever.
+ * Settlement needs it at zero and the equity crank needs a triple per counted position that
+ * no longer exists — a stopped-out mandate could never settle or be observed again.
+ * - **The book drifted.** Opens booked notional at the oracle price; closes unbooked core's
+ * `entry_notional`, which is at the fill price after spread. A short left a residue on every
+ * round trip until the book refused trades it had room for.
+ * - **The crank could be fooled.** It checked only the *count* of triples, so the same
+ * profitable position supplied twice inflated equity and hid a breach.
+ *
+ * A slot records exactly what was booked and where, so each close releases the exact figure it
+ * added, a stop-out can be reconciled against the chain, and the crank can demand each open
+ * position once.
+ */
 export type PositionSlot = {
   open: boolean;
   marketIndex: number;
   nonce: number;
+  /** Notional as NOXFUNDS booked it at open, in USDC. Released at this exact figure. */
   notional: bigint;
 };
 
@@ -34,6 +56,7 @@ export type PositionSlotArgs = {
   open: boolean;
   marketIndex: number;
   nonce: number;
+  /** Notional as NOXFUNDS booked it at open, in USDC. Released at this exact figure. */
   notional: number | bigint;
 };
 

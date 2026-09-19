@@ -23,6 +23,7 @@ import {
   type GetDiscriminatedUnionVariantContent,
 } from "@solana/kit";
 
+/** Where a market's price comes from (`ARCHITECTURE.md` § 3.5). */
 export type PriceSource =
   { __kind: "Direct" } | { __kind: "Synthetic"; invertQuote: boolean };
 

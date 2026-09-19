@@ -2,6 +2,32 @@
   "accounts": [
     {
       "discriminator": [
+        78,
+        109,
+        168,
+        114,
+        238,
+        219,
+        124,
+        44
+      ],
+      "name": "FundingRequest"
+    },
+    {
+      "discriminator": [
+        157,
+        178,
+        167,
+        218,
+        163,
+        179,
+        227,
+        121
+      ],
+      "name": "InvestorListing"
+    },
+    {
+      "discriminator": [
         113,
         216,
         98,
@@ -15,6 +41,19 @@
     },
     {
       "discriminator": [
+        20,
+        239,
+        145,
+        190,
+        228,
+        246,
+        19,
+        141
+      ],
+      "name": "MandateOffer"
+    },
+    {
+      "discriminator": [
         115,
         160,
         106,
@@ -25,6 +64,19 @@
         200
       ],
       "name": "NoxConfig"
+    },
+    {
+      "discriminator": [
+        26,
+        76,
+        11,
+        24,
+        74,
+        161,
+        177,
+        13
+      ],
+      "name": "TraderListing"
     },
     {
       "discriminator": [
@@ -196,6 +248,56 @@
       "code": 6030,
       "msg": "The investor's token account holds less than the principal",
       "name": "InsufficientPrincipal"
+    },
+    {
+      "code": 6031,
+      "msg": "Note is longer than the on-chain field allows",
+      "name": "NoteTooLong"
+    },
+    {
+      "code": 6032,
+      "msg": "Listing terms are not internally consistent",
+      "name": "InvalidListingTerms"
+    },
+    {
+      "code": 6033,
+      "msg": "Signer is not this listing's trader",
+      "name": "NotTheListingTrader"
+    },
+    {
+      "code": 6034,
+      "msg": "Signer is not the investor who posted this offer",
+      "name": "NotTheOfferInvestor"
+    },
+    {
+      "code": 6035,
+      "msg": "Signer is not the trader this offer is addressed to",
+      "name": "NotTheOfferTrader"
+    },
+    {
+      "code": 6036,
+      "msg": "Offer is not open; it has already been accepted or revoked",
+      "name": "OfferNotOpen"
+    },
+    {
+      "code": 6037,
+      "msg": "Offer has expired",
+      "name": "OfferExpired"
+    },
+    {
+      "code": 6038,
+      "msg": "Signer is not this listing's investor",
+      "name": "NotTheListingInvestor"
+    },
+    {
+      "code": 6039,
+      "msg": "That listing is closed; it is not accepting requests",
+      "name": "ListingNotOpen"
+    },
+    {
+      "code": 6040,
+      "msg": "Signer is neither the trader nor the investor on this request",
+      "name": "NotARequestParty"
     }
   ],
   "events": [
@@ -253,6 +355,58 @@
     },
     {
       "discriminator": [
+        120,
+        210,
+        102,
+        76,
+        198,
+        186,
+        94,
+        249
+      ],
+      "name": "InvestorListingClosed"
+    },
+    {
+      "discriminator": [
+        229,
+        18,
+        37,
+        100,
+        192,
+        11,
+        84,
+        109
+      ],
+      "name": "InvestorListingPosted"
+    },
+    {
+      "discriminator": [
+        86,
+        219,
+        253,
+        196,
+        184,
+        194,
+        176,
+        78
+      ],
+      "name": "ListingClosed"
+    },
+    {
+      "discriminator": [
+        222,
+        32,
+        38,
+        82,
+        109,
+        213,
+        168,
+        52
+      ],
+      "name": "ListingPosted"
+    },
+    {
+      "discriminator": [
         231,
         129,
         99,
@@ -292,6 +446,58 @@
     },
     {
       "discriminator": [
+        81,
+        238,
+        238,
+        115,
+        140,
+        18,
+        8,
+        20
+      ],
+      "name": "OfferAccepted"
+    },
+    {
+      "discriminator": [
+        195,
+        156,
+        18,
+        179,
+        108,
+        88,
+        18,
+        3
+      ],
+      "name": "OfferDeclined"
+    },
+    {
+      "discriminator": [
+        213,
+        49,
+        239,
+        221,
+        100,
+        153,
+        210,
+        32
+      ],
+      "name": "OfferPosted"
+    },
+    {
+      "discriminator": [
+        154,
+        250,
+        94,
+        23,
+        112,
+        167,
+        137,
+        156
+      ],
+      "name": "OfferRevoked"
+    },
+    {
+      "discriminator": [
         227,
         171,
         63,
@@ -315,6 +521,32 @@
         106
       ],
       "name": "PositionWoundDown"
+    },
+    {
+      "discriminator": [
+        59,
+        172,
+        99,
+        75,
+        9,
+        19,
+        226,
+        188
+      ],
+      "name": "RequestClosed"
+    },
+    {
+      "discriminator": [
+        133,
+        168,
+        64,
+        209,
+        187,
+        131,
+        53,
+        10
+      ],
+      "name": "RequestPosted"
     },
     {
       "discriminator": [
@@ -386,6 +618,187 @@
     {
       "accounts": [
         {
+          "docs": [
+            "The trader the offer is addressed to, and the only account that can do this."
+          ],
+          "name": "trader",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "offer",
+          "writable": true
+        },
+        {
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "docs": [
+            "The mandate the offer becomes.",
+            "",
+            "Note the payer: the **trader**. An offer's escrow holds exactly the principal and nothing",
+            "for rent, and the investor is not a signer on this transaction, so the account cannot be",
+            "funded from either. That is the right incentive anyway \u2014 accepting capital costs the",
+            "trader the rent, which prices in a trader who accepts offers they do not intend to trade."
+          ],
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "docs": [
+            "Dataless, so the System Program will accept it as the `from` of the rent transfers that",
+            "`open_position` and `place_trigger_order` perform. See `Mandate`'s documentation."
+          ],
+          "name": "mandate_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "docs": [
+            "on every CPI; only its address is recorded."
+          ],
+          "name": "solfx_user_account"
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "offer_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  102,
+                  102,
+                  101,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "offer"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "mandate_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        227,
+        82,
+        234,
+        131,
+        1,
+        18,
+        48,
+        2
+      ],
+      "docs": [
+        "Accept an offer. Creates the mandate and moves the capital in one transaction."
+      ],
+      "name": "accept_offer"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "**Anyone.** Pays the transaction fee and nothing else."
+          ],
           "name": "settler",
           "signer": true
         },
@@ -439,10 +852,17 @@
           "writable": true
         },
         {
+          "docs": [
+            "Deserialized: settlement withdraws exactly the free collateral recorded here."
+          ],
           "name": "user_account",
           "writable": true
         },
         {
+          "docs": [
+            "`mut` because `solfx-core`'s `MoveCollateral` marks it so \u2014 a CPI cannot ask for a",
+            "privilege the outer instruction did not grant."
+          ],
           "name": "usdc_mint",
           "writable": true
         },
@@ -451,6 +871,14 @@
           "writable": true
         },
         {
+          "docs": [
+            "The mandate's own USDC account. Withdrawals land here first, then leave in three parts.",
+            "",
+            "Bound to `[\"vault\", mandate]`. It used to be *any* token account the signer owned, and",
+            "the settler \u2014 who is anyone \u2014 chose which: they could pass a fresh empty account, so the",
+            "split was computed over a balance that excluded any principal still sitting in the real",
+            "vault."
+          ],
           "name": "mandate_vault",
           "pda": {
             "seeds": [
@@ -473,6 +901,10 @@
           "writable": true
         },
         {
+          "docs": [
+            "Constrained to the investor recorded at funding, not to whoever calls \u2014 a permissionless",
+            "instruction must not let the caller choose where the principal goes."
+          ],
           "name": "investor_token",
           "writable": true
         },
@@ -485,6 +917,11 @@
           "writable": true
         },
         {
+          "docs": [
+            "The trader's record. Settlement is where a mandate's outcome \u2014 not just its individual",
+            "trades \u2014 lands on it: the active count comes down, and a mandate that finished above",
+            "principal counts toward Platinum."
+          ],
           "name": "trader_profile",
           "pda": {
             "seeds": [
@@ -528,7 +965,75 @@
         83,
         212
       ],
+      "docs": [
+        "Withdraw the mandate's collateral, take the 5% fee off gross profit, split the rest",
+        "70/30, and return principal. **Permissionless** \u2014 the investor never waits on anyone."
+      ],
       "name": "claim_settlement"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "Either party. The trader withdraws the ask; the investor dismisses it."
+          ],
+          "name": "closer",
+          "signer": true
+        },
+        {
+          "docs": [
+            "Where the rent goes: always back to the trader who paid it, whoever closes. An investor",
+            "dismissing a request must not be able to pocket the trader's deposit."
+          ],
+          "name": "trader",
+          "writable": true
+        },
+        {
+          "name": "request",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "account": "FundingRequest",
+                "kind": "account",
+                "path": "request.trader"
+              },
+              {
+                "account": "FundingRequest",
+                "kind": "account",
+                "path": "request.investor"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        170,
+        46,
+        165,
+        120,
+        223,
+        102,
+        115,
+        2
+      ],
+      "docs": [
+        "Withdraw (trader) or dismiss (investor) a request. The rent goes back to the trader."
+      ],
+      "name": "close_request"
     },
     {
       "accounts": [
@@ -559,6 +1064,10 @@
           "name": "mandate"
         },
         {
+          "docs": [
+            "Pays the `UserAccount`'s rent and becomes its authority. Dataless, so the System",
+            "Program will accept it as the `from` of that rent transfer."
+          ],
           "name": "mandate_signer",
           "pda": {
             "seeds": [
@@ -609,7 +1118,42 @@
         47,
         142
       ],
+      "docs": [
+        "Create the SolFX `UserAccount` this mandate trades through, authorised by its signer."
+      ],
       "name": "create_solfx_account"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "signer": true
+        },
+        {
+          "name": "offer",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ],
+      "discriminator": [
+        204,
+        98,
+        121,
+        232,
+        122,
+        145,
+        35,
+        96
+      ],
+      "docs": [
+        "Say no to an offer, with a reason. Moves no money; the investor revokes to reclaim it."
+      ],
+      "name": "decline_offer"
     },
     {
       "accounts": [
@@ -637,9 +1181,16 @@
           }
         },
         {
+          "docs": [
+            "nothing here, which is the point \u2014 an investor funds a trader without their cooperation."
+          ],
           "name": "trader"
         },
         {
+          "docs": [
+            "The trader's record. Required, so a mandate can never be opened against a trader with",
+            "no tier \u2014 and so the tier's size and concurrency limits have something to bind to."
+          ],
           "name": "trader_profile",
           "pda": {
             "seeds": [
@@ -667,6 +1218,13 @@
           "writable": true
         },
         {
+          "docs": [
+            "The dataless PDA that will be the SolFX authority.",
+            "",
+            "Created here with zero data so the System Program will later accept it as the `from` of",
+            "the rent transfers `open_position` and `place_trigger_order` perform. A data-bearing",
+            "account cannot serve \u2014 see `Mandate`'s documentation."
+          ],
           "name": "mandate_signer",
           "pda": {
             "seeds": [
@@ -690,16 +1248,37 @@
           "writable": true
         },
         {
+          "docs": [
+            "`solfx-core` on every CPI; only its address is recorded here."
+          ],
           "name": "solfx_user_account"
         },
         {
           "name": "usdc_mint"
         },
         {
+          "docs": [
+            "Where the principal comes from. Must be the investor's own USDC."
+          ],
           "name": "investor_token",
           "writable": true
         },
         {
+          "docs": [
+            "The mandate's one and only vault, at `[\"vault\", mandate]`, owned by the signer PDA.",
+            "",
+            "# Why this is created here and not left to the client",
+            "",
+            "Before this existed, `fund_mandate` recorded `principal` as a number and moved nothing,",
+            "and \"the vault\" was any token account the signer happened to own. Measured on the",
+            "deployed program: a stranger holding no USDC funded a $10,000 mandate for a Bronze trader,",
+            "and the trader's only slot was taken \u2014 a real investor was then refused with",
+            "`TooManyActiveMandates`. Settlement also pays `principal` back first, so a principal that",
+            "was never deposited turned an investor's own later deposit into \"profit\" for the trader.",
+            "",
+            "Creating the vault at a fixed address and filling it in the same instruction makes",
+            "`principal` a fact about money rather than a claim about it."
+          ],
           "name": "mandate_vault",
           "pda": {
             "seeds": [
@@ -757,6 +1336,10 @@
         122,
         197,
         29
+      ],
+      "docs": [
+        "Fix the rules and create the mandate. The trader does not sign \u2014 an investor funds a",
+        "trader without needing their cooperation."
       ],
       "name": "fund_mandate"
     },
@@ -820,6 +1403,12 @@
           "writable": true
         },
         {
+          "docs": [
+            "",
+            "`mut` because `MoveCollateral` marks it so \u2014 a CPI cannot ask for a privilege the outer",
+            "instruction did not grant, and the runtime calls that `PrivilegeEscalation` rather than",
+            "a missing-attribute error."
+          ],
           "name": "collateral_mint",
           "writable": true
         },
@@ -828,6 +1417,10 @@
           "writable": true
         },
         {
+          "docs": [
+            "come from the account `fund_mandate` filled. `solfx-core` additionally requires its owner",
+            "to be the authority, `mandate_signer`."
+          ],
           "name": "mandate_vault",
           "pda": {
             "seeds": [
@@ -873,6 +1466,9 @@
         94,
         187,
         211
+      ],
+      "docs": [
+        "Move the mandate's USDC into SolFX's collateral vault."
       ],
       "name": "fund_solfx_collateral"
     },
@@ -960,6 +1556,10 @@
         78,
         238
       ],
+      "docs": [
+        "Reclaim a resting stop's rent after a voluntary close. Without this a mandate bleeds",
+        "~0.002 SOL per closed trade with no recovery path."
+      ],
       "name": "funded_cancel_stop"
     },
     {
@@ -1019,6 +1619,11 @@
           "writable": true
         },
         {
+          "docs": [
+            "Deserialized, unlike on the open path, and reloaded after the CPI: the change in",
+            "`free_collateral` across the close is how this program learns what the trade actually",
+            "made. `solfx-core` owns it, so Anchor never writes it back on exit."
+          ],
           "name": "user_account",
           "writable": true
         },
@@ -1027,10 +1632,19 @@
           "writable": true
         },
         {
+          "docs": [
+            "Deserialized here, unlike on the open path: the minimum-hold rule is judged against",
+            "`opened_at_slot`, and the position's booked notional is what leaves the mandate's open",
+            "book when it closes."
+          ],
           "name": "position",
           "writable": true
         },
         {
+          "docs": [
+            "The trader's record. Bound to the mandate's trader by its seed, so a trader cannot",
+            "direct their losses onto somebody else's profile."
+          ],
           "name": "trader_profile",
           "pda": {
             "seeds": [
@@ -1127,6 +1741,9 @@
     {
       "accounts": [
         {
+          "docs": [
+            "The trader. Pays the transaction fee and signs; pays no rent and never holds custody."
+          ],
           "name": "trader",
           "signer": true,
           "writable": true
@@ -1154,6 +1771,9 @@
           "writable": true
         },
         {
+          "docs": [
+            "The SolFX authority: dataless, system-owned, signs both CPIs and pays both rents."
+          ],
           "name": "mandate_signer",
           "pda": {
             "seeds": [
@@ -1185,6 +1805,9 @@
           "writable": true
         },
         {
+          "docs": [
+            "Deserialized: the rules are priced against it before the CPI."
+          ],
           "name": "market",
           "writable": true
         },
@@ -1292,6 +1915,12 @@
         248,
         83
       ],
+      "docs": [
+        "Open a SolFX position with its stop-loss attached **atomically**.",
+        "",
+        "Every rule that can be judged from this trade and the current state is checked before",
+        "either CPI runs. `stop_loss_price` is mandatory and not an argument the trader may omit."
+      ],
       "name": "funded_open_position"
     },
     {
@@ -1322,9 +1951,16 @@
         },
         {
           "address": "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx",
+          "docs": [
+            "This program's own account. Its only job is to name the real `program_data`."
+          ],
           "name": "program"
         },
         {
+          "docs": [
+            "The loader's record of who may upgrade this program. Anchor checks it is owned by the",
+            "upgradeable loader and is genuinely a `ProgramData` account."
+          ],
           "name": "program_data"
         },
         {
@@ -1361,11 +1997,18 @@
     {
       "accounts": [
         {
+          "docs": [
+            "Pays the rent. Need not be the trader \u2014 an operator or an investor may open a profile",
+            "for someone, because the profile confers nothing until trades land on it."
+          ],
           "name": "payer",
           "signer": true,
           "writable": true
         },
         {
+          "docs": [
+            "the binding; nothing is read from the account and it signs nothing."
+          ],
           "name": "authority"
         },
         {
@@ -1407,11 +2050,19 @@
         172,
         99
       ],
+      "docs": [
+        "Open a trader's record. Anyone may pay for it; the profile confers nothing until trades",
+        "land on it, and a mandate cannot be funded for a trader without one."
+      ],
       "name": "initialize_trader_profile"
     },
     {
       "accounts": [
         {
+          "docs": [
+            "**Anyone.** Investor capital must never be hostage to an absent trader or an absent",
+            "operator, so the instruction that can free it takes no privileged signer."
+          ],
           "name": "observer",
           "signer": true
         },
@@ -1463,6 +2114,15 @@
           "name": "user_account"
         },
         {
+          "docs": [
+            "The trader's record, so the worst drawdown ever *observed* lands on it.",
+            "",
+            "Required rather than optional, and this is the load-bearing reason the crank exists at",
+            "all: a trader holding a losing position and refusing to close it would otherwise never",
+            "record the drawdown, because nothing but a close writes to the profile. Marking it here",
+            "means the gaming vector that matters most costs the trader their tier whether they close",
+            "or not."
+          ],
           "name": "trader_profile",
           "pda": {
             "seeds": [
@@ -1498,11 +2158,523 @@
         39,
         91
       ],
+      "docs": [
+        "Observe a mandate's equity, update its high-water mark, and breach it if it has fallen",
+        "too far. **Permissionless** \u2014 investor capital is never hostage to an absent trader or",
+        "an absent operator.",
+        "",
+        "`remaining_accounts` carries (position, market, price_update) triples, one per open",
+        "position."
+      ],
       "name": "observe_mandate_equity"
     },
     {
       "accounts": [
         {
+          "name": "investor",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  118,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "investor"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "terms",
+          "type": {
+            "defined": {
+              "name": "InvestorListingTerms"
+            }
+          }
+        }
+      ],
+      "discriminator": [
+        202,
+        230,
+        166,
+        98,
+        148,
+        139,
+        66,
+        144
+      ],
+      "docs": [
+        "Advertise capital, so traders can find an investor and send a request."
+      ],
+      "name": "post_investor_listing"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "The record the listing points at. Required, so a listing cannot advertise a trader who",
+            "has no track record account at all \u2014 the marketplace's whole claim is that the stats",
+            "beside a listing are real, and that needs the account to exist."
+          ],
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "`init_if_needed` is banned in this workspace, so re-posting is `update_listing` rather",
+            "than a second `init`. One listing per trader, at a derived address, forever."
+          ],
+          "name": "listing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "terms",
+          "type": {
+            "defined": {
+              "name": "ListingTerms"
+            }
+          }
+        }
+      ],
+      "discriminator": [
+        98,
+        60,
+        128,
+        203,
+        78,
+        140,
+        201,
+        202
+      ],
+      "docs": [
+        "Advertise for capital. Carries no money and takes no custody."
+      ],
+      "name": "post_listing"
+    },
+    {
+      "accounts": [
+        {
+          "name": "investor",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "that an investor can make an offer without the trader's cooperation."
+          ],
+          "name": "trader"
+        },
+        {
+          "docs": [
+            "Required, so the tier limits can be checked before the investor's capital moves rather",
+            "than when the trader tries to accept."
+          ],
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "offer",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "investor_token",
+          "writable": true
+        },
+        {
+          "docs": [
+            "The escrow. Authority is the offer PDA itself, which holds no data problem here because",
+            "\u2014 unlike the mandate signer \u2014 it never has to be the `from` of a System Program transfer."
+          ],
+          "name": "offer_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  102,
+                  102,
+                  101,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "offer"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "seq",
+          "type": "u8"
+        },
+        {
+          "name": "principal",
+          "type": "u64"
+        },
+        {
+          "name": "rules",
+          "type": {
+            "defined": {
+              "name": "MandateRules"
+            }
+          }
+        },
+        {
+          "name": "trader_split_bps",
+          "type": "u16"
+        },
+        {
+          "name": "expires_at",
+          "type": "i64"
+        },
+        {
+          "name": "note",
+          "type": "string"
+        }
+      ],
+      "discriminator": [
+        73,
+        150,
+        193,
+        114,
+        200,
+        133,
+        74,
+        58
+      ],
+      "docs": [
+        "Escrow capital and publish a rule set to one trader."
+      ],
+      "name": "post_offer"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "Required, so the investor reading the request can read a real track record beside it."
+          ],
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "The investor's listing, which must be open.",
+            "",
+            "This is the anti-spam rule. A request can only go to an investor who has publicly said",
+            "they are looking, so no wallet can be messaged merely for existing \u2014 and closing the",
+            "listing is how an investor shuts the door."
+          ],
+          "name": "investor_listing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  118,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "account": "InvestorListing",
+                "kind": "account",
+                "path": "investor_listing.investor"
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "One open request per pair. The seeds make a duplicate impossible, so a trader cannot",
+            "flood an inbox with copies of the same ask."
+          ],
+          "name": "request",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              },
+              {
+                "account": "InvestorListing",
+                "kind": "account",
+                "path": "investor_listing.investor"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "wanted_principal",
+          "type": "u64"
+        },
+        {
+          "name": "wanted_split_bps",
+          "type": "u16"
+        },
+        {
+          "name": "note",
+          "type": "string"
+        }
+      ],
+      "discriminator": [
+        4,
+        59,
+        143,
+        187,
+        32,
+        9,
+        161,
+        253
+      ],
+      "docs": [
+        "Ask an investor with an open listing for capital. Carries no money."
+      ],
+      "name": "post_request"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "**Anyone.** The computation is pure and the inputs are all on the account, so there is",
+            "nothing a caller could bias by choosing when to run it \u2014 and an investor who suspects a",
+            "listing is stale should not have to ask the trader to refresh it."
+          ],
           "name": "caller",
           "signer": true
         },
@@ -1542,11 +2714,19 @@
         123,
         147
       ],
+      "docs": [
+        "Set a trader's tier to whatever their record currently earns \u2014 **in both directions**.",
+        "Permissionless, because an investor should not have to ask a trader to refresh a",
+        "listing that flatters them."
+      ],
       "name": "recompute_tier"
     },
     {
       "accounts": [
         {
+          "docs": [
+            "**Anyone.**"
+          ],
           "name": "caller",
           "signer": true
         },
@@ -1555,6 +2735,10 @@
           "writable": true
         },
         {
+          "docs": [
+            "the nonce, under `solfx-core`'s program id \u2014 so it can only be the position this slot",
+            "describes. Only whether it still exists is read."
+          ],
           "name": "position"
         },
         {
@@ -1582,6 +2766,10 @@
         12,
         78
       ],
+      "docs": [
+        "Release a slot whose position closed without NOXFUNDS seeing it \u2014 a stop-out.",
+        "**Permissionless**, and only if the derived position account is genuinely gone."
+      ],
       "name": "reconcile_position"
     },
     {
@@ -1606,7 +2794,80 @@
         115,
         41
       ],
+      "docs": [
+        "The investor ends the mandate. New trades stop; open positions may still be closed."
+      ],
       "name": "request_settlement"
+    },
+    {
+      "accounts": [
+        {
+          "name": "investor",
+          "relations": [
+            "offer"
+          ],
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "offer",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "offer_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  102,
+                  102,
+                  101,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "offer"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "investor_token",
+          "writable": true
+        },
+        {
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+          "name": "token_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        248,
+        93,
+        83,
+        25,
+        45,
+        66,
+        150,
+        134
+      ],
+      "docs": [
+        "Take the escrowed capital back. Available while nobody has accepted, expired or not."
+      ],
+      "name": "revoke_offer"
     },
     {
       "accounts": [
@@ -1655,6 +2916,175 @@
     {
       "accounts": [
         {
+          "name": "investor",
+          "relations": [
+            "listing"
+          ],
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  118,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "investor"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "terms",
+          "type": {
+            "defined": {
+              "name": "InvestorListingTerms"
+            }
+          }
+        },
+        {
+          "name": "open",
+          "type": "bool"
+        }
+      ],
+      "discriminator": [
+        150,
+        88,
+        208,
+        182,
+        78,
+        177,
+        166,
+        218
+      ],
+      "docs": [
+        "Edit an investor's advertisement, or open and close it."
+      ],
+      "name": "update_investor_listing"
+    },
+    {
+      "accounts": [
+        {
+          "name": "trader",
+          "relations": [
+            "listing"
+          ],
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "terms",
+          "type": {
+            "defined": {
+              "name": "ListingTerms"
+            }
+          }
+        },
+        {
+          "name": "open",
+          "type": "bool"
+        }
+      ],
+      "discriminator": [
+        192,
+        174,
+        210,
+        68,
+        116,
+        40,
+        242,
+        253
+      ],
+      "docs": [
+        "Edit an advertisement, or open and close it."
+      ],
+      "name": "update_listing"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "**Anyone.**"
+          ],
           "name": "closer",
           "signer": true
         },
@@ -1722,11 +3152,17 @@
         233,
         112
       ],
+      "docs": [
+        "Cancel a resting stop on a stopped mandate. **Permissionless.**"
+      ],
       "name": "wind_down_cancel_stop"
     },
     {
       "accounts": [
         {
+          "docs": [
+            "**Anyone.** No relation to the mandate is required or checked."
+          ],
           "name": "closer",
           "signer": true
         },
@@ -1788,6 +3224,10 @@
           "writable": true
         },
         {
+          "docs": [
+            "Deserialized: its direction decides the slippage bound, and its market and nonce decide",
+            "which slot to release. Bound to this mandate's SolFX account."
+          ],
           "name": "position",
           "writable": true
         },
@@ -1816,6 +3256,10 @@
           "writable": true
         },
         {
+          "docs": [
+            "Validated by `solfx-core` against the market's feed id and its staleness gate, so an",
+            "untrusted caller cannot supply a stale or foreign price to close at."
+          ],
           "name": "price_update"
         },
         {
@@ -1845,6 +3289,10 @@
         110,
         180,
         11
+      ],
+      "docs": [
+        "Close one position of a breached or winding-down mandate. **Permissionless**, with the",
+        "slippage bound derived from the position rather than chosen by the caller."
       ],
       "name": "wind_down_position"
     }
@@ -1882,6 +3330,13 @@
       }
     },
     {
+      "docs": [
+        "Which way the trader is betting.",
+        "",
+        "The on-chain mirror of `solfx_math::Direction`. The maths crate deliberately carries no",
+        "Anchor derives \u2014 that is what keeps it testable without the BPF toolchain \u2014 so the two",
+        "types meet here and nowhere else."
+      ],
       "name": "Direction",
       "type": {
         "kind": "enum",
@@ -1896,6 +3351,13 @@
       }
     },
     {
+      "docs": [
+        "Emitted on every observation, breach or not.",
+        "",
+        "The crank cadence *is* the honesty of the drawdown rule \u2014 equity moves between",
+        "observations and a spike in the gap is not caught \u2014 so each observation is published",
+        "rather than only the ones that trip something."
+      ],
       "name": "EquityObserved",
       "type": {
         "fields": [
@@ -1932,6 +3394,12 @@
       }
     },
     {
+      "docs": [
+        "Which regime state machine a market follows (`ARCHITECTURE.md` \u00a7 7.3).",
+        "",
+        "A new asset class is a new variant plus its regime rules \u2014 never new maths. That is the",
+        "\u00a7 5.6 generic-engine constraint expressed as a type."
+      ],
       "name": "FeedKind",
       "type": {
         "kind": "enum",
@@ -1981,6 +3449,12 @@
       }
     },
     {
+      "docs": [
+        "Emitted after both CPIs land, carrying **the margins the trade passed by**.",
+        "",
+        "Not just that it was allowed \u2014 by how much. An investor watching a trader run at 99% of",
+        "every limit is reading something a pass/fail flag cannot tell them."
+      ],
       "name": "FundedTradeOpened",
       "type": {
         "fields": [
@@ -2021,10 +3495,16 @@
             "type": "i64"
           },
           {
+            "docs": [
+              "Notional as bps of the mandate's per-trade ceiling. 10_000 = exactly at the limit."
+            ],
             "name": "notional_used_bps",
             "type": "u64"
           },
           {
+            "docs": [
+              "Risk at the stop as bps of equity \u2014 against `max_risk_per_trade_bps`."
+            ],
             "name": "risk_used_bps",
             "type": "u64"
           },
@@ -2041,6 +3521,367 @@
       }
     },
     {
+      "docs": [
+        "A trader asking one investor for capital, at `[\"request\", trader, investor]`.",
+        "",
+        "The trader-initiated half of the conversation. It carries no money; the investor answers by",
+        "posting a `MandateOffer`, which is the only thing that can bind either of them. One open",
+        "request per pair \u2014 the seeds make a second one impossible, so a trader cannot flood an",
+        "investor's inbox with copies.",
+        "",
+        "The trader pays the rent and always gets it back, whichever side closes it."
+      ],
+      "name": "FundingRequest",
+      "type": {
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "wanted_principal",
+            "type": "u64"
+          },
+          {
+            "name": "wanted_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "note",
+            "type": {
+              "array": [
+                "u8",
+                180
+              ]
+            }
+          },
+          {
+            "name": "note_len",
+            "type": "u8"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "An investor advertising capital, at `[\"inv_listing\", investor]`.",
+        "",
+        "The mirror of `TraderListing`. It commits nothing and escrows nothing \u2014 the binding step is",
+        "still an offer with the capital locked behind it. It exists so a trader browsing the",
+        "marketplace can find investors, and so a trader has a legitimate address to send a",
+        "`FundingRequest` to: requests are only accepted by an investor with an open listing."
+      ],
+      "name": "InvestorListing",
+      "type": {
+        "fields": [
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "The band of principal this investor is prepared to put behind one trader."
+            ],
+            "name": "min_principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_drawdown_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_risk_per_trade_bps",
+            "type": "u16"
+          },
+          {
+            "name": "allowed_markets",
+            "type": "u128"
+          },
+          {
+            "name": "offered_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "note",
+            "type": {
+              "array": [
+                "u8",
+                180
+              ]
+            }
+          },
+          {
+            "name": "note_len",
+            "type": "u8"
+          },
+          {
+            "name": "open",
+            "type": "bool"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "updated_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "An investor stopped advertising. No new requests can reach them until they reopen."
+      ],
+      "name": "InvestorListingClosed",
+      "type": {
+        "fields": [
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "An investor advertised capital, or edited the advertisement."
+      ],
+      "name": "InvestorListingPosted",
+      "type": {
+        "fields": [
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "min_principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_principal",
+            "type": "u64"
+          },
+          {
+            "name": "allowed_markets",
+            "type": "u128"
+          },
+          {
+            "name": "offered_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "What an investor advertises. Advisory throughout: the binding numbers are on the offer."
+      ],
+      "name": "InvestorListingTerms",
+      "type": {
+        "fields": [
+          {
+            "name": "min_principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_drawdown_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_risk_per_trade_bps",
+            "type": "u16"
+          },
+          {
+            "name": "allowed_markets",
+            "type": "u128"
+          },
+          {
+            "name": "offered_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "note",
+            "type": "string"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "A trader withdrew their advertisement. The account remains; only the flag changed."
+      ],
+      "name": "ListingClosed",
+      "type": {
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "A trader advertised for capital, or edited the terms of an existing advertisement."
+      ],
+      "name": "ListingPosted",
+      "type": {
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "min_principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_principal",
+            "type": "u64"
+          },
+          {
+            "name": "wanted_markets",
+            "type": "u128"
+          },
+          {
+            "name": "wanted_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "What a trader advertises. One struct, for the same reason `MandateRules` is one."
+      ],
+      "name": "ListingTerms",
+      "type": {
+        "fields": [
+          {
+            "name": "min_principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_principal",
+            "type": "u64"
+          },
+          {
+            "name": "wanted_markets",
+            "type": "u128"
+          },
+          {
+            "name": "wanted_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "note",
+            "type": "string"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "An investor's capital, a trader's permission to trade it, and the rules that bound them.",
+        "",
+        "# Why the rules are immutable",
+        "",
+        "Written once at funding and never mutable, mirroring the referral programme's immutable",
+        "`referrer` binding. Nobody \u2014 including the operator \u2014 can retighten terms after the fact.",
+        "A trader who accepted a 3% drawdown limit cannot be moved to 1% mid-mandate, and an",
+        "investor cannot be talked into a wider one.",
+        "",
+        "# Why this is not the SolFX authority",
+        "",
+        "It cannot be. `open_position` and `place_trigger_order` are both `init, payer = authority`,",
+        "which Anchor services through the System Program, which refuses a `from` that carries data.",
+        "This account is an `#[account]` struct and therefore data-bearing. The authority is",
+        "[`MANDATE_SIGNER_SEED`](crate::constants::MANDATE_SIGNER_SEED) \u2014 a dataless, system-owned",
+        "PDA whose bump is stored here."
+      ],
       "name": "Mandate",
       "type": {
         "fields": [
@@ -2053,34 +3894,60 @@
             "type": "pubkey"
           },
           {
+            "docs": [
+              "Lets one investor fund the same trader more than once."
+            ],
             "name": "seq",
             "type": "u8"
           },
           {
+            "docs": [
+              "The SolFX `UserAccount` this mandate's signer authorises."
+            ],
             "name": "solfx_user_account",
             "type": "pubkey"
           },
           {
+            "docs": [
+              "Bump of the dataless signer PDA. Stored so no instruction re-derives it \u2014 that costs",
+              "~1,500 CU for nothing, and this program signs two CPIs per trade."
+            ],
             "name": "signer_bump",
             "type": "u8"
           },
           {
+            "docs": [
+              "What the investor put in, in USDC at `QUOTE_PRECISION`."
+            ],
             "name": "principal",
             "type": "u64"
           },
           {
+            "docs": [
+              "High-water mark of equity. Only ever rises, so a trader cannot reset their drawdown by",
+              "closing out or withdrawing."
+            ],
             "name": "peak_equity",
             "type": "u64"
           },
           {
+            "docs": [
+              "Ceiling on a single trade's notional, in USDC."
+            ],
             "name": "max_trade_notional",
             "type": "u64"
           },
           {
+            "docs": [
+              "Ceiling on the sum of all open notional, in USDC."
+            ],
             "name": "max_total_notional",
             "type": "u64"
           },
           {
+            "docs": [
+              "Trailing from `peak_equity`. 300 = 3%."
+            ],
             "name": "max_drawdown_bps",
             "type": "u16"
           },
@@ -2089,10 +3956,18 @@
             "type": "u16"
           },
           {
+            "docs": [
+              "Risk at the stop, as bps of equity. This is the rule no centralized firm can enforce",
+              "*before* the fill, and it is only checkable because the stop is mandatory and placed in",
+              "the same transaction."
+            ],
             "name": "max_risk_per_trade_bps",
             "type": "u16"
           },
           {
+            "docs": [
+              "A stop 99% away is not a stop."
+            ],
             "name": "max_stop_distance_bps",
             "type": "u16"
           },
@@ -2101,14 +3976,24 @@
             "type": "u8"
           },
           {
+            "docs": [
+              "Bitmap over `market_index`. `u128`, so 128 markets \u2014 SolFX lists 29 today and the",
+              "upper tiers plausibly reach 50\u201360, which left `u64` uncomfortably close."
+            ],
             "name": "allowed_markets",
             "type": "u128"
           },
           {
+            "docs": [
+              "The no-scalping rule. Applies to **voluntary** closes only; a stop-out is exempt."
+            ],
             "name": "min_hold_slots",
             "type": "u64"
           },
           {
+            "docs": [
+              "Trader's share of net profit. 7000 = 70%."
+            ],
             "name": "trader_split_bps",
             "type": "u16"
           },
@@ -2121,22 +4006,44 @@
             }
           },
           {
+            "docs": [
+              "How many SolFX positions this mandate currently holds open. Maintained here because",
+              "SolFX stores no per-account position count, and the concurrency rule needs one."
+            ],
             "name": "open_positions",
             "type": "u8"
           },
           {
+            "docs": [
+              "Sum of the notional of every open position, in USDC, as booked at entry.",
+              "",
+              "Booked at entry rather than marked, for the same reason SolFX stores `entry_notional`",
+              "on a position: a figure that moves with the price would make the total drift on a",
+              "mandate that merely held, and the rule is about how much exposure the trader *took*."
+            ],
             "name": "open_notional",
             "type": "u64"
           },
           {
+            "docs": [
+              "Equity at the last observation, in USDC. Zero until the first crank."
+            ],
             "name": "last_equity",
             "type": "u64"
           },
           {
+            "docs": [
+              "When that observation happened. The crank cadence is the honesty of the drawdown rule,",
+              "so it is recorded rather than implied."
+            ],
             "name": "last_observed_at",
             "type": "i64"
           },
           {
+            "docs": [
+              "The positions currently open, one slot each. `open_positions` and `open_notional` are",
+              "kept equal to what these slots sum to; they are stored for cheap reads by the rules."
+            ],
             "name": "slots",
             "type": {
               "array": [
@@ -2158,6 +4065,10 @@
             "type": "u8"
           },
           {
+            "docs": [
+              "Bump of the mandate's USDC vault at `[\"vault\", mandate]`, stored so every instruction that",
+              "touches the vault re-checks its address without re-deriving it."
+            ],
             "name": "vault_bump",
             "type": "u8"
           },
@@ -2175,6 +4086,12 @@
       }
     },
     {
+      "docs": [
+        "A mandate has broken a rule that can only be detected by observation.",
+        "",
+        "Distinct from a wind-down on purpose: this records *why* it ended, permanently, and that",
+        "is exactly what an investor choosing a trader is reading."
+      ],
       "name": "MandateBreached",
       "type": {
         "fields": [
@@ -2187,6 +4104,9 @@
             "type": "pubkey"
           },
           {
+            "docs": [
+              "The rule that broke, as its `NoxError` discriminant."
+            ],
             "name": "rule",
             "type": "u32"
           },
@@ -2255,6 +4175,161 @@
       }
     },
     {
+      "docs": [
+        "An investor's escrowed proposal to one trader, at `[\"offer\", investor, trader, seq]`.",
+        "",
+        "The full rule set is fixed here, before the trader has agreed to anything, and it is copied",
+        "onto the `Mandate` verbatim on acceptance. So the terms the trader accepts are provably the",
+        "terms the investor published: there is no step between agreement and funding in which either",
+        "side could substitute a different number."
+      ],
+      "name": "MandateOffer",
+      "type": {
+        "fields": [
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "The one trader who may accept. Offers are addressed, not open to the highest bidder \u2014",
+              "an open offer would let any trader with a profile take capital an investor had picked",
+              "someone specific for."
+            ],
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "Escrowed at `[\"offer_vault\", offer]` from the moment the offer is posted."
+            ],
+            "name": "principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_trade_notional",
+            "type": "u64"
+          },
+          {
+            "name": "max_total_notional",
+            "type": "u64"
+          },
+          {
+            "name": "max_drawdown_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_daily_loss_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_risk_per_trade_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_stop_distance_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_concurrent_positions",
+            "type": "u8"
+          },
+          {
+            "name": "allowed_markets",
+            "type": "u128"
+          },
+          {
+            "name": "min_hold_slots",
+            "type": "u64"
+          },
+          {
+            "name": "trader_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "note",
+            "type": {
+              "array": [
+                "u8",
+                180
+              ]
+            }
+          },
+          {
+            "name": "note_len",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "After this, the trader can no longer accept and the investor can always revoke.",
+              "",
+              "An offer with no expiry is capital an investor can lose track of; an expiry the trader",
+              "can ignore is not an expiry. Acceptance checks it against the cluster clock."
+            ],
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "OfferState"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "The trader's answer when they decline. Empty otherwise.",
+              "",
+              "On the offer rather than in an account of its own, so the reason is read in the same",
+              "place as the terms it refers to, and so declining costs the trader no rent."
+            ],
+            "name": "reply",
+            "type": {
+              "array": [
+                "u8",
+                180
+              ]
+            }
+          },
+          {
+            "name": "reply_len",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "The rules an investor sets. Passed as one struct because nine loose arguments at a call",
+        "site is how a `max_drawdown_bps` ends up in the `max_daily_loss_bps` slot."
+      ],
       "name": "MandateRules",
       "type": {
         "fields": [
@@ -2299,6 +4374,10 @@
       }
     },
     {
+      "docs": [
+        "Money moved and the mandate is finished. Every figure in the \u00a75.1 worked example is here,",
+        "so a third party can check the split from the event alone."
+      ],
       "name": "MandateSettled",
       "type": {
         "fields": [
@@ -2339,6 +4418,9 @@
             "type": "u64"
           },
           {
+            "docs": [
+              "Whether this ended in `Breached` rather than a voluntary wind-down."
+            ],
             "name": "was_breached",
             "type": "bool"
           },
@@ -2355,6 +4437,12 @@
       }
     },
     {
+      "docs": [
+        "Where a mandate is in its life. `Breached` is deliberately distinct from `WindingDown`: it",
+        "records *why* the mandate ended, permanently, and that is exactly what an investor choosing",
+        "a trader is reading. Collapsing the two would make a rule violation indistinguishable from",
+        "a voluntary exit."
+      ],
       "name": "MandateState",
       "type": {
         "kind": "enum",
@@ -2375,6 +4463,14 @@
       }
     },
     {
+      "docs": [
+        "One tradeable instrument. PDA at `[\"market\", market_index: u16]`.",
+        "",
+        "**This struct is append-only.** Solana deserialises by byte offset, so reordering,",
+        "shrinking or retyping any field below corrupts every `Market` already on chain. New",
+        "fields take bytes from `_reserved`. There is no automated guard for this \u2014 it is",
+        "enforced in review (\u00a7 5.6)."
+      ],
       "name": "Market",
       "type": {
         "fields": [
@@ -2383,6 +4479,9 @@
             "type": "u16"
           },
           {
+            "docs": [
+              "ASCII, zero-padded. `b\"EURUSD\\0...\"`."
+            ],
             "name": "symbol",
             "type": {
               "array": [
@@ -2416,6 +4515,9 @@
             }
           },
           {
+            "docs": [
+              "Primary Pyth feed id; the base leg when synthetic."
+            ],
             "name": "pyth_feed_id",
             "type": {
               "array": [
@@ -2425,6 +4527,9 @@
             }
           },
           {
+            "docs": [
+              "Quote leg when synthetic, otherwise zeroed."
+            ],
             "name": "secondary_feed_id",
             "type": {
               "array": [
@@ -2434,6 +4539,9 @@
             }
           },
           {
+            "docs": [
+              "Quote-currency conversion feed for non-USD-quoted markets, otherwise zeroed (C-3)."
+            ],
             "name": "quote_conversion_feed",
             "type": {
               "array": [
@@ -2443,6 +4551,10 @@
             }
           },
           {
+            "docs": [
+              "Which direction to apply `quote_conversion_feed`. Without this the feed id alone",
+              "does not say whether to multiply or divide."
+            ],
             "name": "quote_conversion_kind",
             "type": {
               "defined": {
@@ -2487,10 +4599,16 @@
             "type": "u16"
           },
           {
+            "docs": [
+              "Initial margin ratio in bps. 200 = 2%."
+            ],
             "name": "imr_bps",
             "type": "u16"
           },
           {
+            "docs": [
+              "Maintenance margin ratio in bps. 100 = 1%."
+            ],
             "name": "mmr_bps",
             "type": "u16"
           },
@@ -2499,6 +4617,10 @@
             "type": "u16"
           },
           {
+            "docs": [
+              "Per-side open-interest caps, in **USDC** at `QUOTE_PRECISION` (\u00a7 7.4). A cap has to",
+              "be a money figure to mean anything across markets."
+            ],
             "name": "max_oi_long",
             "type": "u64"
           },
@@ -2507,6 +4629,14 @@
             "type": "u64"
           },
           {
+            "docs": [
+              "Position size bounds, in **base-currency units** at `BASE_PRECISION` \u2014 the same scale",
+              "as `Position::size_base`, not USDC. One standard lot is `100_000 * BASE_PRECISION`",
+              "= 1e14.",
+              "",
+              "Base units rather than notional because the bound must not move when the price does:",
+              "a notional cap would silently tighten on a rally and loosen on a selloff."
+            ],
             "name": "max_position_size",
             "type": "u64"
           },
@@ -2567,6 +4697,14 @@
             "type": "i64"
           },
           {
+            "docs": [
+              "The **protocol's markup** on carry, per hour at `RATE_PRECISION`. Always a charge, on",
+              "both directions, and always non-negative.",
+              "",
+              "This is *only* the markup. The interest differential it sits on top of comes from",
+              "`rate_base_annual` and `rate_quote_annual`, and the two are kept apart so the UI can",
+              "show them as separate lines (\u00a7 6.7)."
+            ],
             "name": "carry_rate_per_hour",
             "type": "i64"
           },
@@ -2587,10 +4725,20 @@
             "type": "i128"
           },
           {
+            "docs": [
+              "Last spot price accepted by the validated read path, at `PRICE_PRECISION`."
+            ],
             "name": "last_price",
             "type": "i64"
           },
           {
+            "docs": [
+              "Pyth's own EMA at the last accepted read, at `PRICE_PRECISION`.",
+              "",
+              "Observability and frontend display. The deviation breaker compares spot against the",
+              "EMA carried in the *same* price message rather than against this stored copy \u2014 see",
+              "`crate::oracle` for why a self-maintained reference wedges the market shut."
+            ],
             "name": "ema_price",
             "type": "i64"
           },
@@ -2607,42 +4755,116 @@
             "type": "u8"
           },
           {
+            "docs": [
+              "Minimum slots a position must be held before it may be closed (\u00a7 6.6).",
+              "",
+              "Zero disables the check. Non-zero is strongly recommended on any market whose spread",
+              "could ever be tighter than the true market spread \u2014 see `Position::opened_at_slot`."
+            ],
             "name": "min_hold_slots",
             "type": "u64"
           },
           {
+            "docs": [
+              "Open positions across all users. Guards against delisting a market out from under",
+              "live positions."
+            ],
             "name": "open_position_count",
             "type": "u64"
           },
           {
+            "docs": [
+              "Funding paid in by the heavy side but not yet claimed by the light side, in USDC.",
+              "",
+              "Funding is a transfer *between traders* and never touches LP capital (\u00a7 6.7, I3), so",
+              "it stays in the collateral vault the whole time \u2014 this is the part of that vault not",
+              "yet attributed to any particular position. **Invariant I1 counts it.**"
+            ],
             "name": "funding_balance",
             "type": "u64"
           },
           {
+            "docs": [
+              "Sensitivity of the funding rate to book skew, at `RATE_PRECISION`.",
+              "",
+              "`funding_rate = clamp(skew_ratio \u00d7 k, \u00b1cap)`. Zero disables funding entirely, which",
+              "is the correct setting for a market with no meaningful two-sided book yet."
+            ],
             "name": "funding_rate_k",
             "type": "u64"
           },
           {
+            "docs": [
+              "Base-currency annual interest rate at `RATE_PRECISION` (4% = `40_000_000`).",
+              "",
+              "Stored alongside the quote rate and the markup rather than as one blended figure",
+              "because **publishing the split is the product** (\u00a7 6.7): a trader can read the true",
+              "interest differential and the protocol's markup as separate line items instead of",
+              "discovering a combined number after rollover. That is the one concrete improvement on",
+              "XM/Exness opacity that costs nothing to build."
+            ],
             "name": "rate_base_annual",
             "type": "i64"
           },
           {
+            "docs": [
+              "Quote-currency annual interest rate at `RATE_PRECISION`."
+            ],
             "name": "rate_quote_annual",
             "type": "i64"
           },
           {
+            "docs": [
+              "When the session cranker last advanced this market's regime."
+            ],
             "name": "last_session_crank_ts",
             "type": "i64"
           },
           {
+            "docs": [
+              "When `status` last changed.",
+              "",
+              "The `GapWindow` and `PreOpenWindow` timers need time-in-state, not time-since-crank.",
+              "Deriving it from the crank timestamp would make the window's length depend on how",
+              "often keepers happen to run, which is not a property a risk control should have."
+            ],
             "name": "status_changed_at",
             "type": "i64"
           },
           {
+            "docs": [
+              "Bad debt the insurance fund could not cover, awaiting auto-deleveraging (\u00a7 6.9).",
+              "",
+              "Non-zero means the pool is carrying a shortfall. `auto_deleverage` draws this down by",
+              "withholding PnL from the most profitable opposing positions; until it reaches zero the",
+              "market is in the state \u00a7 7.2 describes as insurance-exhausted."
+            ],
             "name": "pending_adl_debt",
             "type": "u64"
           },
           {
+            "docs": [
+              "Confidence ceiling for the **liquidation** path, which must be wider than the",
+              "trading one.",
+              "",
+              "# Why liquidation needs its own ceiling",
+              "",
+              "\u00a7 7.1 gates every price on `conf / price <= max_conf_bps`, and for *opening* a",
+              "position that is exactly right (correction C-4): trading against a band you cannot",
+              "price is how latency arbitrageurs get paid.",
+              "",
+              "Applying the same ceiling to liquidation inverts the logic. Confidence blows out",
+              "during precisely the events that make positions liquidatable \u2014 the CHF depeg replay",
+              "measured a band two orders of magnitude wider than normal \u2014 so a single ceiling means",
+              "**liquidation stops working exactly when it is needed**, and positions keep falling",
+              "with nobody able to close them. That is not caution; it is bad debt with extra steps.",
+              "",
+              "Opening into uncertainty is optional. Closing an insolvent position is not, and the",
+              "alternative to liquidating at an uncertain price is not liquidating at all.",
+              "",
+              "Validated to be at least `max_conf_bps`. A market may set them equal, which restores",
+              "the \u00a7 7.1 behaviour exactly."
+            ],
             "name": "liquidation_max_conf_bps",
             "type": "u16"
           },
@@ -2660,6 +4882,9 @@
       }
     },
     {
+      "docs": [
+        "Market lifecycle (`ARCHITECTURE.md` \u00a7 5.3)."
+      ],
       "name": "MarketStatus",
       "type": {
         "kind": "enum",
@@ -2692,6 +4917,9 @@
       }
     },
     {
+      "docs": [
+        "Protocol configuration. One per deployment, at `[\"config\"]`."
+      ],
       "name": "NoxConfig",
       "type": {
         "fields": [
@@ -2700,14 +4928,24 @@
             "type": "pubkey"
           },
           {
+            "docs": [
+              "May pause, may not move funds. Same split as SolFX's guardian."
+            ],
             "name": "guardian",
             "type": "pubkey"
           },
           {
+            "docs": [
+              "Where the 5% performance fee and forfeited stakes accumulate."
+            ],
             "name": "treasury",
             "type": "pubkey"
           },
           {
+            "docs": [
+              "The venue this program trades on. Checked on every CPI so a mandate cannot be pointed",
+              "at an impostor program that happens to share an instruction layout."
+            ],
             "name": "solfx_program",
             "type": "pubkey"
           },
@@ -2716,6 +4954,9 @@
             "type": "pubkey"
           },
           {
+            "docs": [
+              "Protocol share of **gross** profit. 500 = 5%."
+            ],
             "name": "protocol_fee_bps",
             "type": "u16"
           },
@@ -2741,6 +4982,183 @@
       }
     },
     {
+      "docs": [
+        "A trader accepted, and the offer became a funded mandate in the same transaction.",
+        "",
+        "`MandateFunded` is emitted alongside this, so a consumer watching only for funded mandates",
+        "does not have to know the marketplace exists."
+      ],
+      "name": "OfferAccepted",
+      "type": {
+        "fields": [
+          {
+            "name": "offer",
+            "type": "pubkey"
+          },
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "principal",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "A trader said no to an offer. The reason is on the offer, in `reply`."
+      ],
+      "name": "OfferDeclined",
+      "type": {
+        "fields": [
+          {
+            "name": "offer",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "An investor escrowed capital and published terms to one trader."
+      ],
+      "name": "OfferPosted",
+      "type": {
+        "fields": [
+          {
+            "name": "offer",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u8"
+          },
+          {
+            "name": "principal",
+            "type": "u64"
+          },
+          {
+            "name": "trader_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "An investor took their capital back before any trader accepted."
+      ],
+      "name": "OfferRevoked",
+      "type": {
+        "fields": [
+          {
+            "name": "offer",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "principal",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Where an offer is in its life."
+      ],
+      "name": "OfferState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Accepted"
+          },
+          {
+            "name": "Revoked"
+          },
+          {
+            "name": "Declined"
+          }
+        ]
+      }
+    },
+    {
+      "docs": [
+        "One isolated position. PDA at `[\"position\", user_account, market_index, nonce]`.",
+        "",
+        "# Isolated margin (ADR-004)",
+        "",
+        "`collateral` is moved *out* of `UserAccount.free_collateral` when the position opens and",
+        "lives here until it closes. Nothing else can draw on it, and liquidating this position",
+        "touches only this account \u2014 which is what keeps liquidation a single-account operation",
+        "cheap enough to stay profitable during the congestion that causes it.",
+        "",
+        "It is also why `withdraw_collateral` needs no margin check: free collateral is genuinely",
+        "free, because a position's margin is not in it.",
+        "",
+        "**Append-only**, like every other account struct (\u00a7 5.6)."
+      ],
       "name": "Position",
       "type": {
         "fields": [
@@ -2753,6 +5171,9 @@
             "type": "u16"
           },
           {
+            "docs": [
+              "Lets one trader hold several positions in the same market."
+            ],
             "name": "nonce",
             "type": "u8"
           },
@@ -2765,18 +5186,37 @@
             }
           },
           {
+            "docs": [
+              "Size in base-currency units at `BASE_PRECISION`, never in lots. Lots are a",
+              "presentation concept; storing base units lets the engine handle micro-lots and",
+              "arbitrary sizes through one code path (\u00a7 6.1)."
+            ],
             "name": "size_base",
             "type": "u64"
           },
           {
+            "docs": [
+              "Volume-weighted average entry, at `PRICE_PRECISION`, in the market's quote currency."
+            ],
             "name": "entry_price",
             "type": "i64"
           },
           {
+            "docs": [
+              "Isolated margin, in USDC at `QUOTE_PRECISION`."
+            ],
             "name": "collateral",
             "type": "u64"
           },
           {
+            "docs": [
+              "The USDC notional this position contributed to `Market.oi_*` when it opened.",
+              "",
+              "Stored rather than recomputed because open interest must be *removed* at exactly the",
+              "figure it was added at. Recomputing it at close would use the current price and, on a",
+              "non-USD-quoted market, the current conversion rate \u2014 so the counter would drift with",
+              "every price move and invariant I4 would fail on a market that had merely traded."
+            ],
             "name": "entry_notional",
             "type": "u64"
           },
@@ -2789,6 +5229,10 @@
             "type": "u128"
           },
           {
+            "docs": [
+              "Funding already settled into `collateral` by a modify. Signed: the light side of the",
+              "book receives."
+            ],
             "name": "realized_funding",
             "type": "i64"
           },
@@ -2797,6 +5241,14 @@
             "type": "i64"
           },
           {
+            "docs": [
+              "Slot at open, for the minimum-hold check (\u00a7 6.6).",
+              "",
+              "A trader who opens and closes inside one slot pays two fees but takes zero risk. If",
+              "the protocol's spread is ever narrower than the true market spread, that is a riskless",
+              "profit repeated by bots until the vault is empty. Requiring a few slots of exposure",
+              "closes it, and costs an honest trader nothing."
+            ],
             "name": "opened_at_slot",
             "type": "u64"
           },
@@ -2805,10 +5257,17 @@
             "type": "i64"
           },
           {
+            "docs": [
+              "Cumulative open fees paid, for the portfolio view."
+            ],
             "name": "open_fee_paid",
             "type": "u64"
           },
           {
+            "docs": [
+              "Copied from `UserAccount` at open so a rebate can be attributed without loading the",
+              "user account (\u00a7 8.5). Immutable, like the binding it copies."
+            ],
             "name": "referrer",
             "type": "pubkey"
           },
@@ -2830,6 +5289,9 @@
       }
     },
     {
+      "docs": [
+        "A position that closed outside NOXFUNDS \u2014 a stop-out \u2014 was released from the mandate's book."
+      ],
       "name": "PositionReconciled",
       "type": {
         "fields": [
@@ -2866,6 +5328,27 @@
       }
     },
     {
+      "docs": [
+        "One open position, as NOXFUNDS booked it.",
+        "",
+        "# Why the mandate tracks positions individually",
+        "",
+        "A counter and a running notional total were not enough, and three bugs proved it:",
+        "",
+        "- **A stop-out never came back.** A stop fires through `solfx-core`'s own",
+        "`execute_trigger_order`, which never enters NOXFUNDS, so the counter stayed high forever.",
+        "Settlement needs it at zero and the equity crank needs a triple per counted position that",
+        "no longer exists \u2014 a stopped-out mandate could never settle or be observed again.",
+        "- **The book drifted.** Opens booked notional at the oracle price; closes unbooked core's",
+        "`entry_notional`, which is at the fill price after spread. A short left a residue on every",
+        "round trip until the book refused trades it had room for.",
+        "- **The crank could be fooled.** It checked only the *count* of triples, so the same",
+        "profitable position supplied twice inflated equity and hid a breach.",
+        "",
+        "A slot records exactly what was booked and where, so each close releases the exact figure it",
+        "added, a stop-out can be reconciled against the chain, and the crank can demand each open",
+        "position once."
+      ],
       "name": "PositionSlot",
       "type": {
         "fields": [
@@ -2882,6 +5365,9 @@
             "type": "u8"
           },
           {
+            "docs": [
+              "Notional as NOXFUNDS booked it at open, in USDC. Released at this exact figure."
+            ],
             "name": "notional",
             "type": "u64"
           }
@@ -2890,6 +5376,9 @@
       }
     },
     {
+      "docs": [
+        "A third party closed a position on a stopped mandate."
+      ],
       "name": "PositionWoundDown",
       "type": {
         "fields": [
@@ -2929,6 +5418,9 @@
       "type": {
         "fields": [
           {
+            "docs": [
+              "`FeedId` but avoid the type alias because of compatibility issues with Anchor's `idl-build` feature."
+            ],
             "name": "feed_id",
             "type": {
               "array": [
@@ -2950,10 +5442,27 @@
             "type": "i32"
           },
           {
+            "docs": [
+              "The timestamp of this price update in seconds"
+            ],
             "name": "publish_time",
             "type": "i64"
           },
           {
+            "docs": [
+              "The timestamp of the previous price update. This field is intended to allow users to",
+              "identify the single unique price update for any moment in time:",
+              "for any time t, the unique update is the one such that prev_publish_time < t <= publish_time.",
+              "",
+              "Note that there may not be such an update while we are migrating to the new message-sending logic,",
+              "as some price updates on pythnet may not be sent to other chains (because the message-sending",
+              "logic may not have triggered). We can solve this problem by making the message-sending mandatory",
+              "(which we can do once publishers have migrated over).",
+              "",
+              "Additionally, this field may be equal to publish_time if the message is sent on a slot where",
+              "where the aggregation was unsuccesful. This problem will go away once all publishers have",
+              "migrated over to a recent version of pyth-agent."
+            ],
             "name": "prev_publish_time",
             "type": "i64"
           },
@@ -2970,6 +5479,9 @@
       }
     },
     {
+      "docs": [
+        "Where a market's price comes from (`ARCHITECTURE.md` \u00a7 3.5)."
+      ],
       "name": "PriceSource",
       "type": {
         "kind": "enum",
@@ -2990,6 +5502,14 @@
       }
     },
     {
+      "docs": [
+        "A price update account. This account is used by the Pyth Receiver program to store a verified price update from a Pyth price feed.",
+        "It contains:",
+        "- `write_authority`: The write authority for this account. This authority can close this account to reclaim rent or update the account to contain a different price update.",
+        "- `verification_level`: The [`VerificationLevel`] of this price update. This represents how many Wormhole guardian signatures have been verified for this price update.",
+        "- `price_message`: The actual price update.",
+        "- `posted_slot`: The slot at which this price update was posted."
+      ],
       "name": "PriceUpdateV2",
       "type": {
         "fields": [
@@ -3022,6 +5542,12 @@
       }
     },
     {
+      "docs": [
+        "How to turn a PnL denominated in the market's quote currency into USDC (correction C-3).",
+        "",
+        "The on-chain mirror of `solfx_math::QuoteConversion`. Getting this wrong mis-prices every",
+        "position by the FX rate \u2014 for USD/INR at ~88, by a factor of 88."
+      ],
       "name": "QuoteConversionKind",
       "type": {
         "kind": "enum",
@@ -3039,6 +5565,75 @@
       }
     },
     {
+      "docs": [
+        "A request was withdrawn by the trader or dismissed by the investor. `closed_by` says which."
+      ],
+      "name": "RequestClosed",
+      "type": {
+        "fields": [
+          {
+            "name": "request",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "closed_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "A trader asked an investor for capital."
+      ],
+      "name": "RequestPosted",
+      "type": {
+        "fields": [
+          {
+            "name": "request",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "investor",
+            "type": "pubkey"
+          },
+          {
+            "name": "wanted_principal",
+            "type": "u64"
+          },
+          {
+            "name": "wanted_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "The investor asked to end the mandate. New trades stop; open positions may still be closed."
+      ],
       "name": "SettlementRequested",
       "type": {
         "fields": [
@@ -3087,6 +5682,10 @@
       }
     },
     {
+      "docs": [
+        "A tier moved. Emitted in both directions \u2014 a demotion is the more interesting event, and",
+        "suppressing it would let the marketplace show a peak tier the trader no longer holds."
+      ],
       "name": "TierChanged",
       "type": {
         "fields": [
@@ -3131,6 +5730,15 @@
       }
     },
     {
+      "docs": [
+        "One closed trade, as it landed on the record.",
+        "",
+        "`realized_pnl` is the **delta in the trader's SolFX free collateral across the close, less",
+        "the margin the position released** \u2014 which is the venue's own arithmetic, net of fees, not a",
+        "figure this program recomputed. Emitted per trade so any third party can rebuild",
+        "`gross_profit`, `gross_loss`, win rate and profit factor from the event stream and check",
+        "them against the account."
+      ],
       "name": "TradeRecorded",
       "type": {
         "fields": [
@@ -3191,6 +5799,114 @@
       }
     },
     {
+      "docs": [
+        "A trader advertising for capital, at `[\"listing\", trader]`.",
+        "",
+        "Carries no money and takes no custody. It is an index entry: it exists so an investor",
+        "browsing the marketplace can find a trader, read their terms, and cross-reference the",
+        "`TraderProfile` at `[\"trader\", trader]` \u2014 which the trader does not control and cannot",
+        "curate."
+      ],
+      "name": "TraderListing",
+      "type": {
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "The band of principal this trader will accept. An investor offering outside it is not",
+              "refused on chain \u2014 the listing is advertising, not a rule \u2014 but the frontend can grey",
+              "the offer form out, and a mismatch is visible to both sides before anyone signs."
+            ],
+            "name": "min_principal",
+            "type": "u64"
+          },
+          {
+            "name": "max_principal",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "The markets the trader is asking to be allowed. Bitmap over `market_index`, same shape",
+              "as `Mandate::allowed_markets`."
+            ],
+            "name": "wanted_markets",
+            "type": "u128"
+          },
+          {
+            "docs": [
+              "The split the trader is asking for, in bps of net profit. Advisory: the binding number",
+              "is the one on the offer the investor actually signs."
+            ],
+            "name": "wanted_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "note",
+            "type": {
+              "array": [
+                "u8",
+                180
+              ]
+            }
+          },
+          {
+            "name": "note_len",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "Closed listings stay on chain rather than being deleted, so a trader cannot quietly",
+              "withdraw a listing an investor is midway through responding to and leave a dangling",
+              "reference. Reopening is a single flag."
+            ],
+            "name": "open",
+            "type": "bool"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "updated_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "A trader's record, at `[\"trader\", authority]`. One per trader, spanning every mandate.",
+        "",
+        "# Why NOXFUNDS has to store this at all",
+        "",
+        "SolFX stores **no** per-account PnL, trade count, win count or drawdown. Those figures exist",
+        "only in its event stream, and a program cannot read events. So every statistic an investor",
+        "would judge a trader on has to be accumulated here, at the moment each trade closes, by the",
+        "instruction that closes it.",
+        "",
+        "# Why gross profit and gross loss are stored separately",
+        "",
+        "Net PnL alone cannot distinguish a trader who made $10,000 and lost $9,000 from one who made",
+        "$1,000 and lost nothing. Profit factor \u2014 the ratio of the two \u2014 is the statistic that",
+        "separates them, and it is only derivable if both sides are kept."
+      ],
       "name": "TraderProfile",
       "type": {
         "fields": [
@@ -3219,14 +5935,24 @@
             "type": "u32"
           },
           {
+            "docs": [
+              "Sum of every winning trade's realised PnL, net of fees, in USDC."
+            ],
             "name": "gross_profit",
             "type": "u64"
           },
           {
+            "docs": [
+              "Sum of the absolute value of every losing trade's realised PnL, in USDC."
+            ],
             "name": "gross_loss",
             "type": "u64"
           },
           {
+            "docs": [
+              "Kept so one lucky trade cannot masquerade as a record. A $50,000 profit factor built",
+              "from a single trade reads very differently beside `largest_win`."
+            ],
             "name": "largest_win",
             "type": "u64"
           },
@@ -3235,10 +5961,22 @@
             "type": "u64"
           },
           {
+            "docs": [
+              "Sum of every closed trade's hold time, in slots. Divided by `trades` this is the average",
+              "hold \u2014 the anti-scalping statistic, and the one a copy-trader cannot fake without",
+              "actually holding."
+            ],
             "name": "total_hold_slots",
             "type": "u128"
           },
           {
+            "docs": [
+              "Worst drawdown ever observed across all of this trader's mandates, in bps.",
+              "",
+              "Updated by the permissionless equity crank as well as by closes, which is the point: a",
+              "trader cannot hide a drawdown by refusing to close the losing position, because the",
+              "crank marks it anyway."
+            ],
             "name": "max_drawdown_bps",
             "type": "u16"
           },
@@ -3247,10 +5985,16 @@
             "type": "u32"
           },
           {
+            "docs": [
+              "Mandates currently open. Bounded by the tier's `max_concurrent_mandates`."
+            ],
             "name": "active_mandates",
             "type": "u32"
           },
           {
+            "docs": [
+              "Mandates that reached `Settled` with final equity above principal."
+            ],
             "name": "mandates_settled_in_profit",
             "type": "u32"
           },
@@ -3276,6 +6020,9 @@
       }
     },
     {
+      "docs": [
+        "A trader's record opened. The marketplace's first row for them."
+      ],
       "name": "TraderProfileCreated",
       "type": {
         "fields": [
@@ -3296,6 +6043,14 @@
       }
     },
     {
+      "docs": [
+        "What a trader has earned the right to be trusted with.",
+        "",
+        "Assigned by [`TraderTier::for_stats`], recomputed on demand, and **able to fall**. A tier",
+        "that only ever rises is a tier that rewards getting lucky once; recomputation after every",
+        "settled mandate is what makes copying your way to funded and then trading badly cost",
+        "something."
+      ],
       "name": "TraderTier",
       "type": {
         "kind": "enum",
@@ -3316,26 +6071,59 @@
       }
     },
     {
+      "docs": [
+        "A trader's account. PDA at `[\"user\", authority]`.",
+        "",
+        "Collateral sits here, not in the program's general balance. The user keeps withdrawal",
+        "authority at all times, subject only to margin \u2014 that is the whole non-custodial claim,",
+        "and it is enforced by `withdraw_collateral` requiring the authority's signature and",
+        "nothing else."
+      ],
       "name": "UserAccount",
       "type": {
         "fields": [
           {
+            "docs": [
+              "The wallet that owns this account. Immutable."
+            ],
             "name": "authority",
             "type": "pubkey"
           },
           {
+            "docs": [
+              "USDC not committed to any position, at `QUOTE_PRECISION`.",
+              "",
+              "Margin is isolated (ADR-004): a position's collateral moves *out* of this balance",
+              "and into its own `Position` account. So this balance is genuinely free, and",
+              "withdrawing it can never breach an open position's margin."
+            ],
             "name": "free_collateral",
             "type": "u64"
           },
           {
+            "docs": [
+              "Open positions. Guards against closing this account while a position still",
+              "references it."
+            ],
             "name": "open_positions",
             "type": "u16"
           },
           {
+            "docs": [
+              "The IB who introduced this trader, or `Pubkey::default()`.",
+              "",
+              "**Written once, at creation, and never again.** Every IB in retail FX has the same",
+              "complaint \u2014 the broker reassigns their clients. Making this field immutable is the",
+              "structural fix, and it is the reason the referral programme is worth building",
+              "on-chain at all (\u00a7 8.5)."
+            ],
             "name": "referrer",
             "type": "pubkey"
           },
           {
+            "docs": [
+              "Rolling 30-day notional, for the volume fee tier (\u00a7 8.2). Maintained from Phase 3."
+            ],
             "name": "thirty_day_volume",
             "type": "u64"
           },
@@ -3344,6 +6132,9 @@
             "type": "i64"
           },
           {
+            "docs": [
+              "Lifetime totals, for the portfolio view."
+            ],
             "name": "total_deposits",
             "type": "u64"
           },
@@ -3356,10 +6147,26 @@
             "type": "i64"
           },
           {
+            "docs": [
+              "Cumulative referral-pool share this trader's fees have produced, in USDC.",
+              "",
+              "**This is the entire interface to the referral programme.** It is a monotonic",
+              "counter on an account the trading instructions already load, so recording a rebate",
+              "costs no extra account, no CPI and no compute worth measuring \u2014 and the referral",
+              "program derives everything it owes from the difference between this figure and what",
+              "it has already credited.",
+              "",
+              "It also means every accrual is **independently verifiable**: anyone can read this",
+              "number and recompute an IB's entitlement without trusting the referral program, the",
+              "indexer, or us. That is the property \u00a7 8.5 says the moat is made of."
+            ],
             "name": "referral_fees_generated",
             "type": "u64"
           },
           {
+            "docs": [
+              "Cumulative notional traded, in USDC. Feeds the IB volume tiers (\u00a7 8.5)."
+            ],
             "name": "lifetime_volume",
             "type": "u64"
           },
@@ -3381,6 +6188,19 @@
       }
     },
     {
+      "docs": [
+        "Pyth price updates are bridged to all blockchains via Wormhole.",
+        "Using the price updates on another chain requires verifying the signatures of the Wormhole guardians.",
+        "The usual process is to check the signatures for two thirds of the total number of guardians, but this can be cumbersome on Solana because of the transaction size limits,",
+        "so we also allow for partial verification.",
+        "",
+        "This enum represents how much a price update has been verified:",
+        "- If `Full`, we have verified the signatures for two thirds of the current guardians.",
+        "- If `Partial`, only `num_signatures` guardian signatures have been checked.",
+        "",
+        "# Warning",
+        "Using partially verified price updates is dangerous, as it lowers the threshold of guardians that need to collude to produce a malicious price update."
+      ],
       "name": "VerificationLevel",
       "type": {
         "kind": "enum",

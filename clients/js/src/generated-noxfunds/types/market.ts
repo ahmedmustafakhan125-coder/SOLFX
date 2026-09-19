@@ -52,15 +52,31 @@ import {
   type QuoteConversionKindArgs,
 } from ".";
 
+/**
+ * One tradeable instrument. PDA at `["market", market_index: u16]`.
+ *
+ * **This struct is append-only.** Solana deserialises by byte offset, so reordering,
+ * shrinking or retyping any field below corrupts every `Market` already on chain. New
+ * fields take bytes from `_reserved`. There is no automated guard for this — it is
+ * enforced in review (§ 5.6).
+ */
 export type Market = {
   marketIndex: number;
+  /** ASCII, zero-padded. `b"EURUSD\0..."`. */
   symbol: ReadonlyUint8Array;
   status: MarketStatus;
   feedKind: FeedKind;
   priceSource: PriceSource;
+  /** Primary Pyth feed id; the base leg when synthetic. */
   pythFeedId: ReadonlyUint8Array;
+  /** Quote leg when synthetic, otherwise zeroed. */
   secondaryFeedId: ReadonlyUint8Array;
+  /** Quote-currency conversion feed for non-USD-quoted markets, otherwise zeroed (C-3). */
   quoteConversionFeed: ReadonlyUint8Array;
+  /**
+   * Which direction to apply `quote_conversion_feed`. Without this the feed id alone
+   * does not say whether to multiply or divide.
+   */
   quoteConversionKind: QuoteConversionKind;
   sessionOpenDow: number;
   sessionOpenSeconds: number;
@@ -71,11 +87,25 @@ export type Market = {
   weekendSpreadBps: number;
   weekendMaxConfBps: number;
   maxLeverage: number;
+  /** Initial margin ratio in bps. 200 = 2%. */
   imrBps: number;
+  /** Maintenance margin ratio in bps. 100 = 1%. */
   mmrBps: number;
   liquidationFeeBps: number;
+  /**
+   * Per-side open-interest caps, in **USDC** at `QUOTE_PRECISION` (§ 7.4). A cap has to
+   * be a money figure to mean anything across markets.
+   */
   maxOiLong: bigint;
   maxOiShort: bigint;
+  /**
+   * Position size bounds, in **base-currency units** at `BASE_PRECISION` — the same scale
+   * as `Position::size_base`, not USDC. One standard lot is `100_000 * BASE_PRECISION`
+   * = 1e14.
+   *
+   * Base units rather than notional because the bound must not move when the price does:
+   * a notional cap would silently tighten on a rally and loosen on a selloff.
+   */
   maxPositionSize: bigint;
   minPositionSize: bigint;
   maxStalenessSeconds: number;
@@ -91,38 +121,132 @@ export type Market = {
   cumBorrowIndex: bigint;
   lastFundingUpdateTs: bigint;
   fundingRateCapPerHour: bigint;
+  /**
+   * The **protocol's markup** on carry, per hour at `RATE_PRECISION`. Always a charge, on
+   * both directions, and always non-negative.
+   *
+   * This is *only* the markup. The interest differential it sits on top of comes from
+   * `rate_base_annual` and `rate_quote_annual`, and the two are kept apart so the UI can
+   * show them as separate lines (§ 6.7).
+   */
   carryRatePerHour: bigint;
   oiLong: bigint;
   oiShort: bigint;
   baseOiLong: bigint;
   baseOiShort: bigint;
+  /** Last spot price accepted by the validated read path, at `PRICE_PRECISION`. */
   lastPrice: bigint;
+  /**
+   * Pyth's own EMA at the last accepted read, at `PRICE_PRECISION`.
+   *
+   * Observability and frontend display. The deviation breaker compares spot against the
+   * EMA carried in the *same* price message rather than against this stored copy — see
+   * `crate::oracle` for why a self-maintained reference wedges the market shut.
+   */
   emaPrice: bigint;
   lastPriceUpdateTs: bigint;
   totalFeesCollected: bigint;
   bump: number;
+  /**
+   * Minimum slots a position must be held before it may be closed (§ 6.6).
+   *
+   * Zero disables the check. Non-zero is strongly recommended on any market whose spread
+   * could ever be tighter than the true market spread — see `Position::opened_at_slot`.
+   */
   minHoldSlots: bigint;
+  /**
+   * Open positions across all users. Guards against delisting a market out from under
+   * live positions.
+   */
   openPositionCount: bigint;
+  /**
+   * Funding paid in by the heavy side but not yet claimed by the light side, in USDC.
+   *
+   * Funding is a transfer *between traders* and never touches LP capital (§ 6.7, I3), so
+   * it stays in the collateral vault the whole time — this is the part of that vault not
+   * yet attributed to any particular position. **Invariant I1 counts it.**
+   */
   fundingBalance: bigint;
+  /**
+   * Sensitivity of the funding rate to book skew, at `RATE_PRECISION`.
+   *
+   * `funding_rate = clamp(skew_ratio × k, ±cap)`. Zero disables funding entirely, which
+   * is the correct setting for a market with no meaningful two-sided book yet.
+   */
   fundingRateK: bigint;
+  /**
+   * Base-currency annual interest rate at `RATE_PRECISION` (4% = `40_000_000`).
+   *
+   * Stored alongside the quote rate and the markup rather than as one blended figure
+   * because **publishing the split is the product** (§ 6.7): a trader can read the true
+   * interest differential and the protocol's markup as separate line items instead of
+   * discovering a combined number after rollover. That is the one concrete improvement on
+   * XM/Exness opacity that costs nothing to build.
+   */
   rateBaseAnnual: bigint;
+  /** Quote-currency annual interest rate at `RATE_PRECISION`. */
   rateQuoteAnnual: bigint;
+  /** When the session cranker last advanced this market's regime. */
   lastSessionCrankTs: bigint;
+  /**
+   * When `status` last changed.
+   *
+   * The `GapWindow` and `PreOpenWindow` timers need time-in-state, not time-since-crank.
+   * Deriving it from the crank timestamp would make the window's length depend on how
+   * often keepers happen to run, which is not a property a risk control should have.
+   */
   statusChangedAt: bigint;
+  /**
+   * Bad debt the insurance fund could not cover, awaiting auto-deleveraging (§ 6.9).
+   *
+   * Non-zero means the pool is carrying a shortfall. `auto_deleverage` draws this down by
+   * withholding PnL from the most profitable opposing positions; until it reaches zero the
+   * market is in the state § 7.2 describes as insurance-exhausted.
+   */
   pendingAdlDebt: bigint;
+  /**
+   * Confidence ceiling for the **liquidation** path, which must be wider than the
+   * trading one.
+   *
+   * # Why liquidation needs its own ceiling
+   *
+   * § 7.1 gates every price on `conf / price <= max_conf_bps`, and for *opening* a
+   * position that is exactly right (correction C-4): trading against a band you cannot
+   * price is how latency arbitrageurs get paid.
+   *
+   * Applying the same ceiling to liquidation inverts the logic. Confidence blows out
+   * during precisely the events that make positions liquidatable — the CHF depeg replay
+   * measured a band two orders of magnitude wider than normal — so a single ceiling means
+   * **liquidation stops working exactly when it is needed**, and positions keep falling
+   * with nobody able to close them. That is not caution; it is bad debt with extra steps.
+   *
+   * Opening into uncertainty is optional. Closing an insolvent position is not, and the
+   * alternative to liquidating at an uncertain price is not liquidating at all.
+   *
+   * Validated to be at least `max_conf_bps`. A market may set them equal, which restores
+   * the § 7.1 behaviour exactly.
+   */
   liquidationMaxConfBps: number;
   reserved: ReadonlyUint8Array;
 };
 
 export type MarketArgs = {
   marketIndex: number;
+  /** ASCII, zero-padded. `b"EURUSD\0..."`. */
   symbol: ReadonlyUint8Array;
   status: MarketStatusArgs;
   feedKind: FeedKindArgs;
   priceSource: PriceSourceArgs;
+  /** Primary Pyth feed id; the base leg when synthetic. */
   pythFeedId: ReadonlyUint8Array;
+  /** Quote leg when synthetic, otherwise zeroed. */
   secondaryFeedId: ReadonlyUint8Array;
+  /** Quote-currency conversion feed for non-USD-quoted markets, otherwise zeroed (C-3). */
   quoteConversionFeed: ReadonlyUint8Array;
+  /**
+   * Which direction to apply `quote_conversion_feed`. Without this the feed id alone
+   * does not say whether to multiply or divide.
+   */
   quoteConversionKind: QuoteConversionKindArgs;
   sessionOpenDow: number;
   sessionOpenSeconds: number;
@@ -133,11 +257,25 @@ export type MarketArgs = {
   weekendSpreadBps: number;
   weekendMaxConfBps: number;
   maxLeverage: number;
+  /** Initial margin ratio in bps. 200 = 2%. */
   imrBps: number;
+  /** Maintenance margin ratio in bps. 100 = 1%. */
   mmrBps: number;
   liquidationFeeBps: number;
+  /**
+   * Per-side open-interest caps, in **USDC** at `QUOTE_PRECISION` (§ 7.4). A cap has to
+   * be a money figure to mean anything across markets.
+   */
   maxOiLong: number | bigint;
   maxOiShort: number | bigint;
+  /**
+   * Position size bounds, in **base-currency units** at `BASE_PRECISION` — the same scale
+   * as `Position::size_base`, not USDC. One standard lot is `100_000 * BASE_PRECISION`
+   * = 1e14.
+   *
+   * Base units rather than notional because the bound must not move when the price does:
+   * a notional cap would silently tighten on a rally and loosen on a selloff.
+   */
   maxPositionSize: number | bigint;
   minPositionSize: number | bigint;
   maxStalenessSeconds: number;
@@ -153,25 +291,111 @@ export type MarketArgs = {
   cumBorrowIndex: number | bigint;
   lastFundingUpdateTs: number | bigint;
   fundingRateCapPerHour: number | bigint;
+  /**
+   * The **protocol's markup** on carry, per hour at `RATE_PRECISION`. Always a charge, on
+   * both directions, and always non-negative.
+   *
+   * This is *only* the markup. The interest differential it sits on top of comes from
+   * `rate_base_annual` and `rate_quote_annual`, and the two are kept apart so the UI can
+   * show them as separate lines (§ 6.7).
+   */
   carryRatePerHour: number | bigint;
   oiLong: number | bigint;
   oiShort: number | bigint;
   baseOiLong: number | bigint;
   baseOiShort: number | bigint;
+  /** Last spot price accepted by the validated read path, at `PRICE_PRECISION`. */
   lastPrice: number | bigint;
+  /**
+   * Pyth's own EMA at the last accepted read, at `PRICE_PRECISION`.
+   *
+   * Observability and frontend display. The deviation breaker compares spot against the
+   * EMA carried in the *same* price message rather than against this stored copy — see
+   * `crate::oracle` for why a self-maintained reference wedges the market shut.
+   */
   emaPrice: number | bigint;
   lastPriceUpdateTs: number | bigint;
   totalFeesCollected: number | bigint;
   bump: number;
+  /**
+   * Minimum slots a position must be held before it may be closed (§ 6.6).
+   *
+   * Zero disables the check. Non-zero is strongly recommended on any market whose spread
+   * could ever be tighter than the true market spread — see `Position::opened_at_slot`.
+   */
   minHoldSlots: number | bigint;
+  /**
+   * Open positions across all users. Guards against delisting a market out from under
+   * live positions.
+   */
   openPositionCount: number | bigint;
+  /**
+   * Funding paid in by the heavy side but not yet claimed by the light side, in USDC.
+   *
+   * Funding is a transfer *between traders* and never touches LP capital (§ 6.7, I3), so
+   * it stays in the collateral vault the whole time — this is the part of that vault not
+   * yet attributed to any particular position. **Invariant I1 counts it.**
+   */
   fundingBalance: number | bigint;
+  /**
+   * Sensitivity of the funding rate to book skew, at `RATE_PRECISION`.
+   *
+   * `funding_rate = clamp(skew_ratio × k, ±cap)`. Zero disables funding entirely, which
+   * is the correct setting for a market with no meaningful two-sided book yet.
+   */
   fundingRateK: number | bigint;
+  /**
+   * Base-currency annual interest rate at `RATE_PRECISION` (4% = `40_000_000`).
+   *
+   * Stored alongside the quote rate and the markup rather than as one blended figure
+   * because **publishing the split is the product** (§ 6.7): a trader can read the true
+   * interest differential and the protocol's markup as separate line items instead of
+   * discovering a combined number after rollover. That is the one concrete improvement on
+   * XM/Exness opacity that costs nothing to build.
+   */
   rateBaseAnnual: number | bigint;
+  /** Quote-currency annual interest rate at `RATE_PRECISION`. */
   rateQuoteAnnual: number | bigint;
+  /** When the session cranker last advanced this market's regime. */
   lastSessionCrankTs: number | bigint;
+  /**
+   * When `status` last changed.
+   *
+   * The `GapWindow` and `PreOpenWindow` timers need time-in-state, not time-since-crank.
+   * Deriving it from the crank timestamp would make the window's length depend on how
+   * often keepers happen to run, which is not a property a risk control should have.
+   */
   statusChangedAt: number | bigint;
+  /**
+   * Bad debt the insurance fund could not cover, awaiting auto-deleveraging (§ 6.9).
+   *
+   * Non-zero means the pool is carrying a shortfall. `auto_deleverage` draws this down by
+   * withholding PnL from the most profitable opposing positions; until it reaches zero the
+   * market is in the state § 7.2 describes as insurance-exhausted.
+   */
   pendingAdlDebt: number | bigint;
+  /**
+   * Confidence ceiling for the **liquidation** path, which must be wider than the
+   * trading one.
+   *
+   * # Why liquidation needs its own ceiling
+   *
+   * § 7.1 gates every price on `conf / price <= max_conf_bps`, and for *opening* a
+   * position that is exactly right (correction C-4): trading against a band you cannot
+   * price is how latency arbitrageurs get paid.
+   *
+   * Applying the same ceiling to liquidation inverts the logic. Confidence blows out
+   * during precisely the events that make positions liquidatable — the CHF depeg replay
+   * measured a band two orders of magnitude wider than normal — so a single ceiling means
+   * **liquidation stops working exactly when it is needed**, and positions keep falling
+   * with nobody able to close them. That is not caution; it is bad debt with extra steps.
+   *
+   * Opening into uncertainty is optional. Closing an insolvent position is not, and the
+   * alternative to liquidating at an uncertain price is not liquidating at all.
+   *
+   * Validated to be at least `max_conf_bps`. A market may set them equal, which restores
+   * the § 7.1 behaviour exactly.
+   */
   liquidationMaxConfBps: number;
   reserved: ReadonlyUint8Array;
 };

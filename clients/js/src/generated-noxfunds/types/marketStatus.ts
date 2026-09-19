@@ -15,6 +15,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Market lifecycle (`ARCHITECTURE.md` § 5.3). */
 export enum MarketStatus {
   Initialized,
   Active,

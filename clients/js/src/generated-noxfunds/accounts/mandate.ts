@@ -69,29 +69,79 @@ export type Mandate = {
   discriminator: ReadonlyUint8Array;
   investor: Address;
   trader: Address;
+  /** Lets one investor fund the same trader more than once. */
   seq: number;
+  /** The SolFX `UserAccount` this mandate's signer authorises. */
   solfxUserAccount: Address;
+  /**
+   * Bump of the dataless signer PDA. Stored so no instruction re-derives it — that costs
+   * ~1,500 CU for nothing, and this program signs two CPIs per trade.
+   */
   signerBump: number;
+  /** What the investor put in, in USDC at `QUOTE_PRECISION`. */
   principal: bigint;
+  /**
+   * High-water mark of equity. Only ever rises, so a trader cannot reset their drawdown by
+   * closing out or withdrawing.
+   */
   peakEquity: bigint;
+  /** Ceiling on a single trade's notional, in USDC. */
   maxTradeNotional: bigint;
+  /** Ceiling on the sum of all open notional, in USDC. */
   maxTotalNotional: bigint;
+  /** Trailing from `peak_equity`. 300 = 3%. */
   maxDrawdownBps: number;
   maxDailyLossBps: number;
+  /**
+   * Risk at the stop, as bps of equity. This is the rule no centralized firm can enforce
+   * *before* the fill, and it is only checkable because the stop is mandatory and placed in
+   * the same transaction.
+   */
   maxRiskPerTradeBps: number;
+  /** A stop 99% away is not a stop. */
   maxStopDistanceBps: number;
   maxConcurrentPositions: number;
+  /**
+   * Bitmap over `market_index`. `u128`, so 128 markets — SolFX lists 29 today and the
+   * upper tiers plausibly reach 50–60, which left `u64` uncomfortably close.
+   */
   allowedMarkets: bigint;
+  /** The no-scalping rule. Applies to **voluntary** closes only; a stop-out is exempt. */
   minHoldSlots: bigint;
+  /** Trader's share of net profit. 7000 = 70%. */
   traderSplitBps: number;
   state: MandateState;
+  /**
+   * How many SolFX positions this mandate currently holds open. Maintained here because
+   * SolFX stores no per-account position count, and the concurrency rule needs one.
+   */
   openPositions: number;
+  /**
+   * Sum of the notional of every open position, in USDC, as booked at entry.
+   *
+   * Booked at entry rather than marked, for the same reason SolFX stores `entry_notional`
+   * on a position: a figure that moves with the price would make the total drift on a
+   * mandate that merely held, and the rule is about how much exposure the trader *took*.
+   */
   openNotional: bigint;
+  /** Equity at the last observation, in USDC. Zero until the first crank. */
   lastEquity: bigint;
+  /**
+   * When that observation happened. The crank cadence is the honesty of the drawdown rule,
+   * so it is recorded rather than implied.
+   */
   lastObservedAt: bigint;
+  /**
+   * The positions currently open, one slot each. `open_positions` and `open_notional` are
+   * kept equal to what these slots sum to; they are stored for cheap reads by the rules.
+   */
   slots: Array<PositionSlot>;
   openedAt: bigint;
   bump: number;
+  /**
+   * Bump of the mandate's USDC vault at `["vault", mandate]`, stored so every instruction that
+   * touches the vault re-checks its address without re-deriving it.
+   */
   vaultBump: number;
   reserved: ReadonlyUint8Array;
 };
@@ -99,29 +149,79 @@ export type Mandate = {
 export type MandateArgs = {
   investor: Address;
   trader: Address;
+  /** Lets one investor fund the same trader more than once. */
   seq: number;
+  /** The SolFX `UserAccount` this mandate's signer authorises. */
   solfxUserAccount: Address;
+  /**
+   * Bump of the dataless signer PDA. Stored so no instruction re-derives it — that costs
+   * ~1,500 CU for nothing, and this program signs two CPIs per trade.
+   */
   signerBump: number;
+  /** What the investor put in, in USDC at `QUOTE_PRECISION`. */
   principal: number | bigint;
+  /**
+   * High-water mark of equity. Only ever rises, so a trader cannot reset their drawdown by
+   * closing out or withdrawing.
+   */
   peakEquity: number | bigint;
+  /** Ceiling on a single trade's notional, in USDC. */
   maxTradeNotional: number | bigint;
+  /** Ceiling on the sum of all open notional, in USDC. */
   maxTotalNotional: number | bigint;
+  /** Trailing from `peak_equity`. 300 = 3%. */
   maxDrawdownBps: number;
   maxDailyLossBps: number;
+  /**
+   * Risk at the stop, as bps of equity. This is the rule no centralized firm can enforce
+   * *before* the fill, and it is only checkable because the stop is mandatory and placed in
+   * the same transaction.
+   */
   maxRiskPerTradeBps: number;
+  /** A stop 99% away is not a stop. */
   maxStopDistanceBps: number;
   maxConcurrentPositions: number;
+  /**
+   * Bitmap over `market_index`. `u128`, so 128 markets — SolFX lists 29 today and the
+   * upper tiers plausibly reach 50–60, which left `u64` uncomfortably close.
+   */
   allowedMarkets: number | bigint;
+  /** The no-scalping rule. Applies to **voluntary** closes only; a stop-out is exempt. */
   minHoldSlots: number | bigint;
+  /** Trader's share of net profit. 7000 = 70%. */
   traderSplitBps: number;
   state: MandateStateArgs;
+  /**
+   * How many SolFX positions this mandate currently holds open. Maintained here because
+   * SolFX stores no per-account position count, and the concurrency rule needs one.
+   */
   openPositions: number;
+  /**
+   * Sum of the notional of every open position, in USDC, as booked at entry.
+   *
+   * Booked at entry rather than marked, for the same reason SolFX stores `entry_notional`
+   * on a position: a figure that moves with the price would make the total drift on a
+   * mandate that merely held, and the rule is about how much exposure the trader *took*.
+   */
   openNotional: number | bigint;
+  /** Equity at the last observation, in USDC. Zero until the first crank. */
   lastEquity: number | bigint;
+  /**
+   * When that observation happened. The crank cadence is the honesty of the drawdown rule,
+   * so it is recorded rather than implied.
+   */
   lastObservedAt: number | bigint;
+  /**
+   * The positions currently open, one slot each. `open_positions` and `open_notional` are
+   * kept equal to what these slots sum to; they are stored for cheap reads by the rules.
+   */
   slots: Array<PositionSlotArgs>;
   openedAt: number | bigint;
   bump: number;
+  /**
+   * Bump of the mandate's USDC vault at `["vault", mandate]`, stored so every instruction that
+   * touches the vault re-checks its address without re-deriving it.
+   */
   vaultBump: number;
   reserved: ReadonlyUint8Array;
 };

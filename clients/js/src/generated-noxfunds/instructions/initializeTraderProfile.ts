@@ -115,7 +115,12 @@ export type InitializeTraderProfileAsyncInput<
   TAccountProfile extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
+  /**
+   * Pays the rent. Need not be the trader — an operator or an investor may open a profile
+   * for someone, because the profile confers nothing until trades land on it.
+   */
   payer: TransactionSigner<TAccountPayer>;
+  /** the binding; nothing is read from the account and it signs nothing. */
   authority: Address<TAccountAuthority>;
   profile?: Address<TAccountProfile>;
   systemProgram?: Address<TAccountSystemProgram>;
@@ -195,7 +200,12 @@ export type InitializeTraderProfileInput<
   TAccountProfile extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
+  /**
+   * Pays the rent. Need not be the trader — an operator or an investor may open a profile
+   * for someone, because the profile confers nothing until trades land on it.
+   */
   payer: TransactionSigner<TAccountPayer>;
+  /** the binding; nothing is read from the account and it signs nothing. */
   authority: Address<TAccountAuthority>;
   profile: Address<TAccountProfile>;
   systemProgram?: Address<TAccountSystemProgram>;
@@ -268,7 +278,12 @@ export type ParsedInitializeTraderProfileInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /**
+     * Pays the rent. Need not be the trader — an operator or an investor may open a profile
+     * for someone, because the profile confers nothing until trades land on it.
+     */
     payer: TAccountMetas[0];
+    /** the binding; nothing is read from the account and it signs nothing. */
     authority: TAccountMetas[1];
     profile: TAccountMetas[2];
     systemProgram: TAccountMetas[3];

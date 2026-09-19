@@ -172,18 +172,41 @@ export type ClaimSettlementAsyncInput<
   TAccountTokenProgram extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** **Anyone.** Pays the transaction fee and nothing else. */
   settler: TransactionSigner<TAccountSettler>;
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
+  /** Deserialized: settlement withdraws exactly the free collateral recorded here. */
   userAccount: Address<TAccountUserAccount>;
+  /**
+   * `mut` because `solfx-core`'s `MoveCollateral` marks it so — a CPI cannot ask for a
+   * privilege the outer instruction did not grant.
+   */
   usdcMint: Address<TAccountUsdcMint>;
   collateralVault: Address<TAccountCollateralVault>;
+  /**
+   * The mandate's own USDC account. Withdrawals land here first, then leave in three parts.
+   *
+   * Bound to `["vault", mandate]`. It used to be *any* token account the signer owned, and
+   * the settler — who is anyone — chose which: they could pass a fresh empty account, so the
+   * split was computed over a balance that excluded any principal still sitting in the real
+   * vault.
+   */
   mandateVault?: Address<TAccountMandateVault>;
+  /**
+   * Constrained to the investor recorded at funding, not to whoever calls — a permissionless
+   * instruction must not let the caller choose where the principal goes.
+   */
   investorToken: Address<TAccountInvestorToken>;
   traderToken: Address<TAccountTraderToken>;
   treasuryToken: Address<TAccountTreasuryToken>;
+  /**
+   * The trader's record. Settlement is where a mandate's outcome — not just its individual
+   * trades — lands on it: the active count comes down, and a mandate that finished above
+   * principal counts toward Platinum.
+   */
   traderProfile: Address<TAccountTraderProfile>;
   tokenProgram?: Address<TAccountTokenProgram>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
@@ -355,18 +378,41 @@ export type ClaimSettlementInput<
   TAccountTokenProgram extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** **Anyone.** Pays the transaction fee and nothing else. */
   settler: TransactionSigner<TAccountSettler>;
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
+  /** Deserialized: settlement withdraws exactly the free collateral recorded here. */
   userAccount: Address<TAccountUserAccount>;
+  /**
+   * `mut` because `solfx-core`'s `MoveCollateral` marks it so — a CPI cannot ask for a
+   * privilege the outer instruction did not grant.
+   */
   usdcMint: Address<TAccountUsdcMint>;
   collateralVault: Address<TAccountCollateralVault>;
+  /**
+   * The mandate's own USDC account. Withdrawals land here first, then leave in three parts.
+   *
+   * Bound to `["vault", mandate]`. It used to be *any* token account the signer owned, and
+   * the settler — who is anyone — chose which: they could pass a fresh empty account, so the
+   * split was computed over a balance that excluded any principal still sitting in the real
+   * vault.
+   */
   mandateVault: Address<TAccountMandateVault>;
+  /**
+   * Constrained to the investor recorded at funding, not to whoever calls — a permissionless
+   * instruction must not let the caller choose where the principal goes.
+   */
   investorToken: Address<TAccountInvestorToken>;
   traderToken: Address<TAccountTraderToken>;
   treasuryToken: Address<TAccountTreasuryToken>;
+  /**
+   * The trader's record. Settlement is where a mandate's outcome — not just its individual
+   * trades — lands on it: the active count comes down, and a mandate that finished above
+   * principal counts toward Platinum.
+   */
   traderProfile: Address<TAccountTraderProfile>;
   tokenProgram?: Address<TAccountTokenProgram>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
@@ -512,18 +558,41 @@ export type ParsedClaimSettlementInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /** **Anyone.** Pays the transaction fee and nothing else. */
     settler: TAccountMetas[0];
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];
+    /** Deserialized: settlement withdraws exactly the free collateral recorded here. */
     userAccount: TAccountMetas[5];
+    /**
+     * `mut` because `solfx-core`'s `MoveCollateral` marks it so — a CPI cannot ask for a
+     * privilege the outer instruction did not grant.
+     */
     usdcMint: TAccountMetas[6];
     collateralVault: TAccountMetas[7];
+    /**
+     * The mandate's own USDC account. Withdrawals land here first, then leave in three parts.
+     *
+     * Bound to `["vault", mandate]`. It used to be *any* token account the signer owned, and
+     * the settler — who is anyone — chose which: they could pass a fresh empty account, so the
+     * split was computed over a balance that excluded any principal still sitting in the real
+     * vault.
+     */
     mandateVault: TAccountMetas[8];
+    /**
+     * Constrained to the investor recorded at funding, not to whoever calls — a permissionless
+     * instruction must not let the caller choose where the principal goes.
+     */
     investorToken: TAccountMetas[9];
     traderToken: TAccountMetas[10];
     treasuryToken: TAccountMetas[11];
+    /**
+     * The trader's record. Settlement is where a mandate's outcome — not just its individual
+     * trades — lands on it: the active count comes down, and a mandate that finished above
+     * principal counts toward Platinum.
+     */
     traderProfile: TAccountMetas[12];
     tokenProgram: TAccountMetas[13];
     solfxCoreProgram: TAccountMetas[14];

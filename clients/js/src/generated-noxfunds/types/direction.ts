@@ -15,6 +15,13 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * Which way the trader is betting.
+ *
+ * The on-chain mirror of `solfx_math::Direction`. The maths crate deliberately carries no
+ * Anchor derives — that is what keeps it testable without the BPF toolchain — so the two
+ * types meet here and nowhere else.
+ */
 export enum Direction {
   Long,
   Short,

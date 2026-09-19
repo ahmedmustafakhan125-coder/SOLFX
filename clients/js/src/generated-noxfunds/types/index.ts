@@ -8,9 +8,13 @@
 
 export * from "./direction";
 export * from "./feedKind";
+export * from "./investorListingTerms";
+export * from "./listingTerms";
+export * from "./mandateRules";
 export * from "./mandateState";
 export * from "./market";
 export * from "./marketStatus";
+export * from "./offerState";
 export * from "./position";
 export * from "./positionSlot";
 export * from "./priceFeedMessage";

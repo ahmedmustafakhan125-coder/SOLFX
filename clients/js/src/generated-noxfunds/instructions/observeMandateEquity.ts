@@ -124,11 +124,24 @@ export type ObserveMandateEquityAsyncInput<
   TAccountUserAccount extends string = string,
   TAccountTraderProfile extends string = string,
 > = {
+  /**
+   * **Anyone.** Investor capital must never be hostage to an absent trader or an absent
+   * operator, so the instruction that can free it takes no privileged signer.
+   */
   observer: TransactionSigner<TAccountObserver>;
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
   mandateSigner?: Address<TAccountMandateSigner>;
   userAccount: Address<TAccountUserAccount>;
+  /**
+   * The trader's record, so the worst drawdown ever *observed* lands on it.
+   *
+   * Required rather than optional, and this is the load-bearing reason the crank exists at
+   * all: a trader holding a losing position and refusing to close it would otherwise never
+   * record the drawdown, because nothing but a close writes to the profile. Marking it here
+   * means the gaming vector that matters most costs the trader their tier whether they close
+   * or not.
+   */
   traderProfile: Address<TAccountTraderProfile>;
 };
 
@@ -219,11 +232,24 @@ export type ObserveMandateEquityInput<
   TAccountUserAccount extends string = string,
   TAccountTraderProfile extends string = string,
 > = {
+  /**
+   * **Anyone.** Investor capital must never be hostage to an absent trader or an absent
+   * operator, so the instruction that can free it takes no privileged signer.
+   */
   observer: TransactionSigner<TAccountObserver>;
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
   mandateSigner: Address<TAccountMandateSigner>;
   userAccount: Address<TAccountUserAccount>;
+  /**
+   * The trader's record, so the worst drawdown ever *observed* lands on it.
+   *
+   * Required rather than optional, and this is the load-bearing reason the crank exists at
+   * all: a trader holding a losing position and refusing to close it would otherwise never
+   * record the drawdown, because nothing but a close writes to the profile. Marking it here
+   * means the gaming vector that matters most costs the trader their tier whether they close
+   * or not.
+   */
   traderProfile: Address<TAccountTraderProfile>;
 };
 
@@ -300,11 +326,24 @@ export type ParsedObserveMandateEquityInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /**
+     * **Anyone.** Investor capital must never be hostage to an absent trader or an absent
+     * operator, so the instruction that can free it takes no privileged signer.
+     */
     observer: TAccountMetas[0];
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];
     mandateSigner: TAccountMetas[3];
     userAccount: TAccountMetas[4];
+    /**
+     * The trader's record, so the worst drawdown ever *observed* lands on it.
+     *
+     * Required rather than optional, and this is the load-bearing reason the crank exists at
+     * all: a trader holding a losing position and refusing to close it would otherwise never
+     * record the drawdown, because nothing but a close writes to the profile. Marking it here
+     * means the gaming vector that matters most costs the trader their tier whether they close
+     * or not.
+     */
     traderProfile: TAccountMetas[5];
   };
   data: ObserveMandateEquityInstructionData;

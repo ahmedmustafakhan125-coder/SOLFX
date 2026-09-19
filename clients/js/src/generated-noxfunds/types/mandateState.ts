@@ -15,6 +15,12 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * Where a mandate is in its life. `Breached` is deliberately distinct from `WindingDown`: it
+ * records *why* the mandate ended, permanently, and that is exactly what an investor choosing
+ * a trader is reading. Collapsing the two would make a rule violation indistinguishable from
+ * a voluntary exit.
+ */
 export enum MandateState {
   Active,
   Breached,

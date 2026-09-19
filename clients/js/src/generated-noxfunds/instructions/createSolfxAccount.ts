@@ -139,6 +139,10 @@ export type CreateSolfxAccountAsyncInput<
   payer: TransactionSigner<TAccountPayer>;
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
+  /**
+   * Pays the `UserAccount`'s rent and becomes its authority. Dataless, so the System
+   * Program will accept it as the `from` of that rent transfer.
+   */
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
   userAccount: Address<TAccountUserAccount>;
@@ -261,6 +265,10 @@ export type CreateSolfxAccountInput<
   payer: TransactionSigner<TAccountPayer>;
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
+  /**
+   * Pays the `UserAccount`'s rent and becomes its authority. Dataless, so the System
+   * Program will accept it as the `from` of that rent transfer.
+   */
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
   userAccount: Address<TAccountUserAccount>;
@@ -369,6 +377,10 @@ export type ParsedCreateSolfxAccountInstruction<
     payer: TAccountMetas[0];
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];
+    /**
+     * Pays the `UserAccount`'s rent and becomes its authority. Dataless, so the System
+     * Program will accept it as the `from` of that rent transfer.
+     */
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];
     userAccount: TAccountMetas[5];

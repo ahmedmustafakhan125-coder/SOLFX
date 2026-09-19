@@ -252,12 +252,15 @@ export type FundedOpenPositionAsyncInput<
   TAccountSystemProgram extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** The trader. Pays the transaction fee and signs; pays no rent and never holds custody. */
   trader: TransactionSigner<TAccountTrader>;
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
+  /** The SolFX authority: dataless, system-owned, signs both CPIs and pays both rents. */
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
   userAccount: Address<TAccountUserAccount>;
+  /** Deserialized: the rules are priced against it before the CPI. */
   market: Address<TAccountMarket>;
   position: Address<TAccountPosition>;
   triggerOrder: Address<TAccountTriggerOrder>;
@@ -501,12 +504,15 @@ export type FundedOpenPositionInput<
   TAccountSystemProgram extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
+  /** The trader. Pays the transaction fee and signs; pays no rent and never holds custody. */
   trader: TransactionSigner<TAccountTrader>;
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
+  /** The SolFX authority: dataless, system-owned, signs both CPIs and pays both rents. */
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
   userAccount: Address<TAccountUserAccount>;
+  /** Deserialized: the rules are priced against it before the CPI. */
   market: Address<TAccountMarket>;
   position: Address<TAccountPosition>;
   triggerOrder: Address<TAccountTriggerOrder>;
@@ -723,12 +729,15 @@ export type ParsedFundedOpenPositionInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /** The trader. Pays the transaction fee and signs; pays no rent and never holds custody. */
     trader: TAccountMetas[0];
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];
+    /** The SolFX authority: dataless, system-owned, signs both CPIs and pays both rents. */
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];
     userAccount: TAccountMetas[5];
+    /** Deserialized: the rules are priced against it before the CPI. */
     market: TAccountMetas[6];
     position: TAccountMetas[7];
     triggerOrder: TAccountMetas[8];

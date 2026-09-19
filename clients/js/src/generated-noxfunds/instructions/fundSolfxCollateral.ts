@@ -170,8 +170,18 @@ export type FundSolfxCollateralAsyncInput<
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
   userAccount: Address<TAccountUserAccount>;
+  /**
+   *
+   * `mut` because `MoveCollateral` marks it so — a CPI cannot ask for a privilege the outer
+   * instruction did not grant, and the runtime calls that `PrivilegeEscalation` rather than
+   * a missing-attribute error.
+   */
   collateralMint: Address<TAccountCollateralMint>;
   collateralVault: Address<TAccountCollateralVault>;
+  /**
+   * come from the account `fund_mandate` filled. `solfx-core` additionally requires its owner
+   * to be the authority, `mandate_signer`.
+   */
   mandateVault?: Address<TAccountMandateVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
@@ -327,8 +337,18 @@ export type FundSolfxCollateralInput<
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
   userAccount: Address<TAccountUserAccount>;
+  /**
+   *
+   * `mut` because `MoveCollateral` marks it so — a CPI cannot ask for a privilege the outer
+   * instruction did not grant, and the runtime calls that `PrivilegeEscalation` rather than
+   * a missing-attribute error.
+   */
   collateralMint: Address<TAccountCollateralMint>;
   collateralVault: Address<TAccountCollateralVault>;
+  /**
+   * come from the account `fund_mandate` filled. `solfx-core` additionally requires its owner
+   * to be the authority, `mandate_signer`.
+   */
   mandateVault: Address<TAccountMandateVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
@@ -462,8 +482,18 @@ export type ParsedFundSolfxCollateralInstruction<
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];
     userAccount: TAccountMetas[5];
+    /**
+     *
+     * `mut` because `MoveCollateral` marks it so — a CPI cannot ask for a privilege the outer
+     * instruction did not grant, and the runtime calls that `PrivilegeEscalation` rather than
+     * a missing-attribute error.
+     */
     collateralMint: TAccountMetas[6];
     collateralVault: TAccountMetas[7];
+    /**
+     * come from the account `fund_mandate` filled. `solfx-core` additionally requires its owner
+     * to be the authority, `mandate_signer`.
+     */
     mandateVault: TAccountMetas[8];
     tokenProgram: TAccountMetas[9];
     solfxCoreProgram: TAccountMetas[10];

@@ -31,33 +31,113 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
+/**
+ * A trader's account. PDA at `["user", authority]`.
+ *
+ * Collateral sits here, not in the program's general balance. The user keeps withdrawal
+ * authority at all times, subject only to margin — that is the whole non-custodial claim,
+ * and it is enforced by `withdraw_collateral` requiring the authority's signature and
+ * nothing else.
+ */
 export type UserAccount = {
+  /** The wallet that owns this account. Immutable. */
   authority: Address;
+  /**
+   * USDC not committed to any position, at `QUOTE_PRECISION`.
+   *
+   * Margin is isolated (ADR-004): a position's collateral moves *out* of this balance
+   * and into its own `Position` account. So this balance is genuinely free, and
+   * withdrawing it can never breach an open position's margin.
+   */
   freeCollateral: bigint;
+  /**
+   * Open positions. Guards against closing this account while a position still
+   * references it.
+   */
   openPositions: number;
+  /**
+   * The IB who introduced this trader, or `Pubkey::default()`.
+   *
+   * **Written once, at creation, and never again.** Every IB in retail FX has the same
+   * complaint — the broker reassigns their clients. Making this field immutable is the
+   * structural fix, and it is the reason the referral programme is worth building
+   * on-chain at all (§ 8.5).
+   */
   referrer: Address;
+  /** Rolling 30-day notional, for the volume fee tier (§ 8.2). Maintained from Phase 3. */
   thirtyDayVolume: bigint;
   volumeWindowStartTs: bigint;
+  /** Lifetime totals, for the portfolio view. */
   totalDeposits: bigint;
   totalWithdrawals: bigint;
   createdAt: bigint;
+  /**
+   * Cumulative referral-pool share this trader's fees have produced, in USDC.
+   *
+   * **This is the entire interface to the referral programme.** It is a monotonic
+   * counter on an account the trading instructions already load, so recording a rebate
+   * costs no extra account, no CPI and no compute worth measuring — and the referral
+   * program derives everything it owes from the difference between this figure and what
+   * it has already credited.
+   *
+   * It also means every accrual is **independently verifiable**: anyone can read this
+   * number and recompute an IB's entitlement without trusting the referral program, the
+   * indexer, or us. That is the property § 8.5 says the moat is made of.
+   */
   referralFeesGenerated: bigint;
+  /** Cumulative notional traded, in USDC. Feeds the IB volume tiers (§ 8.5). */
   lifetimeVolume: bigint;
   bump: number;
   reserved: ReadonlyUint8Array;
 };
 
 export type UserAccountArgs = {
+  /** The wallet that owns this account. Immutable. */
   authority: Address;
+  /**
+   * USDC not committed to any position, at `QUOTE_PRECISION`.
+   *
+   * Margin is isolated (ADR-004): a position's collateral moves *out* of this balance
+   * and into its own `Position` account. So this balance is genuinely free, and
+   * withdrawing it can never breach an open position's margin.
+   */
   freeCollateral: number | bigint;
+  /**
+   * Open positions. Guards against closing this account while a position still
+   * references it.
+   */
   openPositions: number;
+  /**
+   * The IB who introduced this trader, or `Pubkey::default()`.
+   *
+   * **Written once, at creation, and never again.** Every IB in retail FX has the same
+   * complaint — the broker reassigns their clients. Making this field immutable is the
+   * structural fix, and it is the reason the referral programme is worth building
+   * on-chain at all (§ 8.5).
+   */
   referrer: Address;
+  /** Rolling 30-day notional, for the volume fee tier (§ 8.2). Maintained from Phase 3. */
   thirtyDayVolume: number | bigint;
   volumeWindowStartTs: number | bigint;
+  /** Lifetime totals, for the portfolio view. */
   totalDeposits: number | bigint;
   totalWithdrawals: number | bigint;
   createdAt: number | bigint;
+  /**
+   * Cumulative referral-pool share this trader's fees have produced, in USDC.
+   *
+   * **This is the entire interface to the referral programme.** It is a monotonic
+   * counter on an account the trading instructions already load, so recording a rebate
+   * costs no extra account, no CPI and no compute worth measuring — and the referral
+   * program derives everything it owes from the difference between this figure and what
+   * it has already credited.
+   *
+   * It also means every accrual is **independently verifiable**: anyone can read this
+   * number and recompute an IB's entitlement without trusting the referral program, the
+   * indexer, or us. That is the property § 8.5 says the moat is made of.
+   */
   referralFeesGenerated: number | bigint;
+  /** Cumulative notional traded, in USDC. Feeds the IB volume tiers (§ 8.5). */
   lifetimeVolume: number | bigint;
   bump: number;
   reserved: ReadonlyUint8Array;
