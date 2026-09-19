@@ -70,6 +70,13 @@ MINIMUM_EXTEND_PROGRAM_BYTES=10240
 
 die() { echo "error: $*" >&2; exit 1; }
 
+# Never print the RPC URL: on a paid endpoint the API key is a query parameter, so a script
+# that echoes it leaks the key into every screenshot, paste and CI log. `redact` shows the host
+# and hides the rest; the commands printed for you to run keep the *literal* `"$SOLFX_RPC_URL"`,
+# which your shell expands when you run them and which reveals nothing on screen.
+redact() { printf '%s' "$1" | sed -E 's#(\?|&)(api-?key|api_key|token)=[^&]*#\1\2=<redacted>#Ig'; }
+RPC_LITERAL='"$SOLFX_RPC_URL"'
+
 if [[ -z "$RPC_URL" ]]; then
   echo "error: SOLFX_RPC_URL is not set." >&2
   echo "       set -a && . ./.env && set +a" >&2
@@ -91,7 +98,7 @@ if [[ -n "$(find "${SO_SOURCES[@]}" -name '*.rs' -newer "$SO" -print -quit 2>/de
 fi
 
 echo "==> $PROGRAM $PROGRAM_ID"
-echo "    cluster $RPC_URL"
+echo "    cluster $(redact "$RPC_URL")"
 echo "    local   $(wc -c < "$SO") bytes"
 
 # --- is it deployed at all? -------------------------------------------------------------
@@ -100,7 +107,7 @@ if ! SHOW="$(solana program show "$PROGRAM_ID" -u "$RPC_URL" 2>/dev/null)"; then
   echo "not deployed on this cluster. Run:"
   echo
   echo "  solana program deploy \"$SO\" \\"
-  echo "    --program-id \"$PROGRAM_KEYPAIR\" -u \"$RPC_URL\" -k \"$KEYPAIR\""
+  echo "    --program-id \"$PROGRAM_KEYPAIR\" -u $RPC_LITERAL -k \"$KEYPAIR\""
   echo
   echo "then re-run this script to verify and publish the IDL."
   exit 1
@@ -154,13 +161,13 @@ else
     echo "the build is larger than the allocated account ($LOCAL_LEN > $ALLOCATED)."
     echo "extend first — SIMD-0431 rejects anything under $MINIMUM_EXTEND_PROGRAM_BYTES additional bytes:"
     echo
-    echo "  solana program extend \"$PROGRAM_ID\" $NEED -u \"$RPC_URL\" -k \"$KEYPAIR\""
+    echo "  solana program extend \"$PROGRAM_ID\" $NEED -u $RPC_LITERAL -k \"$KEYPAIR\""
     echo
   fi
   echo "deploy the current build. Run:"
   echo
   echo "  solana program deploy \"$SO\" \\"
-  echo "    --program-id \"$PROGRAM_KEYPAIR\" -u \"$RPC_URL\" -k \"$KEYPAIR\""
+  echo "    --program-id \"$PROGRAM_KEYPAIR\" -u $RPC_LITERAL -k \"$KEYPAIR\""
   echo
   echo "then re-run this script — it verifies the bytecode and publishes the IDL."
   exit 1

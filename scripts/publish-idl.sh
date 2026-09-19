@@ -49,6 +49,13 @@ IDL="$ROOT/target/idl/$PROGRAM.json"
 # Pinned rather than `latest`: this writes the program's canonical public interface.
 PMP="@solana-program/program-metadata@0.9.1"
 
+# Never print the RPC URL: on a paid endpoint the API key is a query parameter, so a script
+# that echoes it leaks the key into every screenshot, paste and CI log. `redact` shows the host
+# and hides the rest; the commands printed for you to run keep the *literal* `"$SOLFX_RPC_URL"`,
+# which your shell expands when you run them and which reveals nothing on screen.
+redact() { printf '%s' "$1" | sed -E 's#(\?|&)(api-?key|api_key|token)=[^&]*#\1\2=<redacted>#Ig'; }
+RPC_LITERAL='"$SOLFX_RPC_URL"'
+
 if [[ ! -f "$IDL" ]]; then
   echo "error: $IDL not found — run \`anchor build\` first" >&2
   exit 1
@@ -61,14 +68,14 @@ PROGRAM_ID="$(python3 -c "import json;print(json.load(open('$IDL'))['address'])"
 # against a validator that was not there — which reads like a broken script rather than a
 # missing variable.
 if [[ -z "${SOLFX_RPC_URL:-}" ]]; then
-  echo "note: SOLFX_RPC_URL is not set — defaulting to $RPC_URL" >&2
+  echo "note: SOLFX_RPC_URL is not set — defaulting to $(redact "$RPC_URL")" >&2
   echo "      for devnet:  set -a && . ./.env && set +a" >&2
 fi
 
 # Check the cluster is reachable and actually has the program *before* closing anything.
 # The close is destructive and only safe when the write that follows can succeed.
 if ! solana program show "$PROGRAM_ID" -u "$RPC_URL" >/dev/null 2>&1; then
-  echo "error: $PROGRAM_ID is not deployed on $RPC_URL (or the RPC is unreachable)" >&2
+  echo "error: $PROGRAM_ID is not deployed on $(redact "$RPC_URL") (or the RPC is unreachable)" >&2
   echo "       nothing was changed" >&2
   exit 1
 fi
@@ -106,7 +113,7 @@ print(
 )
 PY
 
-echo "==> $PROGRAM $PROGRAM_ID on $RPC_URL"
+echo "==> $PROGRAM $PROGRAM_ID on $(redact "$RPC_URL")"
 
 # The write is flaky — measured at roughly one failure in two against devnet, with the same
 # payload that had just succeeded. The transaction plan reports no cause, so there is nothing
