@@ -99,6 +99,37 @@ There are three parties.
 The unit of the whole system is a **mandate**: one investor funding one trader with one pot of
 money under one rule set.
 
+### Step 0 — the two sides find each other, and agree
+
+There is no chat, on purpose. Anything written on a public chain is public forever and
+unencrypted, every message would be an account someone pays rent for, and an open message box
+is a spam surface. So every "message" is a **typed object tied to a real step**, with a short
+note (180 bytes at most) riding on it:
+
+| Direction | What is posted | The answer |
+|---|---|---|
+| Investor → trader | an **offer**: the capital, already in escrow, plus the full rule set | the trader **accepts**, or **declines with a reason** |
+| Trader → investor | a **funding request** — only to an investor with an open listing | the investor **posts an offer**, or dismisses it |
+| Either side, publicly | a **listing**: what you are looking for | the other side browses and starts |
+
+That is a complete negotiation: offer → decline with a reason → revised offer → accept. The
+investor's terms *are* the message, the escrowed capital is the proof it is serious, and the
+trader's acceptance is the signature on the contract. When they accept, the mandate, its vault
+and the transfer of the capital happen **in one transaction** — there is no moment where the
+terms are agreed but the money has not moved.
+
+A few guarantees that fall out of the design:
+
+- **The investor can always get the capital back** until a trader signs — expired, declined
+  or not. Declining never moves money.
+- **A request can only reach an investor who has listed.** No wallet can be messaged merely for
+  existing, and closing the listing shuts the door.
+- **One open request per trader–investor pair**, so an inbox cannot be flooded with copies.
+- **The rules the trader accepts are byte for byte the rules the investor published** — the
+  program copies them from the offer; nobody retypes them.
+
+In the browser this is `/nox/market`, with an Investor / Trader switch.
+
 ### Step 1 — the investor funds a mandate
 
 The investor picks a trader, an amount, and a rule set, and signs one transaction. The USDC
@@ -377,6 +408,11 @@ depends on SolFX, SolFX knows nothing about NOXFUNDS. This is enforced in CI.
 | mandate signer | `["signer", mandate]` | nothing — it is dataless. It is the SolFX account authority |
 | mandate vault | `["vault", mandate]` | the USDC |
 | `TraderProfile` | `["trader", wallet]` | the whole track record |
+| `TraderListing` | `["listing", trader]` | what a trader is looking for — advertising, no money |
+| `InvestorListing` | `["inv_listing", investor]` | what an investor is offering — advertising, no money |
+| `MandateOffer` | `["offer", investor, trader, seq]` | an escrowed proposal: terms, note, expiry, the trader's reply |
+| offer vault | `["offer_vault", offer]` | the escrowed USDC until acceptance or revocation |
+| `FundingRequest` | `["request", trader, investor]` | a trader's ask, with a note; the trader's rent, always returned |
 
 The `seq` on a mandate lets one investor fund the same trader more than once. The signer is
 derived from the *mandate*, not the trader, so a trader holding several mandates from different
@@ -393,7 +429,7 @@ These are recorded because they are non-obvious and cost real time to discover:
    are 840 and 552 bytes held by value; against Solana's 4,096-byte stack frame they cannot be
    allowed to share a frame.
 
-### Instructions — 16
+### Instructions — 26
 
 **Admin:** `initialize_config`, `set_paused`
 **Trader:** `initialize_trader_profile`, `recompute_tier`, `create_solfx_account`,
@@ -401,18 +437,23 @@ These are recorded because they are non-obvious and cost real time to discover:
 **Investor:** `fund_mandate`, `fund_solfx_collateral`, `request_settlement`, `claim_settlement`
 **Public / keeper:** `observe_mandate_equity`, `wind_down_position`, `wind_down_cancel_stop`,
 `reconcile_position`
+**Marketplace:** `post_listing`, `update_listing`, `post_investor_listing`,
+`update_investor_listing`, `post_offer`, `revoke_offer`, `accept_offer`, `decline_offer`,
+`post_request`, `close_request`
 
 `initialize_config` can only be called by the program's **upgrade authority** — enforced on
 chain by checking the program's own `ProgramData` account, not by a stored address that a
 first caller could claim. A first-caller-wins initialiser is a standard way to lose a protocol
 on deployment day.
 
-### Events — 14
+### Events — 24
 
 `ConfigInitialized`, `MandateFunded`, `FundedTradeOpened`, `FundedTradeClosed`,
 `StopCancelled`, `EquityObserved`, `MandateBreached`, `SettlementRequested`, `MandateSettled`,
 `PositionWoundDown`, `PositionReconciled`, `TraderProfileCreated`, `TradeRecorded`,
-`TierChanged`.
+`TierChanged`, `ListingPosted`, `ListingClosed`, `InvestorListingPosted`,
+`InvestorListingClosed`, `OfferPosted`, `OfferRevoked`, `OfferAccepted`, `OfferDeclined`,
+`RequestPosted`, `RequestClosed`.
 
 Events are the point, not decoration. **Every statistic NOXFUNDS displays must be
 re-derivable from these events by a third party** who trusts none of our infrastructure.
@@ -511,13 +552,16 @@ This section exists because a document that only lists what works is marketing.
 - **The evaluation stage.** The design has a simulated-trading phase a trader passes before
   receiving real capital (`Evaluation`, `VirtualPosition`). None of it is written. Today a
   mandate is funded directly.
-- **The marketplace UI.** There is no interface for browsing traders, comparing track records,
-  or funding a mandate from a browser. Everything today goes through the command-line tool.
+- **The marketplace is written but not yet on devnet.** The program side (listings, escrowed
+  offers, decline with a reason, requests — 30 tests) and the browser page are built; the
+  program upgrade that carries them has not been deployed as of 19 Sep 2026. Until it is, the
+  page reads everything and refuses to send.
+- **The marketplace's compute cost is unmeasured.** The budgets test pins the trading path; the
+  ten marketplace instructions are not in it yet.
 - **The public verification page.** The claim in Part 8 that every statistic is re-derivable
   from events is true of the event data; the page that does the re-deriving does not exist.
 - **The off-chain keeper.** The cranks are public instructions, but nothing runs them
   automatically yet. A mandate is currently marked when someone marks it.
-- **A JavaScript client.** SolFX has a generated client; NOXFUNDS does not.
 
 **Not done:**
 
