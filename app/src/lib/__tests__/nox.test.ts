@@ -6,6 +6,7 @@ import type { Address } from "@solana/kit";
 
 import {
   EVAL,
+  evalProgress,
   fmtFactorBps,
   fundedPriceLimit,
   fmtPctBps,
@@ -351,5 +352,89 @@ describe("fundedPriceLimit", () => {
 
   it("zero slippage is a bound at the price, not an opt-out", () => {
     expect(fundedPriceLimit(nox.Direction.Long, PX, 0)).toBe(PX);
+  });
+});
+
+describe("evalProgress names every reason claim_stage_pass would refuse", () => {
+  // The panel enables "Claim Phase N" when `blocker` is null. Every `require!` in
+  // `claim_stage_pass` must therefore be represented, or the button is live on a stage the
+  // program refuses and the trader pays a fee to read the error.
+  const SIZE = 10_000_000_000n; // $10,000
+  const TARGET = (SIZE * 800n) / 10_000n; // 8% — Phase 1
+  const passing = {
+    discriminator: new Uint8Array(8),
+    trader: "11111111111111111111111111111112" as Address,
+    seq: 0,
+    stage: 1,
+    state: 0,
+    failedRule: 0,
+    accountSize: SIZE,
+    balance: SIZE + TARGET,
+    peakEquity: SIZE + TARGET,
+    day: 0n,
+    dayStartEquity: SIZE,
+    dayPnl: 0n,
+    bestDayPnl: TARGET / 2n, // exactly the consistency cap, which is <= and so allowed
+    trades: 10,
+    wins: 7,
+    losses: 3,
+    grossProfit: TARGET,
+    grossLoss: 0n,
+    voluntaryCloses: 10,
+    voluntaryHoldSecs: 30_000n, // 3,000s average, past the 2,700s floor
+    tradingDays: 5,
+    lastTradeDay: 0n,
+    openPositions: 0,
+    lastEquity: SIZE + TARGET,
+    lastObservedAt: 0n,
+    startedAt: 0n,
+    bump: 255,
+    vaultBump: 255,
+    reserved: new Uint8Array(16),
+  } as unknown as nox.Evaluation;
+
+  const blocker = (over: Partial<nox.Evaluation> = {}) =>
+    evalProgress({ ...passing, ...over } as nox.Evaluation).blocker;
+
+  it("passes when every rule is met", () => {
+    expect(blocker()).toBeNull();
+  });
+
+  it.each([
+    ["EvaluationNotActive", { state: 2 }, /Failed/],
+    ["PositionsStillOpen", { openPositions: 1 }, /passes flat/],
+    ["DrawdownExceeded", { peakEquity: SIZE * 2n }, /past the 6% limit/],
+    [
+      "EvaluationIncomplete — target",
+      { balance: SIZE + TARGET - 1n },
+      /target/,
+    ],
+    ["EvaluationIncomplete — trades", { trades: 9 }, /9 of 10 trades/],
+    ["EvaluationIncomplete — days", { tradingDays: 4 }, /4 of 5 trading days/],
+    [
+      "EvaluationIncomplete — average hold",
+      { voluntaryHoldSecs: 26_990n },
+      /Average hold/,
+    ],
+    [
+      "ConsistencyRuleViolated",
+      { bestDayPnl: TARGET / 2n + 1n },
+      /no day may carry more than 50%/,
+    ],
+  ])("%s", (_name, over, pattern) => {
+    expect(blocker(over as Partial<nox.Evaluation>)).toMatch(pattern as RegExp);
+  });
+
+  it("the target is a ceiling, so a stage cannot pass fractionally short", () => {
+    // An account size where 8% does not divide evenly: 12,345 x 800 / 10,000 = 987.6.
+    const odd = { ...passing, accountSize: 12_345n } as nox.Evaluation;
+    const p = evalProgress(odd);
+    expect(p.targetEquity).toBe(12_345n + 988n); // ceiling, not 987
+  });
+
+  it("stage 2's target is 5%, not 8%", () => {
+    const p = evalProgress({ ...passing, stage: 2 } as nox.Evaluation);
+    expect(p.targetBps).toBe(500);
+    expect(p.targetEquity).toBe(SIZE + (SIZE * 500n) / 10_000n);
   });
 });

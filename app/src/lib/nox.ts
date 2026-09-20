@@ -721,10 +721,13 @@ export type EvalProgress = {
 
 export function evalProgress(e: nox.Evaluation): EvalProgress {
   const size = e.accountSize === 0n ? 1n : e.accountSize;
-  const equity = e.balance > 0n ? BigInt(e.balance) : 0n;
+  const equity = e.balance > 0n ? e.balance : 0n;
   const stage = e.stage < 1 ? 1 : e.stage;
   const targetBps = EVAL.targetBps[stage - 1] ?? EVAL.targetBps[1];
-  const targetEquity = size + (size * BigInt(targetBps)) / BPS;
+  // The program ceils the target: it is a threshold to reach, and flooring would pass a stage
+  // fractionally short of it. `targetEquity` is the `goal` in `claim_stage_pass`.
+  const target = ceilDiv(size * BigInt(targetBps), BPS);
+  const targetEquity = size + target;
   const profitBps = equity > size ? ((equity - size) * BPS) / size : 0n;
   const drawdownBps =
     e.peakEquity > 0n && equity < e.peakEquity
@@ -732,18 +735,36 @@ export function evalProgress(e: nox.Evaluation): EvalProgress {
       : 0n;
   const dailyLossBps =
     e.dayStartEquity > 0n && e.dayPnl < 0n
-      ? (-BigInt(e.dayPnl) * BPS) / e.dayStartEquity
+      ? (-e.dayPnl * BPS) / e.dayStartEquity
       : 0n;
+  const avgHold =
+    e.voluntaryCloses > 0
+      ? e.voluntaryHoldSecs / BigInt(e.voluntaryCloses)
+      : null;
 
-  // One blocker, the nearest one — a list of six numbers tells a trader nothing about what to do.
+  // One blocker, the nearest one — a list of nine numbers tells a trader nothing about what to
+  // do. Ordered as `claim_stage_pass` checks, so the sentence names the refusal that would come
+  // back, and every requirement it checks is represented: a "claim" button that is enabled on a
+  // stage the program will not pass is worse than one that stays disabled with a reason.
+  const consistencyCap = (target * BigInt(EVAL.consistencyBps)) / BPS;
   const blocker =
-    profitBps < BigInt(targetBps)
-      ? `Profit ${Number(profitBps) / 100}% of the ${targetBps / 100}% target`
-      : e.trades < EVAL.minTrades
-        ? `${e.trades} of ${EVAL.minTrades} trades`
-        : e.tradingDays < EVAL.minDays
-          ? `${e.tradingDays} of ${EVAL.minDays} trading days`
-          : null;
+    e.state !== 0
+      ? `This evaluation is ${EVAL_STATE_NAME[e.state] ?? "over"}`
+      : e.openPositions > 0
+        ? `Close ${e.openPositions} open position${e.openPositions > 1 ? "s" : ""} — a stage passes flat`
+        : drawdownBps > BigInt(EVAL.maxDrawdownBps)
+          ? `Drawdown ${Number(drawdownBps) / 100}% is past the ${EVAL.maxDrawdownBps / 100}% limit`
+          : equity < targetEquity
+            ? `Profit ${Number(profitBps) / 100}% of the ${targetBps / 100}% target`
+            : e.trades < EVAL.minTrades
+              ? `${e.trades} of ${EVAL.minTrades} trades`
+              : e.tradingDays < EVAL.minDays
+                ? `${e.tradingDays} of ${EVAL.minDays} trading days`
+                : avgHold !== null && avgHold < BigInt(EVAL.minAvgHoldSecs)
+                  ? `Average hold ${avgHold / 60n} min of ${EVAL.minAvgHoldSecs / 60} min`
+                  : e.bestDayPnl > consistencyCap
+                    ? `One day carried ${Number((e.bestDayPnl * BPS) / (target > 0n ? target : 1n)) / 100}% of the target; no day may carry more than ${EVAL.consistencyBps / 100}%`
+                    : null;
 
   return {
     stage,
