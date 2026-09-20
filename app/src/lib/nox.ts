@@ -41,6 +41,8 @@ export type Marketplace = {
   readonly offers: readonly Row<nox.MandateOffer>[];
   readonly requests: readonly Row<nox.FundingRequest>[];
   readonly mandates: readonly Row<nox.Mandate>[];
+  /** What each mandate's vault holds now, keyed by mandate address. */
+  readonly vaults: ReadonlyMap<Address, bigint>;
   /** Cluster time when this was read, for judging offer expiry. */
   readonly now: bigint;
 };
@@ -131,8 +133,52 @@ export async function readMarketplace(
     offers,
     requests,
     mandates,
+    vaults: await readVaults(rpc, mandates),
     now,
   };
+}
+
+/**
+ * What each mandate's vault actually holds, keyed by mandate.
+ *
+ * Read rather than inferred. `principal` is what the investor committed at acceptance; the vault
+ * is where it is *now*, and the two stop agreeing the moment the capital moves into SolFX to be
+ * traded, or out again at settlement. Showing `principal` and labelling it the balance would be
+ * the same mistake the program made before `fund_mandate` moved real money: a number that looks
+ * like custody and is not.
+ *
+ * One `getMultipleAccounts` for every mandate read. The amount is a u64 at offset 64 of an SPL
+ * token account; an absent or short account reads as zero, which is what a vault emptied into
+ * SolFX or paid out genuinely holds.
+ */
+async function readVaults(
+  rpc: Rpc<SolanaRpcApi>,
+  mandates: readonly Row<nox.Mandate>[]
+): Promise<ReadonlyMap<Address, bigint>> {
+  const out = new Map<Address, bigint>();
+  if (mandates.length === 0) return out;
+  const vaults = await Promise.all(
+    mandates.map((m) => noxPdas.findMandateVault(m.address))
+  );
+  const { value } = await rpc
+    .getMultipleAccounts(vaults, {
+      encoding: "base64",
+      commitment: READ_COMMITMENT,
+    })
+    .send();
+  mandates.forEach((m, i) => {
+    const raw = value[i]?.data[0];
+    const bytes = raw ? base64ToBytes(raw) : new Uint8Array();
+    if (bytes.length < 72) {
+      out.set(m.address, 0n);
+      return;
+    }
+    let amount = 0n;
+    for (let b = 7; b >= 0; b--)
+      amount = (amount << 8n) | BigInt(bytes[64 + b]!);
+    out.set(m.address, amount);
+  });
+  return out;
 }
 
 // --- statistics, in integers --------------------------------------------------------------
@@ -201,6 +247,24 @@ export function fmtSlots(slots: bigint | null): string {
 }
 
 export const TIER_NAME = ["Bronze", "Silver", "Gold", "Platinum"] as const;
+/** What a mandate's state means for the money, in a sentence each. */
+export const MANDATE_STATE = [
+  {
+    name: "Active",
+    means: "Trading. The trader may open positions; neither side can withdraw.",
+  },
+  {
+    name: "Breached",
+    means:
+      "Drawdown breached — no new trades. Anyone may close it out, then the investor is paid.",
+  },
+  {
+    name: "Winding down",
+    means: "Settlement requested. Once flat, anyone may run the payout.",
+  },
+  { name: "Settled", means: "Finished. The money has been paid out." },
+] as const;
+
 export const OFFER_STATE_NAME = [
   "Open",
   "Accepted",

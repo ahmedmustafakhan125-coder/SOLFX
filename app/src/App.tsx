@@ -3,7 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { About } from "@/pages/About";
 import { Landing } from "@/pages/Landing";
 import { Nox } from "@/pages/Nox";
-import { NoxMarket } from "@/pages/NoxMarket";
+import { NoxInvestor, NoxMarket, NoxTrader } from "@/pages/NoxMarket";
 import { Partners } from "@/pages/Partners";
 import { Pool } from "@/pages/Pool";
 import { Terminal } from "@/pages/Terminal";
@@ -18,6 +18,8 @@ export default function App() {
         <Route path="/partners" element={<Partners />} />
         <Route path="/nox" element={<Nox />} />
         <Route path="/nox/market" element={<NoxMarket />} />
+        <Route path="/nox/investor" element={<NoxInvestor />} />
+        <Route path="/nox/trader" element={<NoxTrader />} />
         <Route path="/about" element={<About />} />
         {/* Anything else is the landing page rather than a 404 — this is a small site. */}
         <Route path="*" element={<Landing />} />

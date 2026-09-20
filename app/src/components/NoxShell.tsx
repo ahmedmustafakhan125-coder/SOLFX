@@ -15,6 +15,8 @@ const SPEC =
 const ROUTES = [
   { to: "/nox", label: "Overview" },
   { to: "/nox/market", label: "Marketplace" },
+  { to: "/nox/investor", label: "Investor" },
+  { to: "/nox/trader", label: "Trader" },
   { to: "/", label: "SolFX" },
   { to: "/about", label: "About" },
 ] as const;

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
 import { nox } from "@solfx/client";
 
@@ -18,6 +17,7 @@ import {
   fmtPctBps,
   fmtSlots,
   MARKET_CU,
+  MANDATE_STATE,
   marketBitmap,
   marketIndices,
   nextSeq,
@@ -35,8 +35,6 @@ import {
   type OfferRules,
   type TraderStats,
 } from "@/lib/nox";
-
-type Role = "investor" | "trader";
 
 const explorer = (a: string) =>
   `https://explorer.solana.com/address/${a}?cluster=devnet`;
@@ -264,13 +262,51 @@ function RecordStrip({ stats }: { stats: TraderStats }) {
  * Every number on the page is read from an account the program maintains. There is no
  * server of ours between the chain and this table.
  */
-export function NoxMarket() {
+/** The words at the top of each of the three pages. */
+const HEADINGS: Record<
+  Mode,
+  { eyebrow: string; title: React.ReactNode; blurb: string }
+> = {
+  market: {
+    eyebrow: "Marketplace",
+    title: (
+      <>
+        Find each other. Agree terms.{" "}
+        <span className="text-brand">Escrow does the rest.</span>
+      </>
+    ),
+    blurb:
+      "There is no chat, on purpose. Every message here is a typed object on chain tied to a real step: an offer escrows the capital behind its terms, a refusal carries its reason, and a request can only reach an investor who has said they are looking. The terms are the message.",
+  },
+  investor: {
+    eyebrow: "Investor",
+    title: (
+      <>
+        Your capital, your rules,{" "}
+        <span className="text-brand">and your money back.</span>
+      </>
+    ),
+    blurb:
+      "Everything you have offered and every mandate you have funded. Once a trader accepts, the capital sits in that mandate's own vault — not with the trader, not with us — and only settlement moves it.",
+  },
+  trader: {
+    eyebrow: "Trader",
+    title: (
+      <>
+        Your record, and the{" "}
+        <span className="text-brand">capital it earns.</span>
+      </>
+    ),
+    blurb:
+      "Your listing, the offers addressed to you, and the mandates you trade. The record is the program's, not yours: every trade from every mandate lands on it, and there is no second account to start fresh on.",
+  },
+};
+
+function NoxPage({ mode }: { mode: Mode }) {
   const s = useMarketplace();
   const signer = useSigner();
   const tx = useSend();
-  const [params, setParams] = useSearchParams();
-  const role: Role = params.get("role") === "trader" ? "trader" : "investor";
-  const setRole = (r: Role) => setParams({ role: r }, { replace: true });
+  const heading = HEADINGS[mode];
 
   const [buildError, setBuildError] = useState<string | undefined>(undefined);
 
@@ -305,38 +341,16 @@ export function NoxMarket() {
       <section className="px-4 pb-8 pt-16 md:px-8">
         <div className="mx-auto max-w-[1200px]">
           <div className="text-[10px] uppercase tracking-[0.22em] text-brand">
-            Marketplace
+            {heading.eyebrow}
           </div>
           <h1 className="mt-3 max-w-3xl text-3xl font-extrabold uppercase tracking-tight md:text-4xl">
-            Find each other. Agree terms.{" "}
-            <span className="text-brand">Escrow does the rest.</span>
+            {heading.title}
           </h1>
           <p className="mt-5 max-w-2xl text-sm leading-relaxed text-ink-muted">
-            There is no chat, on purpose. Every message here is a typed object
-            on chain tied to a real step: an offer escrows the capital behind
-            its terms, a refusal carries its reason, and a request can only
-            reach an investor who has said they are looking. The terms are the
-            message.
+            {heading.blurb}
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-4">
-            <div className="flex border border-line p-0.5" role="tablist">
-              {(["investor", "trader"] as const).map((r) => (
-                <button
-                  key={r}
-                  role="tab"
-                  aria-selected={role === r}
-                  onClick={() => setRole(r)}
-                  className={`px-5 py-2 text-[11px] font-bold uppercase tracking-[0.16em] transition-colors ${
-                    role === r
-                      ? "bg-brand text-[var(--sf-on-brand)]"
-                      : "text-ink-dim hover:text-ink"
-                  }`}
-                >
-                  I am an {r}
-                </button>
-              ))}
-            </div>
             {m ? (
               <span className="tnum text-xs text-ink-dim">
                 {m.profiles.size} traders · {m.investorListings.length}{" "}
@@ -373,23 +387,29 @@ export function NoxMarket() {
       <section className="px-4 pb-24 md:px-8">
         <div className="mx-auto grid max-w-[1200px] gap-6">
           {m ? (
-            role === "investor" ? (
-              <InvestorView
-                m={m}
-                s={s}
-                signer={!!signer}
-                act={act}
-                busy={tx.busy}
-              />
-            ) : (
-              <TraderView
-                m={m}
-                s={s}
-                signer={!!signer}
-                act={act}
-                busy={tx.busy}
-              />
-            )
+            <>
+              {/* The marketplace shows both tables; a dashboard shows one side's own business. */}
+              {mode !== "trader" ? (
+                <InvestorView
+                  mode={mode}
+                  m={m}
+                  s={s}
+                  signer={!!signer}
+                  act={act}
+                  busy={tx.busy}
+                />
+              ) : null}
+              {mode !== "investor" ? (
+                <TraderView
+                  mode={mode}
+                  m={m}
+                  s={s}
+                  signer={!!signer}
+                  act={act}
+                  busy={tx.busy}
+                />
+              ) : null}
+            </>
           ) : s.loading ? (
             <Empty>Reading the marketplace from chain…</Empty>
           ) : null}
@@ -459,7 +479,25 @@ type Act = (
   build: (signer: TransactionSigner) => Promise<Instruction[]> | Instruction[]
 ) => Promise<void>;
 
+type Mode = "market" | "investor" | "trader";
+
+/** Discovery: who is looking, on both sides. */
+export function NoxMarket() {
+  return <NoxPage mode="market" />;
+}
+
+/** One investor's own offers, mandates and listing. */
+export function NoxInvestor() {
+  return <NoxPage mode="investor" />;
+}
+
+/** One trader's record, offers received, and the mandates they trade. */
+export function NoxTrader() {
+  return <NoxPage mode="trader" />;
+}
+
 type ViewProps = {
+  mode: Mode;
   m: Marketplace;
   s: ReturnType<typeof useMarketplace>;
   signer: boolean;
@@ -471,7 +509,11 @@ type ViewProps = {
 
 type SortKey = "profit" | "win" | "dd" | "trades" | "hold";
 
-function InvestorView({ m, s, signer, act, busy }: ViewProps) {
+function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
+  // The traders table is discovery and belongs on the marketplace; everything else is this
+  // investor's own business and belongs on their dashboard.
+  const discovery = mode === "market";
+  const own = mode === "investor";
   const me = s.me;
   const [sort, setSort] = useState<SortKey>("profit");
   const [target, setTarget] = useState<Address | undefined>(undefined);
@@ -523,258 +565,367 @@ function InvestorView({ m, s, signer, act, busy }: ViewProps) {
 
   return (
     <>
-      <Panel
-        title="Traders"
-        count={traders.length}
-        hint="Records are the program's, not the trader's — nobody can edit them"
-      >
-        {traders.length === 0 ? (
-          <Empty>No trader has a profile on this cluster yet.</Empty>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead>
-                <tr className="text-left text-[10px] text-ink-dim">
-                  <th className="pb-3 font-medium uppercase tracking-[0.12em]">
-                    Trader
-                  </th>
-                  <th className="pb-3 font-medium uppercase tracking-[0.12em]">
-                    Tier
-                  </th>
-                  <th className="pb-3 text-right font-medium">
-                    <SortBtn k="trades" label="Trades" />
-                  </th>
-                  <th className="pb-3 text-right font-medium">
-                    <SortBtn k="win" label="Win rate" />
-                  </th>
-                  <th className="pb-3 text-right font-medium">
-                    <SortBtn k="profit" label="Profit factor" />
-                  </th>
-                  <th className="pb-3 text-right font-medium">
-                    <SortBtn k="dd" label="Worst DD" />
-                  </th>
-                  <th className="pb-3 text-right font-medium">
-                    <SortBtn k="hold" label="Avg hold" />
-                  </th>
-                  <th className="pb-3 pl-4 font-medium uppercase tracking-[0.12em]">
-                    Asking
-                  </th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody className="tnum">
-                {traders.map((r) => (
-                  <tr
-                    key={r.trader}
-                    className="border-t border-line-soft align-top"
-                  >
-                    <td className="py-3">
-                      <Who address={r.trader} />
-                    </td>
-                    <td className="py-3 text-ink-muted">
-                      {TIER_NAME[r.stats.tier]}
-                    </td>
-                    <td className="py-3 text-right">{r.stats.trades}</td>
-                    <td className="py-3 text-right">
-                      {fmtPctBps(r.stats.winRateBps)}
-                    </td>
-                    <td className="py-3 text-right">
-                      {fmtFactorBps(r.stats.profitFactorBps)}
-                    </td>
-                    <td className="py-3 text-right">
-                      {fmtPctBps(r.stats.maxDrawdownBps)}
-                    </td>
-                    <td className="py-3 text-right">
-                      {fmtSlots(r.stats.avgHoldSlots)}
-                    </td>
-                    <td className="py-3 pl-4 font-sans text-xs text-ink-muted">
-                      {r.listing && r.listing.data.open ? (
-                        <>
-                          ${fmtUsd(r.listing.data.minPrincipal, 0)}–$
-                          {fmtUsd(r.listing.data.maxPrincipal, 0)} ·{" "}
-                          {fmtPctBps(r.listing.data.wantedSplitBps)} split
-                          <div className="mt-1 max-w-[16rem] text-ink-dim">
-                            {noteText(
-                              r.listing.data.note,
-                              r.listing.data.noteLen
-                            )}
-                          </div>
-                        </>
-                      ) : (
-                        <span className="text-ink-dim">Not listed</span>
-                      )}
-                    </td>
-                    <td className="py-3 text-right">
-                      <Btn
-                        kind={target === r.trader ? "line" : "solid"}
-                        disabled={!signer || r.trader === me}
-                        onClick={() =>
-                          setTarget(target === r.trader ? undefined : r.trader)
-                        }
-                      >
-                        {target === r.trader ? "Close" : "Make offer"}
-                      </Btn>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {target ? (
-          <OfferForm
-            key={target}
-            m={m}
-            s={s}
-            trader={target}
-            // What this trader asked you for, if they sent a request. Offering anything else by
-            // default is how a $1,000 offer went out from a wallet holding $500 and was refused.
-            requested={
-              m.requests.find(
-                (r) => r.data.trader === target && r.data.investor === me
-              )?.data.wantedPrincipal
-            }
-            act={act}
-            busy={busy}
-            onDone={() => setTarget(undefined)}
-          />
-        ) : null}
-      </Panel>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Panel title="Your offers" count={mine.length}>
-          {!me ? (
-            <Empty>Connect a wallet to see offers you have made.</Empty>
-          ) : mine.length === 0 ? (
-            <Empty>You have not made an offer.</Empty>
+      {discovery && (
+        <Panel
+          title="Traders"
+          count={traders.length}
+          hint="Records are the program's, not the trader's — nobody can edit them"
+        >
+          {traders.length === 0 ? (
+            <Empty>No trader has a profile on this cluster yet.</Empty>
           ) : (
-            <ul className="space-y-3">
-              {mine.map((o) => {
-                const st = o.data.state;
-                const reply = noteText(o.data.reply, o.data.replyLen);
-                return (
-                  <li
-                    key={o.address}
-                    className="border border-line-soft p-3 text-sm"
-                  >
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="tnum font-bold">
-                        ${fmtUsd(o.data.principal, 0)}
-                      </span>
-                      <span className="text-ink-dim">to</span>
-                      <Who address={o.data.trader} />
-                      <span
-                        className={`ml-auto text-[11px] uppercase tracking-[0.12em] ${
-                          st === nox.OfferState.Accepted
-                            ? "text-long"
-                            : st === nox.OfferState.Declined
-                              ? "text-short"
-                              : "text-ink-dim"
-                        }`}
-                      >
-                        {OFFER_STATE_NAME[st]}
-                      </span>
-                    </div>
-                    {reply ? (
-                      <p className="mt-2 border-l-2 border-short/60 pl-3 text-xs text-ink-muted">
-                        Their reason: {reply}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead>
+                  <tr className="text-left text-[10px] text-ink-dim">
+                    <th className="pb-3 font-medium uppercase tracking-[0.12em]">
+                      Trader
+                    </th>
+                    <th className="pb-3 font-medium uppercase tracking-[0.12em]">
+                      Tier
+                    </th>
+                    <th className="pb-3 text-right font-medium">
+                      <SortBtn k="trades" label="Trades" />
+                    </th>
+                    <th className="pb-3 text-right font-medium">
+                      <SortBtn k="win" label="Win rate" />
+                    </th>
+                    <th className="pb-3 text-right font-medium">
+                      <SortBtn k="profit" label="Profit factor" />
+                    </th>
+                    <th className="pb-3 text-right font-medium">
+                      <SortBtn k="dd" label="Worst DD" />
+                    </th>
+                    <th className="pb-3 text-right font-medium">
+                      <SortBtn k="hold" label="Avg hold" />
+                    </th>
+                    <th className="pb-3 pl-4 font-medium uppercase tracking-[0.12em]">
+                      Asking
+                    </th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody className="tnum">
+                  {traders.map((r) => (
+                    <tr
+                      key={r.trader}
+                      className="border-t border-line-soft align-top"
+                    >
+                      <td className="py-3">
+                        <Who address={r.trader} />
+                      </td>
+                      <td className="py-3 text-ink-muted">
+                        {TIER_NAME[r.stats.tier]}
+                      </td>
+                      <td className="py-3 text-right">{r.stats.trades}</td>
+                      <td className="py-3 text-right">
+                        {fmtPctBps(r.stats.winRateBps)}
+                      </td>
+                      <td className="py-3 text-right">
+                        {fmtFactorBps(r.stats.profitFactorBps)}
+                      </td>
+                      <td className="py-3 text-right">
+                        {fmtPctBps(r.stats.maxDrawdownBps)}
+                      </td>
+                      <td className="py-3 text-right">
+                        {fmtSlots(r.stats.avgHoldSlots)}
+                      </td>
+                      <td className="py-3 pl-4 font-sans text-xs text-ink-muted">
+                        {r.listing && r.listing.data.open ? (
+                          <>
+                            ${fmtUsd(r.listing.data.minPrincipal, 0)}–$
+                            {fmtUsd(r.listing.data.maxPrincipal, 0)} ·{" "}
+                            {fmtPctBps(r.listing.data.wantedSplitBps)} split
+                            <div className="mt-1 max-w-[16rem] text-ink-dim">
+                              {noteText(
+                                r.listing.data.note,
+                                r.listing.data.noteLen
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-ink-dim">Not listed</span>
+                        )}
+                      </td>
+                      <td className="py-3 text-right">
+                        <Btn
+                          kind={target === r.trader ? "line" : "solid"}
+                          disabled={!signer || r.trader === me}
+                          onClick={() =>
+                            setTarget(
+                              target === r.trader ? undefined : r.trader
+                            )
+                          }
+                        >
+                          {target === r.trader ? "Close" : "Make offer"}
+                        </Btn>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {target ? (
+            <OfferForm
+              key={target}
+              m={m}
+              s={s}
+              trader={target}
+              // What this trader asked you for, if they sent a request. Offering anything else by
+              // default is how a $1,000 offer went out from a wallet holding $500 and was refused.
+              requested={
+                m.requests.find(
+                  (r) => r.data.trader === target && r.data.investor === me
+                )?.data.wantedPrincipal
+              }
+              act={act}
+              busy={busy}
+              onDone={() => setTarget(undefined)}
+            />
+          ) : null}
+        </Panel>
+      )}
+
+      {own && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Panel title="Your offers" count={mine.length}>
+            {!me ? (
+              <Empty>Connect a wallet to see offers you have made.</Empty>
+            ) : mine.length === 0 ? (
+              <Empty>You have not made an offer.</Empty>
+            ) : (
+              <ul className="space-y-3">
+                {mine.map((o) => {
+                  const st = o.data.state;
+                  const reply = noteText(o.data.reply, o.data.replyLen);
+                  return (
+                    <li
+                      key={o.address}
+                      className="border border-line-soft p-3 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="tnum font-bold">
+                          ${fmtUsd(o.data.principal, 0)}
+                        </span>
+                        <span className="text-ink-dim">to</span>
+                        <Who address={o.data.trader} />
+                        <span
+                          className={`ml-auto text-[11px] uppercase tracking-[0.12em] ${
+                            st === nox.OfferState.Accepted
+                              ? "text-long"
+                              : st === nox.OfferState.Declined
+                                ? "text-short"
+                                : "text-ink-dim"
+                          }`}
+                        >
+                          {OFFER_STATE_NAME[st]}
+                        </span>
+                      </div>
+                      {reply ? (
+                        <p className="mt-2 border-l-2 border-short/60 pl-3 text-xs text-ink-muted">
+                          Their reason: {reply}
+                        </p>
+                      ) : null}
+                      {st === nox.OfferState.Open ||
+                      st === nox.OfferState.Declined ? (
+                        <div className="mt-3">
+                          <Btn
+                            kind="line"
+                            disabled={busy || !m.config}
+                            onClick={() =>
+                              void act(async (signer) => [
+                                await revokeOfferIx(
+                                  // signer is guaranteed by `me`
+                                  signer,
+                                  o,
+                                  m.config!.usdcMint
+                                ),
+                              ])
+                            }
+                          >
+                            Revoke · take the capital back
+                          </Btn>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Panel>
+
+          <Panel
+            title="Requests to you"
+            count={inbox.length}
+            hint="Only reach you while your listing is open"
+          >
+            {!me ? (
+              <Empty>Connect a wallet to see requests.</Empty>
+            ) : inbox.length === 0 ? (
+              <Empty>
+                No trader has asked you for capital.{" "}
+                {myListing?.data.open ? "" : "List yourself below so they can."}
+              </Empty>
+            ) : (
+              <ul className="space-y-3">
+                {inbox.map((r) => {
+                  const p = m.profiles.get(r.data.trader);
+                  return (
+                    <li
+                      key={r.address}
+                      className="border border-line-soft p-3 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Who address={r.data.trader} />
+                        <span className="tnum">
+                          wants ${fmtUsd(r.data.wantedPrincipal, 0)}
+                        </span>
+                        <span className="text-ink-dim">
+                          at {fmtPctBps(r.data.wantedSplitBps)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-ink-muted">
+                        {noteText(r.data.note, r.data.noteLen) || "No note."}
                       </p>
-                    ) : null}
-                    {st === nox.OfferState.Open ||
-                    st === nox.OfferState.Declined ? (
-                      <div className="mt-3">
+                      {p ? (
+                        <div className="mt-3">
+                          <RecordStrip stats={traderStats(p.data)} />
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex gap-2">
+                        <Btn
+                          disabled={busy}
+                          onClick={() => setTarget(r.data.trader)}
+                        >
+                          Make an offer
+                        </Btn>
                         <Btn
                           kind="line"
-                          disabled={busy || !m.config}
+                          disabled={busy}
                           onClick={() =>
                             void act(async (signer) => [
-                              await revokeOfferIx(
-                                // signer is guaranteed by `me`
-                                signer,
-                                o,
-                                m.config!.usdcMint
-                              ),
+                              closeRequestIx(signer, r),
                             ])
                           }
                         >
-                          Revoke · take the capital back
+                          Dismiss
                         </Btn>
                       </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Panel>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Panel>
+        </div>
+      )}
 
-        <Panel
-          title="Requests to you"
-          count={inbox.length}
-          hint="Only reach you while your listing is open"
-        >
-          {!me ? (
-            <Empty>Connect a wallet to see requests.</Empty>
-          ) : inbox.length === 0 ? (
-            <Empty>
-              No trader has asked you for capital.{" "}
-              {myListing?.data.open ? "" : "List yourself below so they can."}
-            </Empty>
-          ) : (
-            <ul className="space-y-3">
-              {inbox.map((r) => {
-                const p = m.profiles.get(r.data.trader);
-                return (
-                  <li
-                    key={r.address}
-                    className="border border-line-soft p-3 text-sm"
-                  >
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Who address={r.data.trader} />
-                      <span className="tnum">
-                        wants ${fmtUsd(r.data.wantedPrincipal, 0)}
-                      </span>
-                      <span className="text-ink-dim">
-                        at {fmtPctBps(r.data.wantedSplitBps)}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-ink-muted">
-                      {noteText(r.data.note, r.data.noteLen) || "No note."}
-                    </p>
-                    {p ? (
-                      <div className="mt-3">
-                        <RecordStrip stats={traderStats(p.data)} />
-                      </div>
-                    ) : null}
-                    <div className="mt-3 flex gap-2">
-                      <Btn
-                        disabled={busy}
-                        onClick={() => setTarget(r.data.trader)}
-                      >
-                        Make an offer
-                      </Btn>
-                      <Btn
-                        kind="line"
-                        disabled={busy}
-                        onClick={() =>
-                          void act(async (signer) => [
-                            closeRequestIx(signer, r),
-                          ])
-                        }
-                      >
-                        Dismiss
-                      </Btn>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Panel>
-      </div>
+      {own && <MandatesPanel m={m} me={me} role="investor" />}
 
-      <InvestorListingEditor m={m} s={s} act={act} busy={busy} />
+      {own && <InvestorListingEditor m={m} s={s} act={act} busy={busy} />}
     </>
+  );
+}
+
+/**
+ * The mandates one side has, and where their money actually is.
+ *
+ * This is the panel whose absence made the marketplace read as a dead end: two wallets agreed
+ * terms, $500 moved, and nothing on screen said so. `principal` is what was committed; `vault`
+ * is what the mandate's own account holds right now, which is a different number as soon as the
+ * capital is moved into SolFX to trade with.
+ */
+function MandatesPanel({
+  m,
+  me,
+  role,
+}: {
+  m: Marketplace;
+  me: Address | undefined;
+  role: "investor" | "trader";
+}) {
+  const mine = m.mandates.filter((x) =>
+    role === "investor" ? x.data.investor === me : x.data.trader === me
+  );
+  return (
+    <Panel
+      title={role === "investor" ? "Your mandates" : "Mandates you trade"}
+      count={mine.length}
+      hint="The vault is the mandate's own account — not the trader's, and not ours"
+    >
+      {!me ? (
+        <Empty>Connect a wallet to see your mandates.</Empty>
+      ) : mine.length === 0 ? (
+        <Empty>
+          {role === "investor"
+            ? "No mandates yet. One begins when a trader accepts an offer."
+            : "No mandates yet. One begins when you accept an offer."}
+        </Empty>
+      ) : (
+        <ul className="divide-y divide-line-soft">
+          {mine.map(({ address, data }) => {
+            const state = MANDATE_STATE[data.state] ?? MANDATE_STATE[0];
+            const vault = m.vaults.get(address) ?? 0n;
+            const equity = data.lastEquity > 0n ? data.lastEquity : null;
+            return (
+              <li key={address} className="py-4">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <a
+                    href={explorer(address)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="tnum text-xs text-brand-soft hover:underline"
+                  >
+                    {address.slice(0, 8)}…{address.slice(-4)}
+                  </a>
+                  <span
+                    className={`text-[10px] uppercase tracking-[0.14em] ${
+                      data.state === 0 ? "text-long" : "text-ink-dim"
+                    }`}
+                  >
+                    {state.name}
+                  </span>
+                  <span className="text-xs text-ink-dim">
+                    with{" "}
+                    <Who
+                      address={
+                        role === "investor" ? data.trader : data.investor
+                      }
+                    />
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-px border border-line bg-line sm:grid-cols-4">
+                  <Stat
+                    label="Principal"
+                    value={`$${fmtUsd(data.principal, 2)}`}
+                  />
+                  <Stat label="Vault holds" value={`$${fmtUsd(vault, 2)}`} />
+                  <Stat
+                    label="Equity, last marked"
+                    value={
+                      equity === null
+                        ? "not marked yet"
+                        : `$${fmtUsd(equity, 2)}`
+                    }
+                  />
+                  <Stat
+                    label="Trader keeps"
+                    value={`${data.traderSplitBps / 100}% of net`}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-ink-dim">
+                  {state.means}
+                  {data.openPositions > 0
+                    ? ` ${data.openPositions} position${data.openPositions === 1 ? "" : "s"} open.`
+                    : ""}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
   );
 }
 
@@ -1105,7 +1256,9 @@ function InvestorListingEditor({
 
 // --- trader --------------------------------------------------------------------------------
 
-function TraderView({ m, s, act, busy }: ViewProps) {
+function TraderView({ m, s, act, busy, mode }: ViewProps) {
+  const discovery = mode === "market";
+  const own = mode === "trader";
   const me = s.me;
   const profile = me ? m.profiles.get(me) : undefined;
   const inbox = m.offers.filter(
@@ -1118,262 +1271,281 @@ function TraderView({ m, s, act, busy }: ViewProps) {
 
   return (
     <>
-      <Panel
-        title="Your record"
-        hint="Every trade from every mandate. You cannot start fresh."
-      >
-        {!me ? (
-          <Empty>Connect a wallet to see your record.</Empty>
-        ) : profile ? (
-          <RecordStrip stats={traderStats(profile.data)} />
-        ) : (
-          <div className="flex flex-wrap items-center gap-4">
-            <Empty>
-              You have no trader profile yet. It is the record investors read,
-              and nothing on this side works without it.
-            </Empty>
-            <Btn
-              disabled={busy}
-              onClick={() =>
-                void act(async (signer) => [await createProfileIx(signer)])
-              }
-            >
-              Create my profile
-            </Btn>
-          </div>
-        )}
-      </Panel>
+      {own && (
+        <Panel
+          title="Your record"
+          hint="Every trade from every mandate. You cannot start fresh."
+        >
+          {!me ? (
+            <Empty>Connect a wallet to see your record.</Empty>
+          ) : profile ? (
+            <RecordStrip stats={traderStats(profile.data)} />
+          ) : (
+            <div className="flex flex-wrap items-center gap-4">
+              <Empty>
+                You have no trader profile yet. It is the record investors read,
+                and nothing on this side works without it.
+              </Empty>
+              <Btn
+                disabled={busy}
+                onClick={() =>
+                  void act(async (signer) => [await createProfileIx(signer)])
+                }
+              >
+                Create my profile
+              </Btn>
+            </div>
+          )}
+        </Panel>
+      )}
 
-      <Panel
-        title="Offers to you"
-        count={inbox.length}
-        hint="The capital is already in escrow"
-      >
-        {!me ? (
-          <Empty>Connect a wallet to see offers.</Empty>
-        ) : inbox.length === 0 ? (
-          <Empty>No open offers addressed to you.</Empty>
-        ) : (
-          <ul className="space-y-4">
-            {inbox.map((o) => {
-              const d = o.data;
-              const expired = m.now > d.expiresAt;
-              return (
-                <li key={o.address} className="border border-line-soft p-4">
-                  <div className="flex flex-wrap items-baseline gap-3">
-                    <span className="tnum text-lg font-bold">
-                      ${fmtUsd(d.principal, 0)}
-                    </span>
-                    <span className="text-xs text-ink-dim">from</span>
-                    <Who address={d.investor} />
-                    <span className="tnum text-xs text-ink-dim">
-                      you keep {fmtPctBps(d.traderSplitBps)} of net profit
-                    </span>
-                    <span
-                      className={`ml-auto text-[11px] uppercase tracking-[0.12em] ${expired ? "text-short" : "text-ink-dim"}`}
-                    >
-                      {expired
-                        ? "Expired"
-                        : `Expires ${new Date(Number(d.expiresAt) * 1000).toUTCString().slice(5, 22)} UTC`}
-                    </span>
-                  </div>
-                  {noteText(d.note, d.noteLen) ? (
-                    <p className="mt-2 border-l-2 border-brand/60 pl-3 text-xs text-ink-muted">
-                      {noteText(d.note, d.noteLen)}
+      {own && (
+        <Panel
+          title="Offers to you"
+          count={inbox.length}
+          hint="The capital is already in escrow"
+        >
+          {!me ? (
+            <Empty>Connect a wallet to see offers.</Empty>
+          ) : inbox.length === 0 ? (
+            <Empty>No open offers addressed to you.</Empty>
+          ) : (
+            <ul className="space-y-4">
+              {inbox.map((o) => {
+                const d = o.data;
+                const expired = m.now > d.expiresAt;
+                return (
+                  <li key={o.address} className="border border-line-soft p-4">
+                    <div className="flex flex-wrap items-baseline gap-3">
+                      <span className="tnum text-lg font-bold">
+                        ${fmtUsd(d.principal, 0)}
+                      </span>
+                      <span className="text-xs text-ink-dim">from</span>
+                      <Who address={d.investor} />
+                      <span className="tnum text-xs text-ink-dim">
+                        you keep {fmtPctBps(d.traderSplitBps)} of net profit
+                      </span>
+                      <span
+                        className={`ml-auto text-[11px] uppercase tracking-[0.12em] ${expired ? "text-short" : "text-ink-dim"}`}
+                      >
+                        {expired
+                          ? "Expired"
+                          : `Expires ${new Date(Number(d.expiresAt) * 1000).toUTCString().slice(5, 22)} UTC`}
+                      </span>
+                    </div>
+                    {noteText(d.note, d.noteLen) ? (
+                      <p className="mt-2 border-l-2 border-brand/60 pl-3 text-xs text-ink-muted">
+                        {noteText(d.note, d.noteLen)}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4">
+                      <Stat
+                        label="Max drawdown"
+                        value={fmtPctBps(d.maxDrawdownBps)}
+                      />
+                      <Stat
+                        label="Max daily loss"
+                        value={fmtPctBps(d.maxDailyLossBps)}
+                      />
+                      <Stat
+                        label="Risk per trade"
+                        value={fmtPctBps(d.maxRiskPerTradeBps)}
+                      />
+                      <Stat
+                        label="Max stop distance"
+                        value={fmtPctBps(d.maxStopDistanceBps)}
+                      />
+                      <Stat
+                        label="Per trade"
+                        value={`$${fmtUsd(d.maxTradeNotional, 0)}`}
+                      />
+                      <Stat
+                        label="In total"
+                        value={`$${fmtUsd(d.maxTotalNotional, 0)}`}
+                      />
+                      <Stat
+                        label="Positions"
+                        value={String(d.maxConcurrentPositions)}
+                      />
+                      <Stat
+                        label="Markets"
+                        value={marketNames(d.allowedMarkets, s.markets)}
+                      />
+                    </div>
+                    <p className="mt-3 text-[11px] text-ink-dim">
+                      These rules are fixed the moment you accept and nobody —
+                      including you and the investor — can change them
+                      afterwards.
                     </p>
-                  ) : null}
-                  <div className="mt-3 grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4">
-                    <Stat
-                      label="Max drawdown"
-                      value={fmtPctBps(d.maxDrawdownBps)}
-                    />
-                    <Stat
-                      label="Max daily loss"
-                      value={fmtPctBps(d.maxDailyLossBps)}
-                    />
-                    <Stat
-                      label="Risk per trade"
-                      value={fmtPctBps(d.maxRiskPerTradeBps)}
-                    />
-                    <Stat
-                      label="Max stop distance"
-                      value={fmtPctBps(d.maxStopDistanceBps)}
-                    />
-                    <Stat
-                      label="Per trade"
-                      value={`$${fmtUsd(d.maxTradeNotional, 0)}`}
-                    />
-                    <Stat
-                      label="In total"
-                      value={`$${fmtUsd(d.maxTotalNotional, 0)}`}
-                    />
-                    <Stat
-                      label="Positions"
-                      value={String(d.maxConcurrentPositions)}
-                    />
-                    <Stat
-                      label="Markets"
-                      value={marketNames(d.allowedMarkets, s.markets)}
-                    />
-                  </div>
-                  <p className="mt-3 text-[11px] text-ink-dim">
-                    These rules are fixed the moment you accept and nobody —
-                    including you and the investor — can change them afterwards.
-                  </p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Btn
-                      disabled={busy || expired || !profile || !m.config}
-                      onClick={() =>
-                        void act(async (signer) => [
-                          await acceptOfferIx(signer, o, m.config!.usdcMint),
-                        ])
-                      }
-                    >
-                      Accept · fund the mandate
-                    </Btn>
-                    <input
-                      value={reasons[o.address] ?? ""}
-                      onChange={(e) =>
-                        setReasons({ ...reasons, [o.address]: e.target.value })
-                      }
-                      placeholder="Reason, if declining (they will read it)"
-                      className="min-w-[16rem] flex-1 border border-line bg-bg px-3 py-1.5 text-xs text-ink outline-none focus:border-brand"
-                    />
-                    <Btn
-                      kind="danger"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(async (signer) => [
-                          declineOfferIx(
-                            signer,
-                            o.address,
-                            reasons[o.address] ?? ""
-                          ),
-                        ])
-                      }
-                    >
-                      Decline
-                    </Btn>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Panel>
-
-      <Panel
-        title="Investors"
-        count={investors.length}
-        hint="Only investors who have listed can be asked"
-      >
-        {investors.length === 0 ? (
-          <Empty>No investor has listed on this cluster yet.</Empty>
-        ) : (
-          <ul className="space-y-3">
-            {investors.map((l) => {
-              const d = l.data;
-              const already = mine.some((r) => r.data.investor === d.investor);
-              return (
-                <li
-                  key={l.address}
-                  className="border border-line-soft p-4 text-sm"
-                >
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Who address={d.investor} />
-                    <span className="tnum">
-                      ${fmtUsd(d.minPrincipal, 0)}–${fmtUsd(d.maxPrincipal, 0)}
-                    </span>
-                    <span className="tnum text-xs text-ink-dim">
-                      offers {fmtPctBps(d.offeredSplitBps)} · DD{" "}
-                      {fmtPctBps(d.maxDrawdownBps)} · risk{" "}
-                      {fmtPctBps(d.maxRiskPerTradeBps)}
-                    </span>
-                    <span className="ml-auto">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <Btn
-                        kind={asking === d.investor ? "line" : "solid"}
-                        disabled={
-                          !me || !profile || already || d.investor === me
-                        }
+                        disabled={busy || expired || !profile || !m.config}
                         onClick={() =>
-                          setAsking(
-                            asking === d.investor ? undefined : d.investor
-                          )
+                          void act(async (signer) => [
+                            await acceptOfferIx(signer, o, m.config!.usdcMint),
+                          ])
                         }
                       >
-                        {already
-                          ? "Requested"
-                          : asking === d.investor
-                            ? "Close"
-                            : "Request funding"}
+                        Accept · fund the mandate
                       </Btn>
-                    </span>
-                  </div>
-                  <div className="mt-1 text-xs text-ink-dim">
-                    {marketNames(d.allowedMarkets, s.markets)}
-                    {noteText(d.note, d.noteLen)
-                      ? ` — ${noteText(d.note, d.noteLen)}`
-                      : ""}
-                  </div>
-                  {asking === d.investor ? (
-                    <RequestForm
-                      investor={d.investor}
-                      suggested={d.minPrincipal}
-                      split={d.offeredSplitBps}
-                      act={act}
-                      busy={busy}
-                      onDone={() => setAsking(undefined)}
-                    />
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Panel>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Panel title="Your requests" count={mine.length}>
-          {!me ? (
-            <Empty>Connect a wallet to see your requests.</Empty>
-          ) : mine.length === 0 ? (
-            <Empty>You have not asked anyone yet.</Empty>
-          ) : (
-            <ul className="space-y-2">
-              {mine.map((r) => (
-                <li
-                  key={r.address}
-                  className="flex flex-wrap items-center gap-3 border border-line-soft p-3 text-sm"
-                >
-                  <Who address={r.data.investor} />
-                  <span className="tnum">
-                    ${fmtUsd(r.data.wantedPrincipal, 0)}
-                  </span>
-                  <span className="ml-auto">
-                    <Btn
-                      kind="line"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(async (signer) => [closeRequestIx(signer, r)])
-                      }
-                    >
-                      Withdraw · rent back
-                    </Btn>
-                  </span>
-                </li>
-              ))}
+                      <input
+                        value={reasons[o.address] ?? ""}
+                        onChange={(e) =>
+                          setReasons({
+                            ...reasons,
+                            [o.address]: e.target.value,
+                          })
+                        }
+                        placeholder="Reason, if declining (they will read it)"
+                        className="min-w-[16rem] flex-1 border border-line bg-bg px-3 py-1.5 text-xs text-ink outline-none focus:border-brand"
+                      />
+                      <Btn
+                        kind="danger"
+                        disabled={busy}
+                        onClick={() =>
+                          void act(async (signer) => [
+                            declineOfferIx(
+                              signer,
+                              o.address,
+                              reasons[o.address] ?? ""
+                            ),
+                          ])
+                        }
+                      >
+                        Decline
+                      </Btn>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Panel>
+      )}
 
-        <TraderListingEditor
-          m={m}
-          s={s}
-          act={act}
-          busy={busy}
-          hasProfile={!!profile}
-        />
-      </div>
+      {own && <MandatesPanel m={m} me={me} role="trader" />}
+
+      {discovery && (
+        <Panel
+          title="Investors"
+          count={investors.length}
+          hint="Only investors who have listed can be asked"
+        >
+          {investors.length === 0 ? (
+            <Empty>No investor has listed on this cluster yet.</Empty>
+          ) : (
+            <ul className="space-y-3">
+              {investors.map((l) => {
+                const d = l.data;
+                const already = mine.some(
+                  (r) => r.data.investor === d.investor
+                );
+                return (
+                  <li
+                    key={l.address}
+                    className="border border-line-soft p-4 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Who address={d.investor} />
+                      <span className="tnum">
+                        ${fmtUsd(d.minPrincipal, 0)}–$
+                        {fmtUsd(d.maxPrincipal, 0)}
+                      </span>
+                      <span className="tnum text-xs text-ink-dim">
+                        offers {fmtPctBps(d.offeredSplitBps)} · DD{" "}
+                        {fmtPctBps(d.maxDrawdownBps)} · risk{" "}
+                        {fmtPctBps(d.maxRiskPerTradeBps)}
+                      </span>
+                      <span className="ml-auto">
+                        <Btn
+                          kind={asking === d.investor ? "line" : "solid"}
+                          disabled={
+                            !me || !profile || already || d.investor === me
+                          }
+                          onClick={() =>
+                            setAsking(
+                              asking === d.investor ? undefined : d.investor
+                            )
+                          }
+                        >
+                          {already
+                            ? "Requested"
+                            : asking === d.investor
+                              ? "Close"
+                              : "Request funding"}
+                        </Btn>
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-ink-dim">
+                      {marketNames(d.allowedMarkets, s.markets)}
+                      {noteText(d.note, d.noteLen)
+                        ? ` — ${noteText(d.note, d.noteLen)}`
+                        : ""}
+                    </div>
+                    {asking === d.investor ? (
+                      <RequestForm
+                        investor={d.investor}
+                        suggested={d.minPrincipal}
+                        split={d.offeredSplitBps}
+                        act={act}
+                        busy={busy}
+                        onDone={() => setAsking(undefined)}
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
+      )}
+
+      {own && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Panel title="Your requests" count={mine.length}>
+            {!me ? (
+              <Empty>Connect a wallet to see your requests.</Empty>
+            ) : mine.length === 0 ? (
+              <Empty>You have not asked anyone yet.</Empty>
+            ) : (
+              <ul className="space-y-2">
+                {mine.map((r) => (
+                  <li
+                    key={r.address}
+                    className="flex flex-wrap items-center gap-3 border border-line-soft p-3 text-sm"
+                  >
+                    <Who address={r.data.investor} />
+                    <span className="tnum">
+                      ${fmtUsd(r.data.wantedPrincipal, 0)}
+                    </span>
+                    <span className="ml-auto">
+                      <Btn
+                        kind="line"
+                        disabled={busy}
+                        onClick={() =>
+                          void act(async (signer) => [
+                            closeRequestIx(signer, r),
+                          ])
+                        }
+                      >
+                        Withdraw · rent back
+                      </Btn>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+
+          <TraderListingEditor
+            m={m}
+            s={s}
+            act={act}
+            busy={busy}
+            hasProfile={!!profile}
+          />
+        </div>
+      )}
     </>
   );
 }
