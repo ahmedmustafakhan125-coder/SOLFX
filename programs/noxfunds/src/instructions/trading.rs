@@ -23,7 +23,9 @@ use solfx_core::state::{Direction, Market, TriggerKind};
 
 use crate::constants::{BPS, CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, TRADER_SEED};
 use crate::errors::NoxError;
-use crate::events::{FundedTradeClosed, FundedTradeOpened, StopCancelled, TradeRecorded};
+use crate::events::{
+    FundedTradeClosed, FundedTradeOpened, StopCancelled, TakeProfitPlaced, TradeRecorded,
+};
 use crate::state::{Mandate, MandateState, NoxConfig, TraderProfile};
 use crate::SolfxCore;
 
@@ -680,6 +682,138 @@ pub fn funded_cancel_stop(
         market_index,
         nonce,
         order_id,
+        ts: Clock::get()?.unix_timestamp,
+    });
+    Ok(())
+}
+
+// --- the take-profit -----------------------------------------------------------------------
+
+/// Place a take-profit on an open funded position.
+///
+/// # Why this is a separate instruction and the stop is not
+///
+/// The stop is placed inside `funded_open_position` because "every funded trade carries a stop"
+/// is only *true* if both land atomically — a gap between them is exactly the window a mandate
+/// would be breached in. A take-profit protects nobody, so it has no such requirement: a trader
+/// may add one later, move it by cancelling and replacing, or never place one at all.
+///
+/// # Why no mandate rule is checked here
+///
+/// A take-profit can only ever *reduce* exposure — `place_trigger_order` refuses a
+/// `size_base` larger than the position, and a triggered take-profit closes rather than opens.
+/// So there is no state of the mandate in which refusing one protects the investor, and one
+/// state in which refusing it would hurt them: a `Breached` or `WindingDown` mandate holding an
+/// open position wants that position closed at the trader's target, not held until someone
+/// notices. `Settled` is the exception only because there is nothing left to place it against.
+///
+/// Everything a take-profit could get *wrong* — the side, the size, the price, the feed —
+/// `solfx-core` checks with the same code a directly-placed order goes through.
+#[derive(Accounts)]
+pub struct FundedPlaceTakeProfit<'info> {
+    /// Pays the transaction fee. Pays no rent: the trigger's rent comes from the mandate signer,
+    /// and comes back to it on a cancel.
+    #[account(mut)]
+    pub trader: Signer<'info>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, NoxConfig>>,
+
+    #[account(
+        seeds = [MANDATE_SEED, mandate.investor.as_ref(), mandate.trader.as_ref(), &[mandate.seq]],
+        bump = mandate.bump,
+        constraint = mandate.trader == trader.key() @ NoxError::NotTheTrader,
+        constraint = mandate.state != MandateState::Settled @ NoxError::MandateNotActive,
+    )]
+    pub mandate: Box<Account<'info, Mandate>>,
+
+    /// The SolFX authority: dataless, system-owned, signs the CPI and pays the trigger's rent.
+    #[account(
+        mut,
+        seeds = [MANDATE_SIGNER_SEED, mandate.key().as_ref()],
+        bump = mandate.signer_bump,
+    )]
+    pub mandate_signer: SystemAccount<'info>,
+
+    /// CHECK: `solfx-core` derives and checks it; nothing here reads it.
+    pub protocol: UncheckedAccount<'info>,
+
+    /// CHECK: `solfx-core` checks `has_one = authority` against the mandate signer, which only
+    /// this program can sign for. Not deserialized — this instruction prices nothing.
+    pub user_account: UncheckedAccount<'info>,
+
+    /// CHECK: `solfx-core` checks its seeds and that the position belongs to it.
+    pub market: UncheckedAccount<'info>,
+
+    /// CHECK: `solfx-core` checks the position's seeds and that it belongs to `user_account`.
+    /// Read-only: `place_trigger_order` reads the position's size, direction and opening slot
+    /// and writes none of them. An unnecessary write lock would serialise this against a close
+    /// on the same position for no reason.
+    pub position: UncheckedAccount<'info>,
+
+    /// CHECK: initialized by `solfx-core` at `[TRIGGER_SEED, position, order_id]`, paid for by
+    /// the mandate signer. An `order_id` already in use fails there as "account already in use",
+    /// which is how a take-profit is prevented from ever overwriting the trade's stop.
+    #[account(mut)]
+    pub trigger_order: UncheckedAccount<'info>,
+
+    pub price_update: Box<Account<'info, PriceUpdateV2>>,
+    pub secondary_price_update: Option<Box<Account<'info, PriceUpdateV2>>>,
+    pub quote_conversion_price_update: Option<Box<Account<'info, PriceUpdateV2>>>,
+
+    pub system_program: Program<'info, System>,
+
+    #[account(address = config.solfx_program)]
+    pub solfx_core_program: Program<'info, SolfxCore>,
+}
+
+pub fn funded_place_take_profit(
+    ctx: Context<FundedPlaceTakeProfit>,
+    order_id: u8,
+    trigger_price: i64,
+    size_base: u64,
+) -> Result<()> {
+    require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
+
+    let mandate_key = ctx.accounts.mandate.key();
+    let bump = ctx.accounts.mandate.signer_bump;
+    let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];
+
+    solfx_core::cpi::place_trigger_order(
+        CpiContext::new_with_signer(
+            ctx.accounts.solfx_core_program.key(),
+            solfx_core::cpi::accounts::PlaceTriggerOrder {
+                authority: ctx.accounts.mandate_signer.to_account_info(),
+                protocol: ctx.accounts.protocol.to_account_info(),
+                user_account: ctx.accounts.user_account.to_account_info(),
+                market: ctx.accounts.market.to_account_info(),
+                position: ctx.accounts.position.to_account_info(),
+                trigger_order: ctx.accounts.trigger_order.to_account_info(),
+                price_update: ctx.accounts.price_update.to_account_info(),
+                secondary_price_update: Some(leg(
+                    &ctx.accounts.secondary_price_update,
+                    &ctx.accounts.solfx_core_program,
+                )),
+                quote_conversion_price_update: Some(leg(
+                    &ctx.accounts.quote_conversion_price_update,
+                    &ctx.accounts.solfx_core_program,
+                )),
+                system_program: ctx.accounts.system_program.to_account_info(),
+            },
+            seeds,
+        ),
+        order_id,
+        TriggerKind::TakeProfit,
+        trigger_price,
+        size_base,
+    )?;
+
+    emit!(TakeProfitPlaced {
+        mandate: mandate_key,
+        position: ctx.accounts.position.key(),
+        order_id,
+        trigger_price,
+        size_base,
         ts: Clock::get()?.unix_timestamp,
     });
     Ok(())

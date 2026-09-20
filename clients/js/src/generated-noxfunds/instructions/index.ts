@@ -21,6 +21,7 @@ export * from "./forfeitStake";
 export * from "./fundedCancelStop";
 export * from "./fundedClosePosition";
 export * from "./fundedOpenPosition";
+export * from "./fundedPlaceTakeProfit";
 export * from "./fundMandate";
 export * from "./fundSolfxCollateral";
 export * from "./initializeConfig";

@@ -825,3 +825,213 @@ fn closing_frees_a_slot_and_the_stop_can_be_cancelled() {
     assert_eq!(m.open_positions, 0, "the slot is free again");
     nox.env.assert_invariants();
 }
+
+// --- the take-profit -------------------------------------------------------------------------
+//
+// The stop is mandatory and atomic with the open. A take-profit is neither: it is optional, it
+// is placed later, and it can be moved. What these prove is that "optional and later" does not
+// become a way around the mandatory one.
+
+impl Nox {
+    fn take_profit_ix(
+        &self,
+        nonce: u8,
+        market_index: u16,
+        order_id: u8,
+        trigger_price: i64,
+        size_base: u64,
+        price: Pubkey,
+    ) -> Instruction {
+        let position = Env::position_pda(&Env::user_pda(&self.signer), market_index, nonce);
+        Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::FundedPlaceTakeProfit {
+                trader: self.trader.pubkey(),
+                config: config_pda(),
+                mandate: self.mandate,
+                mandate_signer: self.signer,
+                protocol: self.env.protocol,
+                user_account: Env::user_pda(&self.signer),
+                market: Env::market_pda(market_index),
+                position,
+                trigger_order: Env::trigger_pda(&position, order_id),
+                price_update: price,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
+                system_program: anchor_lang::system_program::ID,
+                solfx_core_program: solfx_core::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::FundedPlaceTakeProfit {
+                order_id,
+                trigger_price,
+                size_base,
+            }
+            .data(),
+        }
+    }
+
+    /// One funded long on market 0, nonce 0, with its stop 1% below at `order_id` 0.
+    fn one_open_long(&mut self) -> Pubkey {
+        self.fund_for_trading(5_000 * ONE_USDC);
+        let p = self.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+        let stop = SPOT - (SPOT * 100) / 10_000;
+        let ix = self.open_ix(
+            0,
+            Direction::Long,
+            ONE_LOT / 100,
+            500 * ONE_USDC,
+            0,
+            stop,
+            p,
+            0,
+        );
+        let trader = self.trader.insecure_clone();
+        self.env.send(ix, &[&trader]).expect("open");
+        let position = Env::position_pda(&Env::user_pda(&self.signer), 0, 0);
+        self.env.track_position(position);
+        position
+    }
+}
+
+/// The happy path, and the thing that makes it safe: the stop is still there afterwards.
+#[test]
+fn a_take_profit_sits_beside_the_stop_rather_than_replacing_it() {
+    let mut nox = setup();
+    let position = nox.one_open_long();
+    assert!(
+        nox.env.trigger_exists(&position, 0),
+        "the mandatory stop landed with the open"
+    );
+
+    let p = nox.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let target = SPOT + (SPOT * 200) / 10_000; // 2% above, the profitable side of a long
+    let ix = nox.take_profit_ix(0, 0, 1, target, ONE_LOT / 100, p);
+    let trader = nox.trader.insecure_clone();
+    nox.env.send(ix, &[&trader]).expect("place the take-profit");
+
+    assert!(
+        nox.env.trigger_exists(&position, 1),
+        "the take-profit is on chain at its own order id"
+    );
+    assert!(
+        nox.env.trigger_exists(&position, 0),
+        "and the stop is untouched — the invariant the whole design rests on"
+    );
+    nox.env.assert_invariants();
+}
+
+/// `funded_cancel_stop` is generic over `order_id`, so it reclaims a take-profit's rent too.
+/// Without that a trader who moved a target twice would strand 2,039,280 lamports each time.
+#[test]
+fn a_take_profit_can_be_cancelled_and_replaced() {
+    let mut nox = setup();
+    let position = nox.one_open_long();
+
+    let p = nox.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let trader = nox.trader.insecure_clone();
+    let ix = nox.take_profit_ix(0, 0, 1, SPOT + (SPOT * 200) / 10_000, ONE_LOT / 100, p);
+    nox.env.send(ix, &[&trader]).expect("place");
+
+    let cancel = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::FundedCancelStop {
+            trader: nox.trader.pubkey(),
+            config: config_pda(),
+            mandate: nox.mandate,
+            mandate_signer: nox.signer,
+            trigger_order: Env::trigger_pda(&position, 1),
+            solfx_core_program: solfx_core::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::FundedCancelStop {
+            market_index: 0,
+            nonce: 0,
+            order_id: 1,
+        }
+        .data(),
+    };
+    nox.env.send(cancel, &[&trader]).expect("cancel");
+    assert!(!nox.env.trigger_exists(&position, 1), "the target is gone");
+    assert!(
+        nox.env.trigger_exists(&position, 0),
+        "cancelling a target does not touch the stop"
+    );
+
+    // And the same order id is free again, which is what "move the target" means in practice.
+    let p = nox.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let ix = nox.take_profit_ix(0, 0, 1, SPOT + (SPOT * 300) / 10_000, ONE_LOT / 100, p);
+    nox.env.send(ix, &[&trader]).expect("place it further out");
+    assert!(nox.env.trigger_exists(&position, 1));
+    nox.env.assert_invariants();
+}
+
+/// The stop's own `order_id` is refused — by `init`, before anything in this program runs.
+#[test]
+fn a_take_profit_cannot_take_the_stops_order_id() {
+    let mut nox = setup();
+    let position = nox.one_open_long();
+
+    let p = nox.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let ix = nox.take_profit_ix(0, 0, 0, SPOT + (SPOT * 200) / 10_000, ONE_LOT / 100, p);
+    let trader = nox.trader.insecure_clone();
+    let err = nox
+        .env
+        .send(ix, &[&trader])
+        .expect_err("order id 0 is the stop's");
+    let text = format!("{err:?}");
+    assert!(
+        text.contains("already in use"),
+        "refused because the account exists, not by a check that could be forgotten: {text}"
+    );
+    assert!(
+        nox.env.trigger_exists(&position, 0),
+        "the stop survived the attempt"
+    );
+}
+
+/// A target below a long is already met, so it would fire instantly at whatever the spread gave.
+/// `solfx-core` refuses it, which is the point of passing the oracle through to it.
+#[test]
+fn a_take_profit_on_the_losing_side_is_refused() {
+    let mut nox = setup();
+    nox.one_open_long();
+
+    let p = nox.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let below = SPOT - (SPOT * 200) / 10_000;
+    let ix = nox.take_profit_ix(0, 0, 1, below, ONE_LOT / 100, p);
+    let trader = nox.trader.insecure_clone();
+    let err = nox
+        .env
+        .send(ix, &[&trader])
+        .expect_err("a take-profit below a long is already met");
+    assert!(
+        format!("{err:?}").contains("TriggerAlreadyMet"),
+        "refused for the right reason: {err:?}"
+    );
+}
+
+/// Nobody else's target on somebody else's mandate.
+#[test]
+fn only_the_mandates_trader_can_place_a_take_profit() {
+    let mut nox = setup();
+    nox.one_open_long();
+
+    let stranger = solana_keypair::Keypair::new();
+    nox.env
+        .svm
+        .airdrop(&stranger.pubkey(), 1_000_000_000)
+        .unwrap();
+
+    let p = nox.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+    let mut ix = nox.take_profit_ix(0, 0, 1, SPOT + (SPOT * 200) / 10_000, ONE_LOT / 100, p);
+    ix.accounts[0].pubkey = stranger.pubkey();
+    let err = nox
+        .env
+        .send(ix, &[&stranger])
+        .expect_err("a stranger cannot place an order on this mandate");
+    assert!(
+        format!("{err:?}").contains("NotTheTrader"),
+        "refused for the right reason: {err:?}"
+    );
+}

@@ -32,6 +32,7 @@ import {
   parseFundedCancelStopInstruction,
   parseFundedClosePositionInstruction,
   parseFundedOpenPositionInstruction,
+  parseFundedPlaceTakeProfitInstruction,
   parseFundMandateInstruction,
   parseFundSolfxCollateralInstruction,
   parseInitializeConfigInstruction,
@@ -66,6 +67,7 @@ import {
   type ParsedFundedCancelStopInstruction,
   type ParsedFundedClosePositionInstruction,
   type ParsedFundedOpenPositionInstruction,
+  type ParsedFundedPlaceTakeProfitInstruction,
   type ParsedFundMandateInstruction,
   type ParsedFundSolfxCollateralInstruction,
   type ParsedInitializeConfigInstruction,
@@ -228,6 +230,7 @@ export enum NoxfundsInstruction {
   FundedCancelStop,
   FundedClosePosition,
   FundedOpenPosition,
+  FundedPlaceTakeProfit,
   InitializeConfig,
   InitializeTraderProfile,
   ObserveMandateEquity,
@@ -437,6 +440,17 @@ export function identifyNoxfundsInstruction(
     )
   ) {
     return NoxfundsInstruction.FundedOpenPosition;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([195, 75, 243, 152, 49, 23, 236, 177]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.FundedPlaceTakeProfit;
   }
   if (
     containsBytes(
@@ -685,6 +699,9 @@ export type ParsedNoxfundsInstruction<
       instructionType: NoxfundsInstruction.FundedOpenPosition;
     } & ParsedFundedOpenPositionInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.FundedPlaceTakeProfit;
+    } & ParsedFundedPlaceTakeProfitInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.InitializeConfig;
     } & ParsedInitializeConfigInstruction<TProgram>)
   | ({
@@ -858,6 +875,13 @@ export function parseNoxfundsInstruction<TProgram extends string>(
       return {
         instructionType: NoxfundsInstruction.FundedOpenPosition,
         ...parseFundedOpenPositionInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.FundedPlaceTakeProfit: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.FundedPlaceTakeProfit,
+        ...parseFundedPlaceTakeProfitInstruction(instruction),
       };
     }
     case NoxfundsInstruction.InitializeConfig: {

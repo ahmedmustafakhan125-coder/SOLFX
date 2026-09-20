@@ -6,6 +6,9 @@
  * nothing, and the UI shows "no data". These fixtures are real — a settled lifecycle run by the
  * `nox` CLI on 2026-09-19 — so a drifted seed fails here instead of silently emptying a page.
  */
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 import type { Address } from "@solana/kit";
 
@@ -101,5 +104,73 @@ describe("NOXFUNDS addresses match devnet", () => {
       }
       expect(inRust.size).toBe(Object.keys(expected).length);
     });
+  });
+});
+
+describe("the NOXFUNDS IDL is derived, not typed", () => {
+  // Anchor was not installed on the machine that added `funded_place_take_profit`, so its IDL
+  // entry was merged in from the fragments `cargo test --features idl-build` prints rather than
+  // produced by a full `anchor idl build`. Everything in that entry that could have been typed
+  // by hand is checked here against its real source: the discriminator against Anchor's rule,
+  // the accounts and args against `trading.rs`. A wrong discriminator is not a type error and
+  // not a client error — it is `InstructionFallbackNotFound` on devnet.
+  const idl = JSON.parse(
+    readFileSync(new URL("../../idl/noxfunds.json", import.meta.url), "utf8"),
+  ) as {
+    instructions: {
+      name: string;
+      discriminator: number[];
+      accounts: { name: string }[];
+      args: { name: string; type: string }[];
+    }[];
+    events: { name: string; discriminator: number[] }[];
+  };
+
+  const anchorDiscriminator = (namespace: string, name: string) => [
+    ...createHash("sha256").update(`${namespace}:${name}`).digest().subarray(0, 8),
+  ];
+
+  it("every instruction discriminator is sha256(global:<name>)[..8]", () => {
+    for (const ix of idl.instructions) {
+      expect(ix.discriminator, ix.name).toStrictEqual(
+        anchorDiscriminator("global", ix.name),
+      );
+    }
+  });
+
+  it("every event discriminator is sha256(event:<Name>)[..8]", () => {
+    for (const ev of idl.events) {
+      expect(ev.discriminator, ev.name).toStrictEqual(
+        anchorDiscriminator("event", ev.name),
+      );
+    }
+  });
+
+  it("funded_place_take_profit takes the accounts trading.rs declares, in order", () => {
+    const ix = idl.instructions.find(
+      (i) => i.name === "funded_place_take_profit",
+    );
+    expect(ix).toBeDefined();
+    expect(ix!.accounts.map((a) => a.name)).toStrictEqual([
+      "trader",
+      "config",
+      "mandate",
+      "mandate_signer",
+      "protocol",
+      "user_account",
+      "market",
+      "position",
+      "trigger_order",
+      "price_update",
+      "secondary_price_update",
+      "quote_conversion_price_update",
+      "system_program",
+      "solfx_core_program",
+    ]);
+    expect(ix!.args).toStrictEqual([
+      { name: "order_id", type: "u8" },
+      { name: "trigger_price", type: "i64" },
+      { name: "size_base", type: "u64" },
+    ]);
   });
 });

@@ -60,6 +60,21 @@ pub struct FundedTradeClosed {
     pub ts: i64,
 }
 
+/// A take-profit was added to an open funded position.
+///
+/// Carries the position key rather than `(market_index, nonce)`: the position is an account the
+/// instruction touched, so the field cannot disagree with what happened. An index taken as an
+/// argument and never checked can.
+#[event]
+pub struct TakeProfitPlaced {
+    pub mandate: Pubkey,
+    pub position: Pubkey,
+    pub order_id: u8,
+    pub trigger_price: i64,
+    pub size_base: u64,
+    pub ts: i64,
+}
+
 #[event]
 pub struct StopCancelled {
     pub mandate: Pubkey,

@@ -766,6 +766,19 @@
     },
     {
       "discriminator": [
+        219,
+        57,
+        134,
+        11,
+        124,
+        9,
+        199,
+        73
+      ],
+      "name": "TakeProfitPlaced"
+    },
+    {
+      "discriminator": [
         126,
         9,
         150,
@@ -2535,6 +2548,144 @@
         "either CPI runs. `stop_loss_price` is mandatory and not an argument the trader may omit."
       ],
       "name": "funded_open_position"
+    },
+    {
+      "name": "funded_place_take_profit",
+      "docs": [
+        "Add a take-profit to an open funded position. The stop is placed at open and is",
+        "mandatory; this is optional and can be cancelled with `funded_cancel_stop`, which is",
+        "generic over `order_id`. An `order_id` already in use \u2014 the trade's stop, say \u2014 fails",
+        "in `solfx-core` as \"account already in use\", so a take-profit can never replace a stop."
+      ],
+      "discriminator": [
+        195,
+        75,
+        243,
+        152,
+        49,
+        23,
+        236,
+        177
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "docs": [
+            "Pays the transaction fee. Pays no rent: the trigger's rent comes from the mandate signer,",
+            "and comes back to it on a cancel."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate"
+        },
+        {
+          "name": "mandate_signer",
+          "docs": [
+            "The SolFX authority: dataless, system-owned, signs the CPI and pays the trigger's rent."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "protocol"
+        },
+        {
+          "name": "user_account",
+          "docs": [
+            "this program can sign for. Not deserialized \u2014 this instruction prices nothing."
+          ]
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "position",
+          "docs": [
+            "Read-only: `place_trigger_order` reads the position's size, direction and opening slot",
+            "and writes none of them. An unnecessary write lock would serialise this against a close",
+            "on the same position for no reason."
+          ]
+        },
+        {
+          "name": "trigger_order",
+          "docs": [
+            "the mandate signer. An `order_id` already in use fails there as \"account already in use\",",
+            "which is how a take-profit is prevented from ever overwriting the trade's stop."
+          ],
+          "writable": true
+        },
+        {
+          "name": "price_update"
+        },
+        {
+          "name": "secondary_price_update",
+          "optional": true
+        },
+        {
+          "name": "quote_conversion_price_update",
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "solfx_core_program",
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi"
+        }
+      ],
+      "args": [
+        {
+          "name": "order_id",
+          "type": "u8"
+        },
+        {
+          "name": "trigger_price",
+          "type": "i64"
+        },
+        {
+          "name": "size_base",
+          "type": "u64"
+        }
+      ]
     },
     {
       "accounts": [
@@ -6920,6 +7071,45 @@
           {
             "name": "order_id",
             "type": "u8"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "A take-profit was added to an open funded position.",
+        "",
+        "Carries the position key rather than `(market_index, nonce)`: the position is an account the",
+        "instruction touched, so the field cannot disagree with what happened. An index taken as an",
+        "argument and never checked can."
+      ],
+      "name": "TakeProfitPlaced",
+      "type": {
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "order_id",
+            "type": "u8"
+          },
+          {
+            "name": "trigger_price",
+            "type": "i64"
+          },
+          {
+            "name": "size_base",
+            "type": "u64"
           },
           {
             "name": "ts",

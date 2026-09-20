@@ -213,6 +213,19 @@ pub mod noxfunds {
         instructions::trading::funded_cancel_stop(ctx, market_index, nonce, order_id)
     }
 
+    /// Add a take-profit to an open funded position. The stop is placed at open and is
+    /// mandatory; this is optional and can be cancelled with `funded_cancel_stop`, which is
+    /// generic over `order_id`. An `order_id` already in use — the trade's stop, say — fails
+    /// in `solfx-core` as "account already in use", so a take-profit can never replace a stop.
+    pub fn funded_place_take_profit(
+        ctx: Context<FundedPlaceTakeProfit>,
+        order_id: u8,
+        trigger_price: i64,
+        size_base: u64,
+    ) -> Result<()> {
+        instructions::trading::funded_place_take_profit(ctx, order_id, trigger_price, size_base)
+    }
+
     // --- the marketplace -------------------------------------------------------------------
     //
     // Where the two sides find each other. The binding step is an escrow, not a conversation:
