@@ -8,6 +8,7 @@ import {
   marketIndices,
   noteText,
   parseUsdc,
+  previewSplit,
 } from "@/lib/nox";
 
 describe("parseUsdc — the number that gets escrowed", () => {
@@ -73,5 +74,48 @@ describe("notes", () => {
 
   it("invalid UTF-8 reads as empty rather than as mojibake", () => {
     expect(noteText(Uint8Array.of(0xff, 0xfe), 2)).toBe("");
+  });
+});
+
+describe("previewSplit", () => {
+  const usdc = (n: number) => BigInt(Math.round(n * 1e6));
+
+  /**
+   * The worked example from `programs/noxfunds/src/settlement.rs` and `docs/NOXFUNDS.md`.
+   * If the page previews a different number from the one the program pays, the page is lying.
+   */
+  it("matches the program's worked example", () => {
+    const s = previewSplit(usdc(4500), usdc(3500), 500, 7000);
+    expect(s.gross).toBe(usdc(1000));
+    expect(s.protocol).toBe(usdc(50)); // 5% of gross
+    expect(s.trader).toBe(usdc(665)); // 70% of the 950 net
+    expect(s.investor).toBe(usdc(3785)); // principal + the other 30%
+  });
+
+  it("pays nobody but the investor when there is no profit", () => {
+    const s = previewSplit(usdc(198.54), usdc(200), 500, 7000);
+    expect(s.gross).toBe(0n);
+    expect(s.protocol).toBe(0n);
+    expect(s.trader).toBe(0n);
+    // The investor takes what is left — that is what bearing the loss means.
+    expect(s.investor).toBe(usdc(198.54));
+  });
+
+  it("rounds the fee up and the trader's share down, and still conserves every unit", () => {
+    // One unit of profit: the fee ceiling takes it, and nothing is created or lost.
+    const s = previewSplit(usdc(100) + 1n, usdc(100), 500, 7000);
+    expect(s.gross).toBe(1n);
+    expect(s.protocol).toBe(1n); // ceil(0.05) = 1, adverse to the party being charged
+    expect(s.trader).toBe(0n);
+    expect(s.investor + s.trader + s.protocol).toBe(usdc(100) + 1n);
+  });
+
+  it("conserves every unit across a range of awkward amounts", () => {
+    for (let profit = 0n; profit < 97n; profit++) {
+      const final = usdc(1000) + profit;
+      const s = previewSplit(final, usdc(1000), 500, 8000);
+      expect(s.investor + s.trader + s.protocol).toBe(final);
+      expect(s.protocol).toBeLessThanOrEqual(s.gross);
+    }
   });
 });

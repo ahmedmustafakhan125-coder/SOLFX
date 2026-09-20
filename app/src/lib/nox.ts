@@ -16,9 +16,16 @@
  * integer arithmetic. Where a figure cannot be computed — a profit factor with no losses, a
  * win rate with no trades — it is `null`, and the UI says so rather than showing a number.
  */
-import { findUserAccountPda, nox, noxPdas } from "@solfx/client";
+import {
+  findCollateralVaultPda,
+  findProtocolPda,
+  findUserAccountPda,
+  nox,
+  noxPdas,
+} from "@solfx/client";
 import {
   findAssociatedTokenPda,
+  getCreateAssociatedTokenIdempotentInstructionAsync,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import type {
@@ -508,3 +515,111 @@ export function closeRequestIx(
  * reason a valid transaction fails.
  */
 export const MARKET_CU = 100_000;
+
+// --- settlement ------------------------------------------------------------------------------
+
+/**
+ * End the mandate. Only the investor may ask, and it stops new trades rather than moving money.
+ *
+ * Open positions can still be closed afterwards — by the trader, or by anyone once the mandate is
+ * winding down — which is why this and the payout are two instructions and not one.
+ */
+export function requestSettlementIx(
+  signer: TransactionSigner,
+  mandate: Address
+): Instruction {
+  return nox.getRequestSettlementInstruction({ investor: signer, mandate });
+}
+
+/**
+ * Pay everyone out. **Permissionless**: the signer is whoever runs it, not whoever is owed.
+ *
+ * The investor therefore never waits on the trader, and the trader never waits on the investor.
+ * The three token accounts are the ones the program checks by authority, so they are derived
+ * here rather than chosen, and each is created idempotently first — a payee with no USDC account
+ * would otherwise make the payout impossible for everyone.
+ */
+export async function claimSettlementIxs(
+  signer: TransactionSigner,
+  m: Marketplace,
+  mandate: Row<nox.Mandate>
+): Promise<Instruction[]> {
+  if (!m.config) throw new Error("NOXFUNDS' config has not been read yet.");
+  const mint = m.config.usdcMint;
+  const [protocol] = await findProtocolPda();
+  const [collateralVault] = await findCollateralVaultPda();
+  const [mandateSigner] = [await noxPdas.findMandateSigner(mandate.address)];
+  const [mandateVault, profile] = await Promise.all([
+    noxPdas.findMandateVault(mandate.address),
+    noxPdas.findProfile(mandate.data.trader),
+  ]);
+  const owners = [
+    mandate.data.investor,
+    mandate.data.trader,
+    m.config.treasury,
+  ] as const;
+  const atas = await Promise.all(
+    owners.map(async (owner) => {
+      const [ata] = await findAssociatedTokenPda({
+        mint,
+        owner,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      });
+      return ata;
+    })
+  );
+  const create = await Promise.all(
+    owners.map((owner) =>
+      getCreateAssociatedTokenIdempotentInstructionAsync({
+        payer: signer,
+        mint,
+        owner,
+      })
+    )
+  );
+  return [
+    ...create,
+    nox.getClaimSettlementInstruction({
+      settler: signer,
+      config: await noxPdas.findNoxConfig(),
+      mandate: mandate.address,
+      mandateSigner,
+      protocol,
+      userAccount: mandate.data.solfxUserAccount,
+      usdcMint: mint,
+      collateralVault,
+      mandateVault,
+      investorToken: atas[0]!,
+      traderToken: atas[1]!,
+      treasuryToken: atas[2]!,
+      traderProfile: profile,
+    }),
+  ];
+}
+
+/**
+ * What a payout would be, by the same rule the program applies.
+ *
+ * 5% of **gross** profit to the protocol first, then the trader's share of what remains, and the
+ * investor takes the rest — principal included. The fee rounds up and the trader's share rounds
+ * down, both against the party being paid, and the investor receives the remainder, so the three
+ * always sum to the whole. On a loss there is no fee and no trader share.
+ *
+ * A preview, not a promise: the real split runs against the equity at the moment of the claim.
+ */
+export function previewSplit(
+  finalEquity: bigint,
+  principal: bigint,
+  feeBps: number,
+  traderBps: number
+): { investor: bigint; trader: bigint; protocol: bigint; gross: bigint } {
+  const gross = finalEquity > principal ? finalEquity - principal : 0n;
+  if (gross === 0n) {
+    return { investor: finalEquity, trader: 0n, protocol: 0n, gross: 0n };
+  }
+  const fee = (gross * BigInt(feeBps) + BPS - 1n) / BPS; // ceil, toward the charger
+  const protocol = fee > gross ? gross : fee;
+  const net = gross - protocol;
+  const trader = (net * BigInt(traderBps)) / BPS; // floor, toward the payer
+  return { investor: finalEquity - protocol - trader, trader, protocol, gross };
+}

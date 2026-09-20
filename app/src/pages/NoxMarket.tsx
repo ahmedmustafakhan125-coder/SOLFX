@@ -17,6 +17,7 @@ import {
   fmtPctBps,
   fmtSlots,
   MARKET_CU,
+  claimSettlementIxs,
   MANDATE_STATE,
   marketBitmap,
   marketIndices,
@@ -28,6 +29,8 @@ import {
   postOfferIx,
   postRequestIx,
   postTraderListingIx,
+  previewSplit,
+  requestSettlementIx,
   revokeOfferIx,
   TIER_NAME,
   traderStats,
@@ -821,7 +824,9 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
         </div>
       )}
 
-      {own && <MandatesPanel m={m} me={me} role="investor" />}
+      {own && (
+        <MandatesPanel m={m} me={me} role="investor" act={act} busy={busy} />
+      )}
 
       {own && <InvestorListingEditor m={m} s={s} act={act} busy={busy} />}
     </>
@@ -840,10 +845,14 @@ function MandatesPanel({
   m,
   me,
   role,
+  act,
+  busy,
 }: {
   m: Marketplace;
   me: Address | undefined;
   role: "investor" | "trader";
+  act: Act;
+  busy: boolean;
 }) {
   const mine = m.mandates.filter((x) =>
     role === "investor" ? x.data.investor === me : x.data.trader === me
@@ -920,12 +929,121 @@ function MandatesPanel({
                     ? ` ${data.openPositions} position${data.openPositions === 1 ? "" : "s"} open.`
                     : ""}
                 </p>
+                <Settlement
+                  m={m}
+                  me={me}
+                  role={role}
+                  mandate={{ address, data }}
+                  vault={vault}
+                  act={act}
+                  busy={busy}
+                />
               </li>
             );
           })}
         </ul>
       )}
     </Panel>
+  );
+}
+
+/**
+ * Ending a mandate, and what it would pay.
+ *
+ * Two steps, because the program makes them two: the investor asks, which stops new trades and
+ * moves nothing, and then anyone at all runs the payout. That second part is permissionless by
+ * design — an investor who has asked for their money must never need the trader's cooperation to
+ * get it — so the button is offered to whoever is looking.
+ *
+ * The figures are a preview computed by the same rule the program applies, from the equity at the
+ * last mark. The real split runs against the equity at the moment of the claim, and the panel
+ * says so rather than implying a number it cannot promise.
+ */
+function Settlement({
+  m,
+  me,
+  role,
+  mandate,
+  vault,
+  act,
+  busy,
+}: {
+  m: Marketplace;
+  me: Address | undefined;
+  role: "investor" | "trader";
+  mandate: { address: Address; data: nox.Mandate };
+  vault: bigint;
+  act: Act;
+  busy: boolean;
+}) {
+  const { address, data } = mandate;
+  const settled = data.state === 3;
+  if (settled) return null;
+
+  const flat = data.openPositions === 0;
+  const canAsk =
+    role === "investor" && data.investor === me && data.state === 0;
+  const canClaim = (data.state === 1 || data.state === 2) && flat;
+  const marked = data.lastEquity > 0n ? data.lastEquity : vault;
+  const split = previewSplit(
+    marked,
+    data.principal,
+    m.config?.protocolFeeBps ?? 500,
+    data.traderSplitBps
+  );
+
+  return (
+    <div className="mt-3 border border-line-soft p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        {canAsk ? (
+          <Btn
+            disabled={busy}
+            onClick={() =>
+              void act((signer) => [requestSettlementIx(signer, address)])
+            }
+          >
+            Request settlement
+          </Btn>
+        ) : null}
+        {canClaim ? (
+          <Btn
+            kind="solid"
+            disabled={busy}
+            onClick={() =>
+              void act((signer) => claimSettlementIxs(signer, m, mandate))
+            }
+          >
+            Pay everyone out
+          </Btn>
+        ) : null}
+        <span className="text-[11px] text-ink-dim">
+          {data.state === 0
+            ? role === "investor"
+              ? "Asking stops new trades. Your capital is not released until the payout."
+              : "Only the investor can end this. You cannot withdraw."
+            : !flat
+              ? `Closing out: ${data.openPositions} position${data.openPositions === 1 ? "" : "s"} still open. Anyone may close them.`
+              : "Flat and ready. Anyone may run the payout — the investor waits on nobody."}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-px border border-line bg-line sm:grid-cols-4">
+        <Stat label="Investor takes" value={`$${fmtUsd(split.investor, 2)}`} />
+        <Stat label="Trader takes" value={`$${fmtUsd(split.trader, 2)}`} />
+        <Stat label="Protocol fee" value={`$${fmtUsd(split.protocol, 2)}`} />
+        <Stat
+          label="Profit to split"
+          value={split.gross === 0n ? "none" : `$${fmtUsd(split.gross, 2)}`}
+        />
+      </div>
+      <p className="mt-2 text-[11px] text-ink-dim">
+        {split.gross === 0n
+          ? "No profit, so no fee and no trader share: the investor takes whatever is left. That is what bearing the loss means."
+          : `5% of gross to the protocol first, then ${data.traderSplitBps / 100}% of what remains to the trader.`}{" "}
+        A preview from the last mark — the payout runs against the equity at the
+        moment of the claim.
+      </p>
+    </div>
   );
 }
 
@@ -1423,7 +1541,9 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
         </Panel>
       )}
 
-      {own && <MandatesPanel m={m} me={me} role="trader" />}
+      {own && (
+        <MandatesPanel m={m} me={me} role="trader" act={act} busy={busy} />
+      )}
 
       {discovery && (
         <Panel
