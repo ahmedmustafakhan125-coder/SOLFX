@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
-import { nox } from "@solfx/client";
+import { nox, QuoteConversionKind } from "@solfx/client";
 
 import { NoxShell } from "@/components/NoxShell";
 import { useMarketplace } from "@/hooks/useMarketplace";
+import { useSolfx } from "@/hooks/useSolfx";
 import { useSend } from "@/hooks/useSend";
 import { useSigner } from "@/hooks/useSigner";
-import { fmtUsd } from "@/lib/format";
+import { fmtPrice, fmtUsd, priceplaces } from "@/lib/format";
 import type { LoadedMarket } from "@/lib/markets";
+import type { LivePrice } from "@/lib/prices";
 import {
   acceptOfferIx,
   closeRequestIx,
@@ -17,11 +19,20 @@ import {
   fmtPctBps,
   fmtSlots,
   MARKET_CU,
+  abandonEvaluationIx,
   claimSettlementIxs,
+  claimStagePassIx,
+  EVAL,
+  evalCloseIx,
+  evalObserveIx,
+  evalOpenIx,
+  EVAL_STATE_NAME,
+  evalProgress,
   MANDATE_STATE,
   marketBitmap,
   marketIndices,
   nextSeq,
+  NOTIONAL_DIVISOR,
   nicknameOf,
   noteText,
   OFFER_STATE_NAME,
@@ -31,6 +42,7 @@ import {
   postRequestIx,
   postTraderListingIx,
   previewSplit,
+  startEvaluationIx,
   requestSettlementIx,
   revokeOfferIx,
   TIER_NAME,
@@ -1057,6 +1069,359 @@ function Settlement({
   );
 }
 
+/**
+ * The evaluation: a $50 stake, a simulated account, and two phases to pass.
+ *
+ * A trader could not start one without this — the instructions existed and only the CLI called
+ * them. Everything here is simulated except the stake, which is real USDC in the evaluation's own
+ * vault, refunded when Phase 2 is passed and forfeited if the trader walks away or breaks a limit.
+ *
+ * The progress strip shows one blocker rather than six numbers, because "profit factor 1.31, need
+ * 1.50" tells a trader what to do and a table of statistics does not.
+ */
+function EvaluationPanel({
+  m,
+  me,
+  hasProfile,
+  markets,
+  prices,
+  priceAccounts,
+  act,
+  busy,
+}: {
+  m: Marketplace;
+  me: Address | undefined;
+  /** `start_evaluation` takes the trader profile account; there is no evaluation without one. */
+  hasProfile: boolean;
+  markets: readonly LoadedMarket[];
+  /** Keyed by feed id, as `useSolfx` keys it — not by symbol. */
+  prices: Record<string, LivePrice | undefined>;
+  priceAccounts: Record<string, Address | undefined>;
+  act: Act;
+  busy: boolean;
+}) {
+  const [size, setSize] = useState("10000");
+  const [marketIndex, setMarketIndex] = useState<number | null>(null);
+  const [notional, setNotional] = useState("1000");
+  const [stopBps, setStopBps] = useState("100");
+
+  const mine = m.evaluations.filter((e) => e.data.trader === me);
+  const live = mine.find((e) => e.data.state === 0) ?? mine[0];
+  const usdcMint = m.config?.usdcMint;
+
+  // `eval_open_position` takes one price account and calls `load_validated_price(.., None, None)`,
+  // so a market needing a second leg — a synthetic like XAU/EUR, or a non-USD quote like EUR/JPY —
+  // is refused with `MissingSecondaryPriceUpdate` before anything else is checked. Offering one in
+  // the list would be offering a trade the program cannot take.
+  const tradeable = markets.filter(
+    (x) =>
+      x.tradeable &&
+      x.data.priceSource.__kind === "Direct" &&
+      x.data.quoteConversionKind === QuoteConversionKind.None
+  );
+  const chosen = tradeable.find((x) => x.index === marketIndex) ?? tradeable[0];
+  const priceAccount = chosen ? priceAccounts[chosen.feedIdHex] : undefined;
+  const price = chosen ? prices[chosen.feedIdHex] : undefined;
+
+  const open = live
+    ? m.virtualPositions.filter((v) => v.data.evaluation === live.address)
+    : [];
+
+  // The position PDA is seeded `[evaluation, market_index, nonce]`, so nonces are per market and
+  // `open.length` is not one: hold BTC at 0 and 1, close 0, and the next open would collide at 1.
+  // Closing frees the account (`close = trader`), so the lowest unused nonce on this market is
+  // always right.
+  const usedNonces = chosen
+    ? open
+        .filter((v) => v.data.marketIndex === chosen.index)
+        .map((v) => v.data.nonce)
+    : [];
+  let nonce = 0;
+  while (usedNonces.includes(nonce)) nonce += 1;
+
+  if (!me) {
+    return (
+      <Panel
+        title="Evaluation"
+        hint="Prove yourself before anyone risks money on you"
+      >
+        <Empty>Connect a wallet to start an evaluation.</Empty>
+      </Panel>
+    );
+  }
+
+  // --- no evaluation yet: the terms, then the stake -----------------------------------------
+  if (!live || live.data.state !== 0) {
+    const accountSize = parseUsdc(size);
+    const ok =
+      accountSize !== null &&
+      accountSize >= EVAL.minAccount &&
+      accountSize <= EVAL.maxAccount;
+    const seq = mine.length;
+    return (
+      <Panel
+        title="Evaluation"
+        hint="Everything is simulated except the $50 stake, which comes back when you pass"
+      >
+        {live ? (
+          <p className="mb-4 text-xs text-ink-dim">
+            Your last evaluation ended: {EVAL_STATE_NAME[live.data.state]}.
+            Starting another opens a fresh record at sequence {seq}.
+          </p>
+        ) : null}
+        <div className="grid gap-px border border-line bg-line sm:grid-cols-4">
+          <Stat label="Stake" value="$50, refundable" />
+          <Stat label="Phase 1 target" value={`${EVAL.targetBps[0] / 100}%`} />
+          <Stat label="Phase 2 target" value={`${EVAL.targetBps[1] / 100}%`} />
+          <Stat label="Max drawdown" value={`${EVAL.maxDrawdownBps / 100}%`} />
+          <Stat
+            label="Daily loss limit"
+            value={`${EVAL.maxDailyLossBps / 100}%`}
+          />
+          <Stat
+            label="Risk per trade"
+            value={`${EVAL.maxRiskBps / 100}% at the stop`}
+          />
+          <Stat
+            label="Trades"
+            value={`${EVAL.minTrades} over ${EVAL.minDays} days`}
+          />
+          <Stat label="Minimum hold" value={`${EVAL.minHoldSecs / 60} min`} />
+        </div>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <Input
+            label="Simulated account"
+            value={size}
+            onChange={setSize}
+            suffix="USDC"
+          />
+          <Btn
+            disabled={busy || !ok || !usdcMint || !hasProfile}
+            onClick={() =>
+              void act((signer) =>
+                startEvaluationIx(signer, usdcMint!, seq, accountSize!)
+              )
+            }
+          >
+            Stake $50 and begin
+          </Btn>
+          <span className="text-[11px] text-ink-dim">
+            {!hasProfile
+              ? "Create your trader profile first — the pass is recorded against it."
+              : ok
+                ? "A stop-loss is mandatory on every trade, and the 10-minute hold applies to closing by choice."
+                : `Between $${fmtUsd(EVAL.minAccount, 0)} and $${fmtUsd(EVAL.maxAccount, 0)}.`}
+          </span>
+        </div>
+      </Panel>
+    );
+  }
+
+  // --- an evaluation in progress --------------------------------------------------------------
+  const p = evalProgress(live.data);
+
+  // Sizing is integer the whole way, in the program's own units: notional at QUOTE_PRECISION
+  // 1e6, price at PRICE_PRECISION 1e9, size at BASE_PRECISION 1e9, related by
+  // `notional = size x price / NOTIONAL_DIVISOR`. A float here would round somewhere the
+  // program does not, and the stop would not be the number shown.
+  const px = price?.price ?? 0n;
+  const notionalQuote = parseUsdc(notional) ?? 0n;
+  const bps = Number(stopBps);
+  const stopOk = Number.isInteger(bps) && bps > 0 && bps < 10_000;
+  const sizeBase = px > 0n ? (notionalQuote * NOTIONAL_DIVISOR) / px : 0n;
+  // Below entry for a long, so the stop is the losing side. Floor: a lower stop risks
+  // marginally more, which is the side the risk check reads, so it cannot be gamed by rounding.
+  const stop = stopOk ? (px * BigInt(10_000 - bps)) / 10_000n : 0n;
+  // Every open position, with its market and oracle account. The program marks all of them or
+  // none: a missing leg is `IncompleteObservation`, so a short list is not sent at all.
+  const legs = open.flatMap((v) => {
+    const mk = markets.find((x) => x.index === v.data.marketIndex);
+    const pa = mk ? priceAccounts[mk.feedIdHex] : undefined;
+    return mk && pa
+      ? [{ position: v.address, market: mk.address, priceUpdate: pa }]
+      : [];
+  });
+
+  const canOpen =
+    !busy &&
+    sizeBase > 0n &&
+    stop > 0n &&
+    !!chosen &&
+    !!priceAccount &&
+    price?.stale === false &&
+    open.length < EVAL.maxOpen;
+
+  return (
+    <Panel
+      title={`Evaluation — Phase ${p.stage}`}
+      hint={`Simulated $${fmtUsd(live.data.accountSize, 0)} · stake $50 held`}
+    >
+      <div className="grid gap-px border border-line bg-line sm:grid-cols-4">
+        <Stat label="Balance" value={`$${fmtUsd(p.equity, 2)}`} />
+        <Stat label="Target" value={`$${fmtUsd(p.targetEquity, 2)}`} />
+        <Stat
+          label="Profit"
+          value={`${Number(p.profitBps) / 100}% of ${p.targetBps / 100}%`}
+        />
+        <Stat
+          label="Worst drawdown"
+          value={`${Number(p.drawdownBps) / 100}%`}
+        />
+        <Stat
+          label="Today's loss"
+          value={`${Number(p.dailyLossBps) / 100}% of ${EVAL.maxDailyLossBps / 100}%`}
+        />
+        <Stat label="Trades" value={`${p.trades} of ${EVAL.minTrades}`} />
+        <Stat label="Trading days" value={`${p.days} of ${EVAL.minDays}`} />
+        <Stat label="Open" value={`${open.length} of ${EVAL.maxOpen}`} />
+      </div>
+
+      <p className="mt-3 text-xs text-ink-dim">
+        {p.blocker
+          ? `Still needed: ${p.blocker}.`
+          : "Every requirement met — claim the stage."}
+      </p>
+
+      {/* --- the ticket ------------------------------------------------------------------- */}
+      <div className="mt-4 border border-line-soft p-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+            Market
+            <select
+              value={chosen?.index ?? ""}
+              onChange={(e) => setMarketIndex(Number(e.target.value))}
+              className="mt-1 block border border-line bg-surface px-3 py-2 text-sm text-ink"
+            >
+              {tradeable.map((x) => (
+                <option key={x.index} value={x.index}>
+                  {x.symbol}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Input
+            label="Notional"
+            value={notional}
+            onChange={setNotional}
+            suffix="USDC"
+          />
+          <Input
+            label="Stop, below entry"
+            value={stopBps}
+            onChange={setStopBps}
+            suffix="bps"
+          />
+          <Btn
+            disabled={!canOpen}
+            onClick={() =>
+              void act(async (signer) => [
+                await evalOpenIx({
+                  signer,
+                  evaluation: live.address,
+                  marketIndex: chosen!.index,
+                  market: chosen!.address,
+                  priceUpdate: priceAccount!,
+                  nonce,
+                  direction: nox.Direction.Long,
+                  sizeBase,
+                  stopLossPrice: stop,
+                }),
+              ])
+            }
+          >
+            Open a simulated long
+          </Btn>
+        </div>
+        <p className="mt-2 text-[11px] text-ink-dim">
+          {px > 0n && chosen
+            ? `${chosen.symbol} at ${fmtPrice(px, priceplaces(chosen.symbol))}${price?.stale ? ` — stale by ${price.ageSeconds}s, so the program would refuse this` : ""}. The fill is priced by SolFX's own function, so it crosses the spread exactly as a real one would. Nothing is filled on the venue.`
+            : "Waiting for a price."}{" "}
+          A stop is mandatory, and risk at it may not exceed{" "}
+          {EVAL.maxRiskBps / 100}% of the balance.
+        </p>
+      </div>
+
+      {/* --- open simulated positions ------------------------------------------------------ */}
+      {open.length > 0 ? (
+        <ul className="mt-4 divide-y divide-line-soft">
+          {open.map(({ address, data }) => {
+            const mk = markets.find((x) => x.index === data.marketIndex);
+            const pa = mk ? priceAccounts[mk.feedIdHex] : undefined;
+            const held = Number(m.now - data.openedAt);
+            const holdLeft = EVAL.minHoldSecs - held;
+            return (
+              <li
+                key={address}
+                className="flex flex-wrap items-center gap-3 py-3 text-sm"
+              >
+                <span className="font-bold">
+                  {mk?.symbol ?? `#${data.marketIndex}`}
+                </span>
+                <span className="tnum text-xs text-ink-muted">
+                  entry{" "}
+                  {fmtPrice(data.entryPrice, priceplaces(mk?.symbol ?? ""))} · $
+                  {fmtUsd(data.entryNotional, 2)} · stop{" "}
+                  {fmtPrice(data.stopPrice, priceplaces(mk?.symbol ?? ""))}
+                </span>
+                <Btn
+                  disabled={busy || holdLeft > 0 || !pa || !mk}
+                  onClick={() =>
+                    void act((signer) => [
+                      evalCloseIx({
+                        signer,
+                        evaluation: live.address,
+                        virtualPosition: address,
+                        market: mk!.address,
+                        priceUpdate: pa!,
+                      }),
+                    ])
+                  }
+                >
+                  {holdLeft > 0
+                    ? `Hold ${Math.ceil(holdLeft / 60)} min`
+                    : "Close"}
+                </Btn>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Btn
+          disabled={busy || legs.length === 0 || legs.length !== open.length}
+          onClick={() =>
+            void act((signer) => [evalObserveIx(signer, live.address, legs)])
+          }
+        >
+          {legs.length === open.length
+            ? "Mark to market"
+            : "Mark to market — a price account is missing"}
+        </Btn>
+        <Btn
+          disabled={busy || !!p.blocker || !usdcMint}
+          onClick={() =>
+            void act(async (signer) => [
+              await claimStagePassIx(signer, usdcMint!, live.address),
+            ])
+          }
+        >
+          {p.stage === 1 ? "Claim Phase 1" : "Claim Phase 2 and the stake"}
+        </Btn>
+        <Btn
+          kind="danger"
+          disabled={busy}
+          onClick={() =>
+            void act((signer) => [abandonEvaluationIx(signer, live.address)])
+          }
+        >
+          Walk away — the stake is forfeit
+        </Btn>
+      </div>
+    </Panel>
+  );
+}
+
 function OfferForm({
   m,
   s,
@@ -1395,6 +1760,9 @@ function InvestorListingEditor({
 // --- trader --------------------------------------------------------------------------------
 
 function TraderView({ m, s, act, busy, mode }: ViewProps) {
+  // Live prices and their oracle accounts, for the evaluation ticket. The marketplace read is
+  // account state only and carries neither.
+  const solfx = useSolfx();
   const discovery = mode === "market";
   const own = mode === "trader";
   const me = s.me;
@@ -1435,6 +1803,19 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
             </div>
           )}
         </Panel>
+      )}
+
+      {own && (
+        <EvaluationPanel
+          m={m}
+          me={me}
+          hasProfile={!!profile}
+          markets={s.markets}
+          prices={solfx.prices}
+          priceAccounts={solfx.priceAccounts}
+          act={act}
+          busy={busy}
+        />
       )}
 
       {own && (

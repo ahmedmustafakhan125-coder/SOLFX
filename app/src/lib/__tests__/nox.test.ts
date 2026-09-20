@@ -1,11 +1,15 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
+  EVAL,
   fmtFactorBps,
   fmtPctBps,
   fmtSlots,
   marketBitmap,
   marketIndices,
+  NOTIONAL_DIVISOR,
   noteText,
   parseUsdc,
   previewSplit,
@@ -117,5 +121,70 @@ describe("previewSplit", () => {
       expect(s.investor + s.trader + s.protocol).toBe(final);
       expect(s.protocol).toBeLessThanOrEqual(s.gross);
     }
+  });
+});
+
+describe("EVAL mirrors the program's rulebook", () => {
+  // `EVAL` is a copy of thirteen constants the program enforces. A copy that drifts shows a
+  // trader one target and judges them against another, and the first they would know is a
+  // refusal on chain — so the copy is read back from `constants.rs` here rather than trusted.
+  const rust = readFileSync(
+    new URL("../../../../programs/noxfunds/src/constants.rs", import.meta.url),
+    "utf8"
+  );
+  const value = (name: string): string => {
+    const m = rust.match(
+      new RegExp(`pub const ${name}:[^=]+=\\s*([^;]+);`, "m")
+    );
+    if (!m) throw new Error(`${name} is not in constants.rs`);
+    return m[1].replace(/_/g, "").trim();
+  };
+  const num = (name: string) => Number(value(name));
+
+  it.each([
+    ["EVAL_STAKE", () => Number(EVAL.stake)],
+    ["EVAL_MIN_ACCOUNT", () => Number(EVAL.minAccount)],
+    ["EVAL_MAX_ACCOUNT", () => Number(EVAL.maxAccount)],
+    ["EVAL_MAX_DAILY_LOSS_BPS", () => EVAL.maxDailyLossBps],
+    ["EVAL_MAX_DRAWDOWN_BPS", () => EVAL.maxDrawdownBps],
+    ["EVAL_MAX_RISK_BPS", () => EVAL.maxRiskBps],
+    ["EVAL_MIN_TRADES", () => EVAL.minTrades],
+    ["EVAL_MIN_DAYS", () => EVAL.minDays],
+    ["EVAL_MIN_HOLD_SECS", () => EVAL.minHoldSecs],
+    ["EVAL_MIN_AVG_HOLD_SECS", () => EVAL.minAvgHoldSecs],
+    ["EVAL_CONSISTENCY_BPS", () => EVAL.consistencyBps],
+    ["EVAL_MAX_OPEN", () => EVAL.maxOpen],
+  ])("%s", (name, ours) => {
+    expect(ours()).toBe(num(name));
+  });
+
+  it("EVAL_TARGET_BPS", () => {
+    expect(value("EVAL_TARGET_BPS")).toBe(`[${EVAL.targetBps.join(", ")}]`);
+  });
+});
+
+describe("evaluation sizing is the program's own relation", () => {
+  // notional = size x price / NOTIONAL_DIVISOR, the identity `notional_in_collateral` uses.
+  const size = (notionalQuote: bigint, price: bigint) =>
+    (notionalQuote * NOTIONAL_DIVISOR) / price;
+
+  it("a $1,000 ticket on a $50,000 market is 0.02 of the base asset", () => {
+    const px = 50_000n * 1_000_000_000n;
+    expect(size(1_000_000_000n, px)).toBe(20_000_000n); // 0.02e9
+  });
+
+  it("round-trips back to the notional asked for", () => {
+    const px = 77_485_880_000_000n; // BTC/USD, the price of the first devnet trade
+    for (const usd of [1n, 37n, 1_000n, 199_999n]) {
+      const q = usd * 1_000_000n;
+      const s = size(q, px);
+      expect((s * px) / NOTIONAL_DIVISOR).toBeLessThanOrEqual(q);
+    }
+  });
+
+  it("floors, so a ticket never exceeds the notional the trader typed", () => {
+    const px = 3n * 1_000_000_000n; // a price that does not divide evenly
+    const s = size(1_000_000n, px);
+    expect((s * px) / NOTIONAL_DIVISOR).toBeLessThanOrEqual(1_000_000n);
   });
 });

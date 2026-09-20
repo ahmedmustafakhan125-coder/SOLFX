@@ -48,6 +48,9 @@ export type Marketplace = {
   readonly offers: readonly Row<nox.MandateOffer>[];
   readonly requests: readonly Row<nox.FundingRequest>[];
   readonly mandates: readonly Row<nox.Mandate>[];
+  /** Evaluations, and the simulated positions inside them. */
+  readonly evaluations: readonly Row<nox.Evaluation>[];
+  readonly virtualPositions: readonly Row<nox.VirtualPosition>[];
   /** What each mandate's vault holds now, keyed by mandate address. */
   readonly vaults: ReadonlyMap<Address, bigint>;
   /** Cluster time when this was read, for judging offer expiry. */
@@ -91,6 +94,8 @@ export async function readMarketplace(
   const offers: Row<nox.MandateOffer>[] = [];
   const requests: Row<nox.FundingRequest>[] = [];
   const mandates: Row<nox.Mandate>[] = [];
+  const evaluations: Row<nox.Evaluation>[] = [];
+  const virtualPositions: Row<nox.VirtualPosition>[] = [];
 
   for (const { pubkey, account } of accounts) {
     const bytes = base64ToBytes(account.data[0]);
@@ -126,6 +131,16 @@ export async function readMarketplace(
           address: pubkey,
           data: nox.getMandateDecoder().decode(bytes),
         });
+      } else if (hasPrefix(bytes, nox.EVALUATION_DISCRIMINATOR)) {
+        evaluations.push({
+          address: pubkey,
+          data: nox.getEvaluationDecoder().decode(bytes),
+        });
+      } else if (hasPrefix(bytes, nox.VIRTUAL_POSITION_DISCRIMINATOR)) {
+        virtualPositions.push({
+          address: pubkey,
+          data: nox.getVirtualPositionDecoder().decode(bytes),
+        });
       }
     } catch {
       // Skipped rather than fatal. See above.
@@ -140,6 +155,8 @@ export async function readMarketplace(
     offers,
     requests,
     mandates,
+    evaluations,
+    virtualPositions,
     vaults: await readVaults(rpc, mandates),
     now,
   };
@@ -636,4 +653,225 @@ export function nicknameOf(m: Marketplace, who: Address): string {
   if (t) return noteText(t.data.nickname, t.data.nicknameLen);
   const i = m.investorListings.find((l) => l.data.investor === who);
   return i ? noteText(i.data.nickname, i.data.nicknameLen) : "";
+}
+
+// --- the evaluation --------------------------------------------------------------------------
+
+/**
+ * The evaluation's fixed rules, from `programs/noxfunds/src/constants.rs`.
+ *
+ * Constants in the program rather than config fields, deliberately: a threshold an admin can move
+ * is a threshold they can move after seeing who it would promote. Mirrored here so the dashboard
+ * can show a trader what they are being judged against before they stake anything — and if the
+ * program ever changes one, this copy is the thing that has to change with it.
+ */
+export const EVAL = {
+  stake: 50_000_000n, // $50, the only real money in an evaluation
+  minAccount: 10_000_000_000n, // $10,000
+  maxAccount: 200_000_000_000n, // $200,000
+  targetBps: [800, 500] as const, // Phase 1 then Phase 2
+  maxDailyLossBps: 300,
+  maxDrawdownBps: 600,
+  maxRiskBps: 100,
+  minTrades: 10,
+  minDays: 5,
+  minHoldSecs: 600,
+  minAvgHoldSecs: 2_700,
+  consistencyBps: 5_000, // no single day may be more than half the target
+  maxOpen: 5,
+} as const;
+
+export const EVAL_STATE_NAME = ["Active", "Passed", "Failed"] as const;
+
+/**
+ * `notional = size x price / NOTIONAL_DIVISOR`, at BASE_PRECISION 1e9 x PRICE_PRECISION 1e9
+ * against a quote at 1e6. The program's own relation — sizing a ticket any other way puts the
+ * notional out by a factor of a thousand in whichever direction the mistake went.
+ */
+export const NOTIONAL_DIVISOR = 1_000_000_000_000n;
+
+/** Where a trader is against the rules of their current stage. Every figure integer-only. */
+export type EvalProgress = {
+  readonly stage: number;
+  readonly equity: bigint;
+  readonly targetEquity: bigint;
+  readonly profitBps: bigint;
+  readonly targetBps: number;
+  readonly drawdownBps: bigint;
+  readonly dailyLossBps: bigint;
+  readonly trades: number;
+  readonly days: number;
+  /** The single thing still standing between this trader and the next stage. */
+  readonly blocker: string | null;
+};
+
+export function evalProgress(e: nox.Evaluation): EvalProgress {
+  const size = e.accountSize === 0n ? 1n : e.accountSize;
+  const equity = e.balance > 0n ? BigInt(e.balance) : 0n;
+  const stage = e.stage < 1 ? 1 : e.stage;
+  const targetBps = EVAL.targetBps[stage - 1] ?? EVAL.targetBps[1];
+  const targetEquity = size + (size * BigInt(targetBps)) / BPS;
+  const profitBps = equity > size ? ((equity - size) * BPS) / size : 0n;
+  const drawdownBps =
+    e.peakEquity > 0n && equity < e.peakEquity
+      ? ((e.peakEquity - equity) * BPS) / e.peakEquity
+      : 0n;
+  const dailyLossBps =
+    e.dayStartEquity > 0n && e.dayPnl < 0n
+      ? (-BigInt(e.dayPnl) * BPS) / e.dayStartEquity
+      : 0n;
+
+  // One blocker, the nearest one — a list of six numbers tells a trader nothing about what to do.
+  const blocker =
+    profitBps < BigInt(targetBps)
+      ? `Profit ${Number(profitBps) / 100}% of the ${targetBps / 100}% target`
+      : e.trades < EVAL.minTrades
+        ? `${e.trades} of ${EVAL.minTrades} trades`
+        : e.tradingDays < EVAL.minDays
+          ? `${e.tradingDays} of ${EVAL.minDays} trading days`
+          : null;
+
+  return {
+    stage,
+    equity,
+    targetEquity,
+    profitBps,
+    targetBps,
+    drawdownBps,
+    dailyLossBps,
+    trades: e.trades,
+    days: e.tradingDays,
+    blocker,
+  };
+}
+
+export async function startEvaluationIx(
+  signer: TransactionSigner,
+  usdcMint: Address,
+  seq: number,
+  accountSize: bigint
+): Promise<Instruction[]> {
+  const [traderToken] = await findAssociatedTokenPda({
+    mint: usdcMint,
+    owner: signer.address,
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+  });
+  return [
+    await getCreateAssociatedTokenIdempotentInstructionAsync({
+      payer: signer,
+      mint: usdcMint,
+      owner: signer.address,
+    }),
+    await nox.getStartEvaluationInstructionAsync({
+      trader: signer,
+      evaluation: await noxPdas.findEvaluation(signer.address, seq),
+      usdcMint,
+      traderToken,
+      seq,
+      accountSize,
+    }),
+  ];
+}
+
+export async function evalOpenIx(args: {
+  signer: TransactionSigner;
+  evaluation: Address;
+  marketIndex: number;
+  market: Address;
+  priceUpdate: Address;
+  nonce: number;
+  direction: nox.DirectionArgs;
+  sizeBase: bigint;
+  stopLossPrice: bigint;
+}): Promise<Instruction> {
+  return nox.getEvalOpenPositionInstructionAsync({
+    trader: args.signer,
+    evaluation: args.evaluation,
+    virtualPosition: await noxPdas.findVirtualPosition(
+      args.evaluation,
+      args.marketIndex,
+      args.nonce
+    ),
+    market: args.market,
+    priceUpdate: args.priceUpdate,
+    marketIndex: args.marketIndex,
+    nonce: args.nonce,
+    direction: args.direction,
+    sizeBase: args.sizeBase,
+    stopLossPrice: args.stopLossPrice,
+  });
+}
+
+export function evalCloseIx(args: {
+  signer: TransactionSigner;
+  evaluation: Address;
+  virtualPosition: Address;
+  market: Address;
+  priceUpdate: Address;
+}): Instruction {
+  return nox.getEvalClosePositionInstruction({
+    trader: args.signer,
+    evaluation: args.evaluation,
+    virtualPosition: args.virtualPosition,
+    market: args.market,
+    priceUpdate: args.priceUpdate,
+  });
+}
+
+/**
+ * Mark every open simulated position and judge the loss limits. **Permissionless.**
+ *
+ * One `(position, market, price)` triple per open position, in `remaining_accounts` — the same
+ * shape the funded crank takes. Evaluations only allow single-leg markets, so a triple is always
+ * the whole group here.
+ */
+export function evalObserveIx(
+  signer: TransactionSigner,
+  evaluation: Address,
+  legs: readonly {
+    position: Address;
+    market: Address;
+    priceUpdate: Address;
+  }[]
+): Instruction {
+  const ix = nox.getEvalObserveEquityInstruction({
+    observer: signer,
+    evaluation,
+  });
+  return {
+    ...ix,
+    accounts: [
+      ...(ix.accounts ?? []),
+      ...legs.flatMap((l) => [
+        { address: l.position, role: 0 as const },
+        { address: l.market, role: 0 as const },
+        { address: l.priceUpdate, role: 0 as const },
+      ]),
+    ],
+  };
+}
+
+export async function claimStagePassIx(
+  signer: TransactionSigner,
+  usdcMint: Address,
+  evaluation: Address
+): Promise<Instruction> {
+  const [traderToken] = await findAssociatedTokenPda({
+    mint: usdcMint,
+    owner: signer.address,
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+  });
+  return nox.getClaimStagePassInstructionAsync({
+    trader: signer,
+    evaluation,
+    usdcMint,
+    traderToken,
+  });
+}
+
+export function abandonEvaluationIx(
+  signer: TransactionSigner,
+  evaluation: Address
+): Instruction {
+  return nox.getAbandonEvaluationInstruction({ trader: signer, evaluation });
 }
