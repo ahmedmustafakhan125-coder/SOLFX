@@ -627,6 +627,13 @@ function InvestorView({ m, s, signer, act, busy }: ViewProps) {
             m={m}
             s={s}
             trader={target}
+            // What this trader asked you for, if they sent a request. Offering anything else by
+            // default is how a $1,000 offer went out from a wallet holding $500 and was refused.
+            requested={
+              m.requests.find(
+                (r) => r.data.trader === target && r.data.investor === me
+              )?.data.wantedPrincipal
+            }
             act={act}
             busy={busy}
             onDone={() => setTarget(undefined)}
@@ -775,6 +782,7 @@ function OfferForm({
   m,
   s,
   trader,
+  requested,
   act,
   busy,
   onDone,
@@ -782,6 +790,8 @@ function OfferForm({
   m: Marketplace;
   s: ReturnType<typeof useMarketplace>;
   trader: Address;
+  /** The principal this trader requested, when the form was opened from their request. */
+  requested?: bigint;
   act: Act;
   busy: boolean;
   onDone: () => void;
@@ -792,7 +802,15 @@ function OfferForm({
     ? TIER_MAX_MANDATE[profile.data.tier]
     : TIER_MAX_MANDATE[0];
 
-  const [principal, setPrincipal] = useState("1000");
+  // Answer the question that was asked: the requested amount if there is a request, otherwise
+  // the least this trader's listing accepts, and only then a round number. A default that
+  // ignores both is a refusal waiting to happen — the program checks the principal against the
+  // investor's balance, and the first offer made here asked for $1,000 from a $500 wallet.
+  const [principal, setPrincipal] = useState(
+    String(
+      Number(requested ?? listing?.data.minPrincipal ?? 1_000_000_000n) / 1e6
+    )
+  );
   const [split, setSplit] = useState(
     String((listing?.data.wantedSplitBps ?? 7000) / 100)
   );

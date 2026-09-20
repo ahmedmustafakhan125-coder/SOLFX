@@ -82,3 +82,59 @@ describe("diagnoseSendError", () => {
     expect(diagnoseSendError({ message: "outer", cause: a }).message).toBe("inner");
   });
 });
+
+/**
+ * The real failure from devnet, 20 Sep 2026: an offer of $1,000 from a wallet holding $500.
+ *
+ * Kit reported `Solana error #4615026` plus a base64 blob and an instruction to run a CLI to
+ * decode it, while the program had already said what was wrong, in words, in the logs. The
+ * headline should be the program's sentence, not the number.
+ */
+describe("diagnoseSendError, with program logs", () => {
+  const anchorLogs = [
+    "Program 9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx invoke [1]",
+    "Program log: Instruction: PostOffer",
+    "Program log: AnchorError thrown in programs/noxfunds/src/instructions/marketplace.rs:312. " +
+      "Error Code: InsufficientPrincipal. Error Number: 6030. " +
+      "Error Message: The investor's token account holds less than the principal.",
+    "Program 9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx failed: custom program error: 0x178e",
+  ];
+
+  it("prefers the program's own sentence over kit's error number", () => {
+    const e = planError({
+      kind: "single",
+      status: "failed",
+      error: {
+        message:
+          'Solana error #4615026; Decode this error by running `npx @solana/errors decode -- 4615026 "X19jb2RlPTQ2MTUwMjYmY29kZT02MDMwJmluZGV4PTI="`',
+        context: { logs: anchorLogs },
+      },
+    });
+    const { message, logs } = diagnoseSendError(e);
+    expect(message).toBe(
+      "The investor's token account holds less than the principal (InsufficientPrincipal)",
+    );
+    expect(logs).toEqual(anchorLogs);
+  });
+
+  it("names the error code when Anchor split the line and only the code survived", () => {
+    const e = planError({
+      kind: "single",
+      status: "failed",
+      error: {
+        message: "Solana error #4615026",
+        context: { logs: ["Program log: Error Code: OfferNotOpen. Error Number: 6033."] },
+      },
+    });
+    expect(diagnoseSendError(e).message).toBe("Refused: OfferNotOpen");
+  });
+
+  it("falls back to the innermost message when the chain produced no logs", () => {
+    const e = planError({
+      kind: "single",
+      status: "failed",
+      error: { message: "User rejected the request." },
+    });
+    expect(diagnoseSendError(e).message).toBe("User rejected the request.");
+  });
+});

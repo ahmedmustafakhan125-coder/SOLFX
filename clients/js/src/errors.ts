@@ -52,6 +52,38 @@ function isStringArray(v: unknown): v is string[] {
 }
 
 /**
+ * The program's own explanation, taken out of the preflight logs.
+ *
+ * Anchor logs a refusal in full before the transaction fails:
+ *
+ *   `Program log: AnchorError caused by account: offer. Error Code: OfferNotOpen.`
+ *   `Error Number: 6033. Error Message: Offer is not open.`
+ *
+ * while kit reports the same failure as `Solana error #4615026` plus a base64 blob and an
+ * instruction telling you to run a CLI to decode it. Both were on screen together when an offer
+ * was refused for `InsufficientPrincipal`: the sentence that named the cause was collapsed under
+ * "Program logs", and the headline was the number.
+ *
+ * So the log wins. It is the program's own words, it needs no decoder, it survives a production
+ * build — a generated `get*ErrorMessage` does not; codama compiles the table out — and it works
+ * for both programs, including an error thrown inside a CPI.
+ *
+ * Anchor splits the line in two when it is long, so the code and the message are matched
+ * separately and joined.
+ */
+function anchorMessage(logs: readonly string[] | undefined): string | undefined {
+  if (!logs) return undefined;
+  let name: string | undefined;
+  let text: string | undefined;
+  for (const line of logs) {
+    name ??= /Error Code: (\w+)/.exec(line)?.[1];
+    text ??= /Error Message: (.+?)\.?\s*$/.exec(line)?.[1];
+  }
+  if (text) return name ? `${text} (${name})` : text;
+  return name ? `Refused: ${name}` : undefined;
+}
+
+/**
  * Pull the most specific message and the program logs out of anything kit throws.
  *
  * Messages are collected depth-first and the **last** one wins, because the outermost is
@@ -81,5 +113,8 @@ export function diagnoseSendError(e: unknown): SendDiagnosis {
   walk(e);
 
   const fallback = e instanceof Error ? e.message : String(e);
-  return { message: messages[messages.length - 1] ?? fallback, logs };
+  // The program's own words first; kit's error code only when the chain said nothing.
+  const message =
+    anchorMessage(logs) ?? messages[messages.length - 1] ?? fallback;
+  return { message, logs };
 }
