@@ -159,6 +159,16 @@ struct Args {
     /// Distinguishes several mandates from the same investor to the same trader.
     #[arg(long, default_value_t = 0, global = true)]
     seq: u8,
+    /// Hold the funded position until the oracle is this many bps above the entry, then close.
+    ///
+    /// Without it the position is opened and closed in the same minute, which after crossing the
+    /// spread twice and paying two fees is a small loss — every settled mandate so far is one. A
+    /// profit split needs a profit, and the only honest way to get one is to wait for the market.
+    #[arg(long, global = true)]
+    hold_until_bps: Option<i64>,
+    /// How long to wait for that move before closing anyway, in seconds.
+    #[arg(long, default_value_t = 900, global = true)]
+    max_hold_secs: u64,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -1060,6 +1070,62 @@ async fn lifecycle(
             usdc(m.last_equity),
             usdc(m.peak_equity)
         );
+    }
+
+    // --- 7b. wait for a move, if asked ----------------------------------------------------------
+    //
+    // A long closed immediately loses the spread and two fees. To show a *profit* split there has
+    // to be a profit, so this waits for the oracle to reach a target above the entry. It is the
+    // market's decision whether that happens: on timeout the position is closed anyway and the
+    // result is whatever it is.
+    if let Some(target_bps) = args.hold_until_bps {
+        let entry = maybe::<Position>(rpc, &position)
+            .await?
+            .ok_or_else(|| anyhow!("no position at {position} to hold"))?
+            .entry_price;
+        let target = entry
+            .checked_add(
+                entry
+                    .saturating_mul(target_bps)
+                    .checked_div(10_000)
+                    .ok_or_else(|| anyhow!("target overflows"))?,
+            )
+            .ok_or_else(|| anyhow!("target overflows"))?;
+        println!(
+            "  7b holding         until the oracle reaches {} (+{target_bps} bps on {}), or {} s",
+            price_1e9(target),
+            price_1e9(entry),
+            args.max_hold_secs
+        );
+        let started = now()?;
+        loop {
+            let live = oracle_price(rpc, &plan.price_update).await?;
+            let moved = live
+                .saturating_sub(entry)
+                .saturating_mul(10_000)
+                .checked_div(entry.max(1))
+                .unwrap_or(0);
+            let waited = now()?.saturating_sub(started);
+            if live >= target {
+                println!(
+                    "       reached {} ({moved:+} bps) after {waited} s",
+                    price_1e9(live)
+                );
+                break;
+            }
+            if waited >= i64::try_from(args.max_hold_secs).unwrap_or(i64::MAX) {
+                println!(
+                    "       timed out at {} ({moved:+} bps) after {waited} s — closing anyway",
+                    price_1e9(live)
+                );
+                break;
+            }
+            println!(
+                "       {} ({moved:+} bps), {waited} s elapsed",
+                price_1e9(live)
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+        }
     }
 
     // --- 8. close, and reclaim the stop's rent ---------------------------------------------------
