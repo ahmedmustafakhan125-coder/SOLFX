@@ -88,6 +88,21 @@ fi
 
 PROGRAM_ID="$(python3 -c "import json;print(json.load(open('$IDL'))['address'])")"
 
+# The JS client is generated from its own committed copy of the IDL, not from target/idl. The
+# two are kept in step by hand, and a machine without Anchor installed can only update the
+# copy — so check them here, where the cost of a divergence is a UI that encodes an interface
+# the program does not have. Compared by shape, so a doc comment alone never trips it.
+CLIENT_IDL="$ROOT/clients/js/idl/$PROGRAM.json"
+if [[ -f "$CLIENT_IDL" ]] && ! python3 "$ROOT/scripts/idl-compare.py" "$CLIENT_IDL" "$IDL" >/dev/null 2>&1; then
+  echo "==> the client's IDL copy does not match this build"
+  python3 "$ROOT/scripts/idl-compare.py" "$CLIENT_IDL" "$IDL" || true
+  echo
+  CODAMA="codama.$PROGRAM.json"; [[ -f "$ROOT/$CODAMA" ]] || CODAMA="codama.json"
+  echo "  cp \"$IDL\" \"$CLIENT_IDL\" && npx codama run js -c $CODAMA"
+  echo
+  die "regenerate the client before deploying"
+fi
+
 # A build older than the sources it came from is the failure this whole script exists to
 # catch, one level earlier. Refuse rather than deploy something stale.
 if [[ -n "$(find "${SO_SOURCES[@]}" -name '*.rs' -newer "$SO" -print -quit 2>/dev/null)" ]]; then

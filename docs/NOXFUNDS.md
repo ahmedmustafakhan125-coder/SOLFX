@@ -158,7 +158,11 @@ A few guarantees that fall out of the design:
 - **The rules the trader accepts are byte for byte the rules the investor published** — the
   program copies them from the offer; nobody retypes them.
 
-In the browser this is `/nox/market`, with an Investor / Trader switch.
+In the browser this is `/nox/market` for discovery, `/nox/investor` and `/nox/trader` for each
+side's own dashboard. A trader does everything from theirs: take an evaluation, trade a funded
+mandate, set a target, close. Nothing on either side needs the CLI or a checkout of this repo —
+`nox` exists so the same flows can be run and recorded reproducibly, not because the page
+cannot do them.
 
 ### Step 1 — the investor funds a mandate
 
@@ -462,11 +466,12 @@ These are recorded because they are non-obvious and cost real time to discover:
    are 840 and 552 bytes held by value; against Solana's 4,096-byte stack frame they cannot be
    allowed to share a frame.
 
-### Instructions — 34
+### Instructions — 35
 
 **Admin:** `initialize_config`, `set_paused`
 **Trader:** `initialize_trader_profile`, `recompute_tier`, `create_solfx_account`,
-`funded_open_position`, `funded_close_position`, `funded_cancel_stop`
+`funded_open_position`, `funded_close_position`, `funded_place_take_profit`,
+`funded_cancel_stop`
 **Investor:** `fund_mandate`, `fund_solfx_collateral`, `request_settlement`, `claim_settlement`
 **Public / keeper:** `observe_mandate_equity`, `wind_down_position`, `wind_down_cancel_stop`,
 `reconcile_position`
@@ -482,10 +487,10 @@ chain by checking the program's own `ProgramData` account, not by a stored addre
 first caller could claim. A first-caller-wins initialiser is a standard way to lose a protocol
 on deployment day.
 
-### Events — 32
+### Events — 33
 
 `ConfigInitialized`, `MandateFunded`, `FundedTradeOpened`, `FundedTradeClosed`,
-`StopCancelled`, `EquityObserved`, `MandateBreached`, `SettlementRequested`, `MandateSettled`,
+`TakeProfitPlaced`, `StopCancelled`, `EquityObserved`, `MandateBreached`, `SettlementRequested`, `MandateSettled`,
 `PositionWoundDown`, `PositionReconciled`, `TraderProfileCreated`, `TradeRecorded`,
 `TierChanged`, `ListingPosted`, `ListingClosed`, `InvestorListingPosted`,
 `InvestorListingClosed`, `OfferPosted`, `OfferRevoked`, `OfferAccepted`, `OfferDeclined`,
@@ -647,6 +652,16 @@ This section exists because a document that only lists what works is marketing.
   entry tier's; only single-leg markets can be traded; and the $50 stake is flat — the plan says
   it rises for larger evaluations but never says by how much. Passing records no tier: tiers
   come from funded trading, as they always have.
+- **Resting entry orders do not exist, on either protocol.** SolFX's trigger orders attach to
+  an open position, so they can close one and cannot open one. A "limit order" on the trader
+  dashboard would be the browser watching a price and sending when it hits — which stops the
+  moment the tab closes — so it is not offered. The stop and the take-profit are real on-chain
+  orders a keeper fires. Adding a genuine resting entry would be a change to `solfx-core`.
+- **The browser ticket trades single-leg markets only.** `funded_open_position` accepts the
+  secondary and quote-conversion oracle legs a synthetic or non-USD-quoted market needs; the
+  page resolves one price account per market and so lists only the markets that need one.
+  EUR/JPY and USD/INR are `nox market --execute` for now, and the panel says so rather than
+  offering a trade that would be refused.
 - **The public verification page.** The claim in Part 8 that every statistic is re-derivable
   from events is true of the event data; the page that does the re-deriving does not exist.
 - **The off-chain keeper.** The cranks are public instructions, but nothing runs them
