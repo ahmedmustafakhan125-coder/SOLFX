@@ -1681,9 +1681,7 @@ function FundedTradingPanel({
         <div className="mt-4 border border-line-soft p-3">
           {permitted.length === 0 ? (
             <Empty>
-              None of the markets this mandate permits can be priced from a
-              single oracle account, which is all this page passes today. Use{" "}
-              <code>nox market</code> for those.
+              {noTicketReason(markets, tradeable, d.allowedMarkets)}
             </Empty>
           ) : (
             <>
@@ -1835,6 +1833,29 @@ function FundedTradingPanel({
       </div>
     </Panel>
   );
+}
+
+/**
+ * Why there is nothing to trade — the actual reason, not the nearest one.
+ *
+ * Three different situations produce an empty market list, and telling a trader the wrong one
+ * wastes their evening. A closed session on a Sunday is not a missing feature, and a mandate
+ * restricted to gold is not a broken page.
+ */
+function noTicketReason(
+  all: readonly LoadedMarket[],
+  tradeable: readonly LoadedMarket[],
+  allowed: bigint
+): string {
+  const bit = (i: number) => (allowed & (1n << BigInt(i))) !== 0n;
+  const named = all.filter((x) => bit(x.index));
+  if (named.length === 0)
+    return "This mandate permits no market this page knows about.";
+  if (!named.some((x) => x.tradeable))
+    return `${named.map((x) => x.symbol).join(", ")} ${named.length > 1 ? "are" : "is"} closed right now. FX and metals trade Sunday 21:00 to Friday 21:00 UTC; only BTC, ETH and SOL are continuous.`;
+  if (!tradeable.some((x) => bit(x.index)))
+    return `${named.map((x) => x.symbol).join(", ")} need a second oracle account to be priced, which this page does not pass yet. Use \`nox market\` for those.`;
+  return "Nothing to trade on this mandate right now.";
 }
 
 /** Ceiling of `price x bps / 10_000`, for a short's stop — the side that measures more risk. */
