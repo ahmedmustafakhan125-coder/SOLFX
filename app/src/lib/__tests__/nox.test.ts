@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import { nox } from "@solfx/client";
+import type { Address } from "@solana/kit";
 
 import {
   EVAL,
   fmtFactorBps,
+  fundedPriceLimit,
   fmtPctBps,
   fmtSlots,
   marketBitmap,
@@ -12,6 +15,7 @@ import {
   NOTIONAL_DIVISOR,
   noteText,
   parseUsdc,
+  ruleRefusal,
   previewSplit,
 } from "@/lib/nox";
 
@@ -186,5 +190,166 @@ describe("evaluation sizing is the program's own relation", () => {
     const px = 3n * 1_000_000_000n; // a price that does not divide evenly
     const s = size(1_000_000n, px);
     expect((s * px) / NOTIONAL_DIVISOR).toBeLessThanOrEqual(1_000_000n);
+  });
+});
+
+describe("ruleRefusal mirrors check_rules", () => {
+  // The panel shows a trader why a funded trade would be refused *before* they sign it. The
+  // value of that depends entirely on it agreeing with `trading.rs::check_rules` — a mirror
+  // that drifts is worse than no mirror, because it either promises a fill the program refuses
+  // or refuses one the program would take. Every case below is one `require!` in that function,
+  // in the order the program reaches it.
+  const A = "11111111111111111111111111111112" as Address;
+  const PX = 1_085_430_000n; // EUR/USD at PRICE_PRECISION, the fixture's price
+  const base = {
+    discriminator: new Uint8Array(8),
+    investor: A,
+    trader: A,
+    seq: 0,
+    solfxUserAccount: A,
+    signerBump: 255,
+    principal: 10_000_000_000n, // $10,000
+    peakEquity: 10_000_000_000n,
+    maxTradeNotional: 5_000_000_000n, // $5,000
+    maxTotalNotional: 10_000_000_000n, // $10,000
+    maxDrawdownBps: 600,
+    maxDailyLossBps: 300,
+    maxRiskPerTradeBps: 100, // 1%
+    maxStopDistanceBps: 500, // 5%
+    maxConcurrentPositions: 3,
+    allowedMarkets: 1n, // market 0 only
+    minHoldSlots: 0n,
+    traderSplitBps: 7_000,
+    state: 0,
+    openPositions: 0,
+    openNotional: 0n,
+    lastEquity: 10_000_000_000n,
+    lastObservedAt: 0n,
+    slots: [],
+    openedAt: 0n,
+    bump: 255,
+  } as unknown as nox.Mandate;
+
+  /** $1,000 of notional at PX, sized the way the ticket sizes it. */
+  const size = (usd: bigint) => (usd * 1_000_000n * NOTIONAL_DIVISOR) / PX;
+
+  const ask = (over: Partial<Parameters<typeof ruleRefusal>[0]> = {}) =>
+    ruleRefusal({
+      mandate: base,
+      marketIndex: 0,
+      direction: nox.Direction.Long,
+      price: PX,
+      sizeBase: size(1_000n),
+      stopPrice: (PX * 9_900n) / 10_000n, // 1% below
+      openPositions: 0,
+      ...over,
+    });
+
+  it("permits a trade inside every limit", () => {
+    expect(ask()).toBeNull();
+  });
+
+  it("MandateNotActive", () => {
+    expect(ask({ mandate: { ...base, state: 1 } as nox.Mandate })).toMatch(
+      /no longer active/
+    );
+  });
+
+  it("MarketNotPermitted", () => {
+    expect(ask({ marketIndex: 1 })).toMatch(/did not permit/);
+  });
+
+  it("TooManyOpenPositions", () => {
+    expect(ask({ openPositions: 3 })).toMatch(/limit/);
+    expect(ask({ openPositions: 2 })).toBeNull();
+  });
+
+  it("StopLossRequired", () => {
+    expect(ask({ stopPrice: 0n })).toMatch(/stop is mandatory/);
+  });
+
+  it("StopOnWrongSide, both directions", () => {
+    expect(ask({ stopPrice: PX + 1n })).toMatch(/below/);
+    expect(ask({ direction: nox.Direction.Short, stopPrice: PX - 1n })).toMatch(
+      /above/
+    );
+    expect(
+      ask({
+        direction: nox.Direction.Short,
+        stopPrice: (PX * 10_100n) / 10_000n,
+      })
+    ).toBeNull();
+  });
+
+  it("StopTooFar, and the boundary is inclusive as the program's <= is", () => {
+    const at = (bps: bigint) => (PX * (10_000n - bps)) / 10_000n;
+    expect(ask({ stopPrice: at(500n) })).toBeNull();
+    expect(ask({ stopPrice: at(501n) })).toMatch(/the mandate allows 5%/);
+  });
+
+  it("TradeExceedsMandate", () => {
+    expect(ask({ sizeBase: size(5_001n) })).toMatch(/per-trade ceiling/);
+    expect(ask({ sizeBase: size(5_000n) })).toBeNull();
+  });
+
+  it("TotalNotionalExceeded", () => {
+    const loaded = { ...base, openNotional: 9_500_000_000n } as nox.Mandate;
+    expect(ask({ mandate: loaded, sizeBase: size(1_000n) })).toMatch(
+      /book limit/
+    );
+    expect(ask({ mandate: loaded, sizeBase: size(400n) })).toBeNull();
+  });
+
+  it("RiskPerTradeExceeded — size x distance, not size alone", () => {
+    // 1% of $10,000 equity is $100 of risk. At a 1% stop that is $10,000 of notional, which
+    // the per-trade ceiling refuses first — so the case is made with a wider stop and a
+    // smaller size, which is exactly the trade-off the rule is designed to allow.
+    const wide = (PX * 9_600n) / 10_000n; // 4% away, inside the 5% distance limit
+    expect(ask({ sizeBase: size(2_500n), stopPrice: wide })).toBeNull(); // $100 risk
+    expect(ask({ sizeBase: size(2_600n), stopPrice: wide })).toMatch(
+      /risking .* at the stop/
+    );
+  });
+
+  it("measures the notional with a ceiling, as notional_in_quote does", () => {
+    // The one size where floor and ceil disagree about whether the trade fits. `mul_div_ceil`
+    // is what the program uses, so this must be refused; a mirror that floored would call it
+    // compliant and promise a fill that fails.
+    const exact = (base.maxTradeNotional * NOTIONAL_DIVISOR) / PX;
+    const justOver = exact + 1n;
+    expect((justOver * PX) / NOTIONAL_DIVISOR).toBe(base.maxTradeNotional); // floors to the limit
+    expect(ask({ sizeBase: justOver })).toMatch(/per-trade ceiling/);
+    expect(ask({ sizeBase: exact })).toBeNull();
+  });
+
+  it("measures the stop distance with a ceiling, as the program does", () => {
+    // A price where the distance does not divide evenly. Rounding down here would admit a stop
+    // fractionally wider than the mandate allows; the program rounds up for that reason.
+    const price = 10_007n;
+    const stop = 9_506n; // 501/10007 = 500.6 bps
+    expect(
+      ruleRefusal({
+        mandate: base,
+        marketIndex: 0,
+        direction: nox.Direction.Long,
+        price,
+        sizeBase: 1n,
+        stopPrice: stop,
+        openPositions: 0,
+      })
+    ).toMatch(/5\.01%/);
+  });
+});
+
+describe("fundedPriceLimit", () => {
+  const PX = 1_000_000_000n;
+
+  it("is a maximum buying and a minimum selling", () => {
+    expect(fundedPriceLimit(nox.Direction.Long, PX, 50)).toBe(1_005_000_000n);
+    expect(fundedPriceLimit(nox.Direction.Short, PX, 50)).toBe(995_000_000n);
+  });
+
+  it("zero slippage is a bound at the price, not an opt-out", () => {
+    expect(fundedPriceLimit(nox.Direction.Long, PX, 0)).toBe(PX);
   });
 });

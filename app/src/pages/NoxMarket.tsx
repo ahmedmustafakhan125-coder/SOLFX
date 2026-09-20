@@ -1,14 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
-import { nox, QuoteConversionKind } from "@solfx/client";
+import { Direction, nox, QuoteConversionKind } from "@solfx/client";
 
 import { NoxShell } from "@/components/NoxShell";
 import { useMarketplace } from "@/hooks/useMarketplace";
-import { useSolfx } from "@/hooks/useSolfx";
+import { useRpc, useSolfx } from "@/hooks/useSolfx";
 import { useSend } from "@/hooks/useSend";
 import { useSigner } from "@/hooks/useSigner";
 import { fmtPrice, fmtUsd, priceplaces } from "@/lib/format";
 import type { LoadedMarket } from "@/lib/markets";
+import {
+  loadPositions,
+  repricePositions,
+  type OpenPosition,
+} from "@/lib/positions";
 import type { LivePrice } from "@/lib/prices";
 import {
   acceptOfferIx,
@@ -31,8 +36,19 @@ import {
   MANDATE_STATE,
   marketBitmap,
   marketIndices,
+  mandateAuthority,
+  fundedCancelOrderIx,
+  fundedCloseIx,
+  FUNDED_CLOSE_CU,
+  fundedOpenIx,
+  FUNDED_OPEN_CU,
+  fundedPriceLimit,
+  fundedTakeProfitIx,
+  FUNDED_TRIGGER_CU,
+  type Row,
   nextSeq,
   NOTIONAL_DIVISOR,
+  ruleRefusal,
   nicknameOf,
   noteText,
   OFFER_STATE_NAME,
@@ -343,7 +359,10 @@ function NoxPage({ mode }: { mode: Mode }) {
    * transaction, so builders must never obtain their own.
    */
   async function act(
-    build: (signer: TransactionSigner) => Promise<Instruction[]> | Instruction[]
+    build: (
+      signer: TransactionSigner
+    ) => Promise<Instruction[]> | Instruction[],
+    cu = MARKET_CU
   ) {
     setBuildError(undefined);
     if (!signer) {
@@ -352,7 +371,7 @@ function NoxPage({ mode }: { mode: Mode }) {
     }
     try {
       const ixs = await build(signer);
-      if (await tx.send(ixs, MARKET_CU)) s.refresh();
+      if (await tx.send(ixs, cu)) s.refresh();
     } catch (e) {
       // A builder can throw before anything is sent — a bad seq, a missing account.
       setBuildError(e instanceof Error ? e.message : String(e));
@@ -501,7 +520,10 @@ function NoxPage({ mode }: { mode: Mode }) {
 }
 
 type Act = (
-  build: (signer: TransactionSigner) => Promise<Instruction[]> | Instruction[]
+  build: (signer: TransactionSigner) => Promise<Instruction[]> | Instruction[],
+  /** Compute units to request. The marketplace's default is far too little for a funded open,
+   *  which runs two CPIs into `solfx-core`. */
+  cu?: number
 ) => Promise<void>;
 
 type Mode = "market" | "investor" | "trader";
@@ -1422,6 +1444,561 @@ function EvaluationPanel({
   );
 }
 
+/**
+ * Trading an investor's money, from the browser.
+ *
+ * Why this is not the terminal's ticket: a funded position's SolFX authority is the mandate
+ * signer, a PDA with no private key. Only `noxfunds` can sign for it, so every order here goes
+ * through the wrapper and is checked against the mandate **before** the fill rather than
+ * audited afterwards. The preflight line under the ticket is that check, mirrored — so a trader
+ * reads the refusal before signing rather than after paying a fee for it.
+ */
+function FundedTradingPanel({
+  m,
+  me,
+  markets,
+  prices,
+  priceAccounts,
+  act,
+  busy,
+}: {
+  m: Marketplace;
+  me: Address | undefined;
+  markets: readonly LoadedMarket[];
+  prices: Record<string, LivePrice | undefined>;
+  priceAccounts: Record<string, Address | undefined>;
+  act: Act;
+  busy: boolean;
+}) {
+  const rpc = useRpc();
+  const mine = m.mandates.filter((x) => x.data.trader === me);
+  const [chosenMandate, setChosenMandate] = useState<Address | undefined>();
+  const mandate =
+    mine.find((x) => x.address === chosenMandate) ??
+    mine.find((x) => x.data.state === 0) ??
+    mine[0];
+
+  const [marketIndex, setMarketIndex] = useState<number | null>(null);
+  const [direction, setDirection] = useState<nox.DirectionArgs>(
+    nox.Direction.Long
+  );
+  const [notional, setNotional] = useState("1000");
+  const [collateral, setCollateral] = useState("200");
+  const [slippage, setSlippage] = useState("50");
+  const [stopBps, setStopBps] = useState("100");
+  const [tpBps, setTpBps] = useState("200");
+
+  // The same restriction the evaluation ticket carries, for the same reason: a market priced
+  // from two or three feeds needs those accounts passed, and this page resolves one per market.
+  // `nox market --execute` handles the rest until the extra legs are wired here.
+  const tradeable = markets.filter(
+    (x) =>
+      x.tradeable &&
+      x.data.priceSource.__kind === "Direct" &&
+      x.data.quoteConversionKind === QuoteConversionKind.None
+  );
+  const permitted = mandate
+    ? tradeable.filter(
+        (x) => (mandate.data.allowedMarkets & (1n << BigInt(x.index))) !== 0n
+      )
+    : [];
+  const chosen = permitted.find((x) => x.index === marketIndex) ?? permitted[0];
+  const price = chosen ? prices[chosen.feedIdHex] : undefined;
+  const priceAccount = chosen ? priceAccounts[chosen.feedIdHex] : undefined;
+
+  // The mandate's open positions, read from SolFX against the mandate signer rather than from
+  // the mandate's own slot array: the slots say a position exists, the position says at what
+  // entry and how it is doing.
+  const [open, setOpen] = useState<readonly OpenPosition[]>([]);
+  const priceByIndex = useMemo(() => {
+    const out: Record<number, bigint | undefined> = {};
+    for (const x of markets) out[x.index] = prices[x.feedIdHex]?.price;
+    return out;
+  }, [markets, prices]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!mandate || markets.length === 0) {
+      setOpen([]);
+      return;
+    }
+    void (async () => {
+      try {
+        const signer = await mandateAuthority(mandate.address);
+        const found = await loadPositions(
+          rpc,
+          signer,
+          markets.map((x) => x.index),
+          priceByIndex
+        );
+        if (!cancelled) setOpen(found);
+      } catch {
+        if (!cancelled) setOpen([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `priceByIndex` changes on every price tick; re-reading positions that often is wasteful,
+    // so the marks are refreshed separately below and this runs on the mandate and market set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rpc, mandate?.address, markets]);
+
+  const marked = useMemo(
+    () => repricePositions(open, priceByIndex),
+    [open, priceByIndex]
+  );
+
+  if (!me) {
+    return (
+      <Panel title="Trade" hint="An investor's capital, under their rules">
+        <Empty>Connect a wallet to trade a mandate.</Empty>
+      </Panel>
+    );
+  }
+  if (!mandate) {
+    return (
+      <Panel title="Trade" hint="An investor's capital, under their rules">
+        <Empty>
+          No mandate yet. Accept an offer in the marketplace and the ticket
+          appears here.
+        </Empty>
+      </Panel>
+    );
+  }
+
+  const d = mandate.data;
+  const active = d.state === 0;
+  const px = price?.price ?? 0n;
+  const notionalQuote = parseUsdc(notional) ?? 0n;
+  const collateralQuote = parseUsdc(collateral) ?? 0n;
+  const sizeBase = px > 0n ? (notionalQuote * NOTIONAL_DIVISOR) / px : 0n;
+
+  const long = direction === nox.Direction.Long;
+  const stopN = Number(stopBps);
+  const stopOk = Number.isInteger(stopN) && stopN > 0 && stopN < 10_000;
+  // Adverse to the trader on both sides: a long's stop floors (a little lower, a little more
+  // risk measured), a short's ceils. The risk check reads the distance, so rounding the other
+  // way would let a ticket slip under the mandate's limit by a unit.
+  const stopPrice = !stopOk
+    ? 0n
+    : long
+      ? (px * BigInt(10_000 - stopN)) / 10_000n
+      : ceilBps(px, 10_000 + stopN);
+
+  const slipN = Number(slippage);
+  const slipOk = Number.isInteger(slipN) && slipN >= 0 && slipN <= 1_000;
+
+  const refusal =
+    px === 0n
+      ? "waiting for a price"
+      : !slipOk
+        ? "slippage must be 0–1000 bps"
+        : sizeBase === 0n
+          ? "enter a notional"
+          : collateralQuote === 0n
+            ? "enter the margin to post"
+            : ruleRefusal({
+                mandate: d,
+                marketIndex: chosen?.index ?? -1,
+                direction,
+                price: px,
+                sizeBase,
+                stopPrice,
+                openPositions: d.openPositions,
+              });
+
+  const stale = price?.stale === true;
+  const canOpen =
+    !busy && active && !refusal && !stale && !!chosen && !!priceAccount;
+
+  // Nonces are per market: reusing an occupied one fails as "account already in use", which
+  // reads like a protocol error and is not one.
+  const used = chosen
+    ? marked.filter((p) => p.marketIndex === chosen.index).map((p) => p.nonce)
+    : [];
+  let nonce = 0;
+  while (used.includes(nonce)) nonce += 1;
+
+  return (
+    <Panel
+      title="Trade"
+      hint="Checked against the mandate before the fill, not audited after it"
+    >
+      {mine.length > 1 ? (
+        <label className="mb-4 block text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+          Mandate
+          <select
+            value={mandate.address}
+            onChange={(e) => setChosenMandate(e.target.value as Address)}
+            className="mt-1 block border border-line bg-surface px-3 py-2 text-sm text-ink"
+          >
+            {mine.map((x) => (
+              <option key={x.address} value={x.address}>
+                {x.address.slice(0, 8)}… · ${fmtUsd(x.data.principal, 0)} ·{" "}
+                {(MANDATE_STATE[x.data.state] ?? MANDATE_STATE[0]).name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+
+      <div className="grid gap-px border border-line bg-line sm:grid-cols-4">
+        <Stat label="Principal" value={`$${fmtUsd(d.principal, 2)}`} />
+        <Stat
+          label="Per trade"
+          value={`$${fmtUsd(d.maxTradeNotional, 0)} max`}
+        />
+        <Stat
+          label="Book"
+          value={`$${fmtUsd(d.openNotional, 0)} of $${fmtUsd(d.maxTotalNotional, 0)}`}
+        />
+        <Stat
+          label="Positions"
+          value={`${d.openPositions} of ${d.maxConcurrentPositions}`}
+        />
+        <Stat
+          label="Risk per trade"
+          value={`${d.maxRiskPerTradeBps / 100}% at the stop`}
+        />
+        <Stat
+          label="Stop no wider than"
+          value={`${d.maxStopDistanceBps / 100}%`}
+        />
+        <Stat label="Minimum hold" value={`${d.minHoldSlots} slots`} />
+        <Stat label="Your split" value={`${d.traderSplitBps / 100}%`} />
+      </div>
+
+      {!active ? (
+        <p className="mt-3 text-xs text-short">
+          This mandate is{" "}
+          {(MANDATE_STATE[d.state] ?? MANDATE_STATE[0]).name.toLowerCase()} — no
+          new positions. Anything still open can be closed below.
+        </p>
+      ) : null}
+
+      {/* --- the ticket -------------------------------------------------------------------- */}
+      {active ? (
+        <div className="mt-4 border border-line-soft p-3">
+          {permitted.length === 0 ? (
+            <Empty>
+              None of the markets this mandate permits can be priced from a
+              single oracle account, which is all this page passes today. Use{" "}
+              <code>nox market</code> for those.
+            </Empty>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+                  Market
+                  <select
+                    value={chosen?.index ?? ""}
+                    onChange={(e) => setMarketIndex(Number(e.target.value))}
+                    className="mt-1 block border border-line bg-surface px-3 py-2 text-sm text-ink"
+                  >
+                    {permitted.map((x) => (
+                      <option key={x.index} value={x.index}>
+                        {x.symbol}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex gap-1.5">
+                  <Btn
+                    kind={long ? "solid" : "line"}
+                    onClick={() => setDirection(nox.Direction.Long)}
+                  >
+                    Long
+                  </Btn>
+                  <Btn
+                    kind={long ? "line" : "solid"}
+                    onClick={() => setDirection(nox.Direction.Short)}
+                  >
+                    Short
+                  </Btn>
+                </div>
+                <Input
+                  label="Notional"
+                  value={notional}
+                  onChange={setNotional}
+                  suffix="USDC"
+                />
+                <Input
+                  label="Margin"
+                  value={collateral}
+                  onChange={setCollateral}
+                  suffix="USDC"
+                />
+                <Input
+                  label={`Stop, ${long ? "below" : "above"} entry`}
+                  value={stopBps}
+                  onChange={setStopBps}
+                  suffix="bps"
+                />
+                <Input
+                  label="Slippage"
+                  value={slippage}
+                  onChange={setSlippage}
+                  suffix="bps"
+                />
+                <Btn
+                  disabled={!canOpen}
+                  onClick={() =>
+                    void act(
+                      async (signer) => [
+                        await fundedOpenIx({
+                          signer,
+                          mandate: mandate.address,
+                          marketIndex: chosen!.index,
+                          nonce,
+                          direction,
+                          sizeBase,
+                          collateral: collateralQuote,
+                          priceLimit: fundedPriceLimit(direction, px, slipN),
+                          stopLossPrice: stopPrice,
+                          legs: { priceUpdate: priceAccount! },
+                        }),
+                      ],
+                      FUNDED_OPEN_CU
+                    )
+                  }
+                >
+                  Open with its stop
+                </Btn>
+              </div>
+
+              <p className="mt-2 text-[11px] text-ink-dim">
+                {px > 0n && chosen ? (
+                  <>
+                    {chosen.symbol} at{" "}
+                    {fmtPrice(px, priceplaces(chosen.symbol))}
+                    {stale ? (
+                      <span className="text-short">
+                        {" "}
+                        — stale by {price?.ageSeconds}s, and the program refuses
+                        anything over 60
+                      </span>
+                    ) : null}
+                    . Stop at {fmtPrice(stopPrice, priceplaces(chosen.symbol))}{" "}
+                    lands in the same transaction as the position — a funded
+                    trade is never briefly unprotected.
+                  </>
+                ) : (
+                  "Waiting for a price."
+                )}
+              </p>
+              <p
+                className={`mt-1 text-[11px] ${refusal ? "text-short" : "text-long"}`}
+              >
+                {refusal
+                  ? `The mandate would refuse this: ${refusal}.`
+                  : "Within every rule on this mandate."}
+              </p>
+              <p className="mt-2 text-[11px] text-ink-dim">
+                A resting entry order is not offered because SolFX has none:
+                triggers attach to an open position, so a limit entry would be
+                this browser watching a price and sending when it hits — which
+                stops the moment the tab closes. Stop and take-profit are real
+                on-chain orders a keeper fires.
+              </p>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {/* --- open positions ---------------------------------------------------------------- */}
+      <div className="mt-5">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+          Open — {marked.length}
+        </div>
+        {marked.length === 0 ? (
+          <Empty>Nothing open on this mandate.</Empty>
+        ) : (
+          <ul className="mt-1 divide-y divide-line-soft">
+            {marked.map((p) => (
+              <FundedRow
+                key={p.address}
+                p={p}
+                mandate={mandate}
+                markets={markets}
+                prices={prices}
+                priceAccounts={priceAccounts}
+                slot={m.slot}
+                slippageBps={slipOk ? slipN : 50}
+                tpBps={tpBps}
+                setTpBps={setTpBps}
+                act={act}
+                busy={busy}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+/** Ceiling of `price x bps / 10_000`, for a short's stop — the side that measures more risk. */
+function ceilBps(price: bigint, bps: number): bigint {
+  const n = price * BigInt(bps);
+  return (n + 9_999n) / 10_000n;
+}
+
+function FundedRow({
+  p,
+  mandate,
+  markets,
+  prices,
+  priceAccounts,
+  slot,
+  slippageBps,
+  tpBps,
+  setTpBps,
+  act,
+  busy,
+}: {
+  p: OpenPosition;
+  mandate: Row<nox.Mandate>;
+  markets: readonly LoadedMarket[];
+  prices: Record<string, LivePrice | undefined>;
+  priceAccounts: Record<string, Address | undefined>;
+  slot: bigint;
+  slippageBps: number;
+  tpBps: string;
+  setTpBps: (v: string) => void;
+  act: Act;
+  busy: boolean;
+}) {
+  const mk = markets.find((x) => x.index === p.marketIndex);
+  const live = mk ? prices[mk.feedIdHex] : undefined;
+  const account = mk ? priceAccounts[mk.feedIdHex] : undefined;
+  const px = live?.price ?? 0n;
+  const long = p.data.direction === Direction.Long;
+  const places = priceplaces(mk?.symbol ?? "");
+
+  // The no-scalping rule is counted in slots, so the countdown is too.
+  const held = slot > p.data.openedAtSlot ? slot - p.data.openedAtSlot : 0n;
+  const leftSlots = mandate.data.minHoldSlots - held;
+  const holdLeft = leftSlots > 0n ? leftSlots : 0n;
+
+  const bps = Number(tpBps);
+  const tpOk = Number.isInteger(bps) && bps > 0 && bps < 10_000;
+  // A target is profit, so it sits above a long and below a short. Rounding is adverse to the
+  // trader on both: a long's target ceils (a little further away), a short's floors.
+  const target = !tpOk
+    ? 0n
+    : long
+      ? ceilBps(px, 10_000 + bps)
+      : (px * BigInt(10_000 - bps)) / 10_000n;
+
+  // The stop took `order_id = nonce` at open, so the target takes the next free one.
+  const tpOrderId = p.nonce + 1;
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
+      <span className="font-bold">{mk?.symbol ?? `#${p.marketIndex}`}</span>
+      <span
+        className={`text-[10px] uppercase tracking-[0.14em] ${long ? "text-long" : "text-short"}`}
+      >
+        {long ? "Long" : "Short"}
+      </span>
+      <span className="tnum text-xs text-ink-muted">
+        entry {fmtPrice(p.data.entryPrice, places)} · $
+        {fmtUsd(p.data.entryNotional, 2)} · margin $
+        {fmtUsd(p.data.collateral, 2)}
+      </span>
+      <span
+        className={`tnum text-xs font-bold ${p.unrealised >= 0n ? "text-long" : "text-short"}`}
+      >
+        {p.unrealised >= 0n ? "+" : "−"}$
+        {fmtUsd(p.unrealised < 0n ? -p.unrealised : p.unrealised, 2)}
+      </span>
+
+      <span className="ml-auto flex flex-wrap items-center gap-2">
+        <Input label="Target" value={tpBps} onChange={setTpBps} suffix="bps" />
+        <Btn
+          disabled={busy || !tpOk || px === 0n || !account || !mk}
+          onClick={() =>
+            void act(
+              async (signer) => [
+                await fundedTakeProfitIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  orderId: tpOrderId,
+                  triggerPrice: target,
+                  sizeBase: p.data.sizeBase,
+                  legs: { priceUpdate: account! },
+                }),
+              ],
+              FUNDED_TRIGGER_CU
+            )
+          }
+        >
+          {tpOk && px > 0n
+            ? `Target ${fmtPrice(target, places)}`
+            : "Set target"}
+        </Btn>
+        <Btn
+          kind="line"
+          disabled={busy}
+          onClick={() =>
+            void act(
+              async (signer) => [
+                await fundedCancelOrderIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  orderId: tpOrderId,
+                }),
+              ],
+              FUNDED_TRIGGER_CU
+            )
+          }
+        >
+          Cancel target
+        </Btn>
+        <Btn
+          kind="danger"
+          disabled={busy || holdLeft > 0n || px === 0n || !account}
+          onClick={() =>
+            void act(
+              async (signer) => [
+                // The stop's rent goes to the keeper when it fires and to the authority when it
+                // is cancelled — there is no third path, so a voluntary close that leaves it
+                // behind strands 0.002 SOL of the mandate's money for good.
+                await fundedCancelOrderIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  orderId: p.nonce,
+                }),
+                await fundedCloseIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  priceLimit: fundedPriceLimit(
+                    long ? nox.Direction.Short : nox.Direction.Long,
+                    px,
+                    slippageBps
+                  ),
+                  legs: { priceUpdate: account! },
+                }),
+              ],
+              FUNDED_CLOSE_CU + FUNDED_TRIGGER_CU
+            )
+          }
+        >
+          {holdLeft > 0n ? `Hold ${holdLeft} slots` : "Close"}
+        </Btn>
+      </span>
+    </li>
+  );
+}
+
 function OfferForm({
   m,
   s,
@@ -1944,6 +2521,18 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
 
       {own && (
         <MandatesPanel m={m} me={me} role="trader" act={act} busy={busy} />
+      )}
+
+      {own && (
+        <FundedTradingPanel
+          m={m}
+          me={me}
+          markets={s.markets}
+          prices={solfx.prices}
+          priceAccounts={solfx.priceAccounts}
+          act={act}
+          busy={busy}
+        />
       )}
 
       {discovery && (

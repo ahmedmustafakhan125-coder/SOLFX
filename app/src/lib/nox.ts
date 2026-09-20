@@ -18,7 +18,15 @@
  */
 import {
   findCollateralVaultPda,
+  findFeeVaultPda,
+  findInsuranceFundPda,
+  findInsuranceVaultPda,
+  findLpPoolPda,
+  findLpVaultPda,
+  findMarketPda,
+  findPositionPda,
   findProtocolPda,
+  findTriggerOrderPda,
   findUserAccountPda,
   nox,
   noxPdas,
@@ -38,7 +46,7 @@ import type {
 
 import { READ_COMMITMENT } from "@/lib/commitment";
 
-type Row<T> = { readonly address: Address; readonly data: T };
+export type Row<T> = { readonly address: Address; readonly data: T };
 
 export type Marketplace = {
   readonly config: nox.NoxConfig | null;
@@ -55,6 +63,11 @@ export type Marketplace = {
   readonly vaults: ReadonlyMap<Address, bigint>;
   /** Cluster time when this was read, for judging offer expiry. */
   readonly now: bigint;
+  /**
+   * The slot this was read at. `min_hold_slots` is counted in slots, not seconds, so a hold
+   * countdown built from wall time drifts against the rule the program applies.
+   */
+  readonly slot: bigint;
 };
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -159,6 +172,7 @@ export async function readMarketplace(
     virtualPositions,
     vaults: await readVaults(rpc, mandates),
     now,
+    slot: BigInt(slot),
   };
 }
 
@@ -874,4 +888,302 @@ export function abandonEvaluationIx(
   evaluation: Address
 ): Instruction {
   return nox.getAbandonEvaluationInstruction({ trader: signer, evaluation });
+}
+
+// --- funded trading ---------------------------------------------------------------------------
+//
+// What a trader does with an investor's money, from the browser. The terminal's own ticket
+// cannot do this: it signs as the wallet, and a funded position's authority is the mandate
+// signer — a PDA with no private key, which only `noxfunds` can sign for.
+
+/** `funded_open_position` runs two CPIs. The CLI budgets 200k and lands at well under it. */
+export const FUNDED_OPEN_CU = 250_000;
+export const FUNDED_CLOSE_CU = 200_000;
+export const FUNDED_TRIGGER_CU = 120_000;
+
+/**
+ * Every reason `check_rules` would refuse this trade, in the order it checks them.
+ *
+ * Not a guess at the program's answer — the same arithmetic in the same units, so the panel
+ * can name the refusal before a transaction is signed rather than after it fails. Where the
+ * program rounds a measurement up because the trade must stay *under* a limit, so does this.
+ *
+ * It cannot replace the program's check and is not meant to: the price moves between this and
+ * the fill, which is exactly why `NOTIONAL_HEADROOM_BPS` exists in the CLI.
+ */
+export function ruleRefusal(args: {
+  mandate: nox.Mandate;
+  marketIndex: number;
+  direction: nox.DirectionArgs;
+  /** Oracle price at PRICE_PRECISION. */
+  price: bigint;
+  sizeBase: bigint;
+  stopPrice: bigint;
+  /** Already-open positions on this mandate. */
+  openPositions: number;
+}): string | null {
+  const m = args.mandate;
+  if (m.state !== 0) return "this mandate is no longer active";
+  if ((m.allowedMarkets & (1n << BigInt(args.marketIndex))) === 0n)
+    return "the investor did not permit this market";
+  if (args.openPositions >= m.maxConcurrentPositions)
+    return `already holding ${m.maxConcurrentPositions} positions, the mandate's limit`;
+
+  if (args.price <= 0n) return "no oracle price";
+  if (args.stopPrice <= 0n) return "a stop is mandatory";
+  const long = args.direction === nox.Direction.Long;
+  if (long ? args.stopPrice >= args.price : args.stopPrice <= args.price)
+    return `a ${long ? "long" : "short"}'s stop goes ${long ? "below" : "above"} the price`;
+
+  const distance =
+    args.stopPrice > args.price
+      ? args.stopPrice - args.price
+      : args.price - args.stopPrice;
+  const distanceBps = ceilDiv(distance * 10_000n, args.price);
+  if (distanceBps > BigInt(m.maxStopDistanceBps))
+    return `the stop is ${Number(distanceBps) / 100}% away; the mandate allows ${m.maxStopDistanceBps / 100}%`;
+
+  // Ceiling, because `notional_in_quote` ceils. Flooring here would call a trade one unit
+  // over the ceiling compliant and promise a fill the program refuses — the exact failure a
+  // mirror is supposed to prevent. Sizing floors; measuring against a limit ceils.
+  const notional = ceilDiv(args.sizeBase * args.price, NOTIONAL_DIVISOR);
+  if (notional > m.maxTradeNotional)
+    return `$${fmtUnits(notional)} exceeds the $${fmtUnits(m.maxTradeNotional)} per-trade ceiling`;
+  if (m.openNotional + notional > m.maxTotalNotional)
+    return `$${fmtUnits(m.openNotional + notional)} open would exceed the $${fmtUnits(m.maxTotalNotional)} book limit`;
+
+  // Risk at the stop, the rule no centralized firm can enforce before the fill.
+  const risk = ceilDiv(args.sizeBase * distance, NOTIONAL_DIVISOR);
+  const equity = m.peakEquity > 0n ? m.peakEquity : 1n;
+  const riskBps = ceilDiv(risk * 10_000n, equity);
+  if (riskBps > BigInt(m.maxRiskPerTradeBps))
+    return `risking ${Number(riskBps) / 100}% at the stop; the mandate allows ${m.maxRiskPerTradeBps / 100}%`;
+
+  return null;
+}
+
+/** Ceiling division on non-negative bigints. Matches `solfx_math::fixed::mul_div_ceil`. */
+function ceilDiv(n: bigint, d: bigint): bigint {
+  if (d === 0n) return 0n;
+  return (n + d - 1n) / d;
+}
+
+/** A USDC amount, whole dollars, for a sentence rather than a table. */
+function fmtUnits(amount: bigint): string {
+  return (amount / 1_000_000n).toLocaleString();
+}
+
+/**
+ * The slippage bound the program enforces: a maximum buying, a minimum selling.
+ *
+ * Reimplemented here rather than imported from `@/lib/trade` because that module is the
+ * terminal's, and the shape it wants is a `Direction` from the SolFX client while this side
+ * speaks NOXFUNDS'. The arithmetic is identical and `price_limit: 0` is a bound of zero, not
+ * an opt-out, on both.
+ */
+export function fundedPriceLimit(
+  direction: nox.DirectionArgs,
+  price: bigint,
+  slippageBps: number
+): bigint {
+  const delta = (price * BigInt(slippageBps)) / 10_000n;
+  return direction === nox.Direction.Long ? price + delta : price - delta;
+}
+
+type SolfxLegs = {
+  readonly priceUpdate: Address;
+  readonly secondaryPriceUpdate?: Address;
+  readonly quoteConversionPriceUpdate?: Address;
+};
+
+/** Every SolFX account a funded trade touches, derived once from the mandate. */
+async function solfxAccounts(
+  mandate: Address,
+  marketIndex: number,
+  nonce: number
+) {
+  const mandateSigner = await noxPdas.findMandateSigner(mandate);
+  const [protocol] = await findProtocolPda();
+  const [userAccount] = await findUserAccountPda({ authority: mandateSigner });
+  const [market] = await findMarketPda({ marketIndex });
+  const [position] = await findPositionPda({ userAccount, marketIndex, nonce });
+  const [collateralVault] = await findCollateralVaultPda();
+  const [lpPool] = await findLpPoolPda();
+  const [lpVault] = await findLpVaultPda();
+  const [insuranceFund] = await findInsuranceFundPda();
+  const [insuranceVault] = await findInsuranceVaultPda();
+  const [feeVault] = await findFeeVaultPda();
+  return {
+    mandateSigner,
+    protocol,
+    userAccount,
+    market,
+    position,
+    collateralVault,
+    lpPool,
+    lpVault,
+    insuranceFund,
+    insuranceVault,
+    feeVault,
+  };
+}
+
+/**
+ * The mandate's SolFX authority.
+ *
+ * A dataless, system-owned PDA with no private key. It is what `loadPositions` should be
+ * pointed at to see a mandate's positions: the trader's own wallet holds none of them, and
+ * reading the trader's account instead shows an empty book while the mandate is fully invested.
+ */
+export async function mandateAuthority(mandate: Address): Promise<Address> {
+  return noxPdas.findMandateSigner(mandate);
+}
+
+export async function fundedOpenIx(args: {
+  signer: TransactionSigner;
+  mandate: Address;
+  marketIndex: number;
+  nonce: number;
+  direction: nox.DirectionArgs;
+  sizeBase: bigint;
+  collateral: bigint;
+  priceLimit: bigint;
+  stopLossPrice: bigint;
+  legs: SolfxLegs;
+}): Promise<Instruction> {
+  const a = await solfxAccounts(args.mandate, args.marketIndex, args.nonce);
+  // One order id per position is enough while the stop is the only order placed at open; a
+  // take-profit added later takes a different one, and `init` refuses a collision anyway.
+  const orderId = args.nonce;
+  const [triggerOrder] = await findTriggerOrderPda({
+    position: a.position,
+    orderId,
+  });
+  return nox.getFundedOpenPositionInstructionAsync({
+    trader: args.signer,
+    mandate: args.mandate,
+    protocol: a.protocol,
+    userAccount: a.userAccount,
+    market: a.market,
+    position: a.position,
+    triggerOrder,
+    collateralVault: a.collateralVault,
+    lpPool: a.lpPool,
+    lpVault: a.lpVault,
+    insuranceFund: a.insuranceFund,
+    insuranceVault: a.insuranceVault,
+    feeVault: a.feeVault,
+    priceUpdate: args.legs.priceUpdate,
+    secondaryPriceUpdate: args.legs.secondaryPriceUpdate,
+    quoteConversionPriceUpdate: args.legs.quoteConversionPriceUpdate,
+    marketIndex: args.marketIndex,
+    nonce: args.nonce,
+    direction: args.direction,
+    sizeBase: args.sizeBase,
+    collateral: args.collateral,
+    priceLimit: args.priceLimit,
+    orderId,
+    stopLossPrice: args.stopLossPrice,
+  });
+}
+
+export async function fundedCloseIx(args: {
+  signer: TransactionSigner;
+  mandate: Address;
+  marketIndex: number;
+  nonce: number;
+  priceLimit: bigint;
+  legs: SolfxLegs;
+}): Promise<Instruction> {
+  const a = await solfxAccounts(args.mandate, args.marketIndex, args.nonce);
+  return nox.getFundedClosePositionInstructionAsync({
+    trader: args.signer,
+    // The close is what writes the trade onto the trader's permanent record, so the profile is
+    // an account of the instruction rather than something an indexer reconstructs afterwards.
+    traderProfile: await noxPdas.findProfile(args.signer.address),
+    mandate: args.mandate,
+    protocol: a.protocol,
+    userAccount: a.userAccount,
+    market: a.market,
+    position: a.position,
+    collateralVault: a.collateralVault,
+    lpPool: a.lpPool,
+    lpVault: a.lpVault,
+    insuranceFund: a.insuranceFund,
+    insuranceVault: a.insuranceVault,
+    feeVault: a.feeVault,
+    priceUpdate: args.legs.priceUpdate,
+    secondaryPriceUpdate: args.legs.secondaryPriceUpdate,
+    quoteConversionPriceUpdate: args.legs.quoteConversionPriceUpdate,
+    marketIndex: args.marketIndex,
+    nonce: args.nonce,
+    priceLimit: args.priceLimit,
+  });
+}
+
+/**
+ * A take-profit on an open funded position.
+ *
+ * Deliberately not part of the open: the stop must be atomic with the fill because a gap would
+ * leave the mandate unprotected, and a target protects nobody. So this is a second transaction,
+ * placeable and movable at any time.
+ */
+export async function fundedTakeProfitIx(args: {
+  signer: TransactionSigner;
+  mandate: Address;
+  marketIndex: number;
+  nonce: number;
+  orderId: number;
+  triggerPrice: bigint;
+  sizeBase: bigint;
+  legs: SolfxLegs;
+}): Promise<Instruction> {
+  const a = await solfxAccounts(args.mandate, args.marketIndex, args.nonce);
+  const [triggerOrder] = await findTriggerOrderPda({
+    position: a.position,
+    orderId: args.orderId,
+  });
+  return nox.getFundedPlaceTakeProfitInstructionAsync({
+    trader: args.signer,
+    mandate: args.mandate,
+    protocol: a.protocol,
+    userAccount: a.userAccount,
+    market: a.market,
+    position: a.position,
+    triggerOrder,
+    priceUpdate: args.legs.priceUpdate,
+    secondaryPriceUpdate: args.legs.secondaryPriceUpdate,
+    quoteConversionPriceUpdate: args.legs.quoteConversionPriceUpdate,
+    orderId: args.orderId,
+    triggerPrice: args.triggerPrice,
+    sizeBase: args.sizeBase,
+  });
+}
+
+/**
+ * Cancel a resting order and reclaim its rent to the mandate signer.
+ *
+ * `funded_cancel_stop` is generic over `order_id`, so this cancels a take-profit as readily as
+ * a stop. Without it a trader who moved a target twice would strand 2,039,280 lamports a time.
+ */
+export async function fundedCancelOrderIx(args: {
+  signer: TransactionSigner;
+  mandate: Address;
+  marketIndex: number;
+  nonce: number;
+  orderId: number;
+}): Promise<Instruction> {
+  const a = await solfxAccounts(args.mandate, args.marketIndex, args.nonce);
+  const [triggerOrder] = await findTriggerOrderPda({
+    position: a.position,
+    orderId: args.orderId,
+  });
+  return nox.getFundedCancelStopInstructionAsync({
+    trader: args.signer,
+    mandate: args.mandate,
+    triggerOrder,
+    marketIndex: args.marketIndex,
+    nonce: args.nonce,
+    orderId: args.orderId,
+  });
 }
