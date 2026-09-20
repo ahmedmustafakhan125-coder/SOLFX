@@ -90,36 +90,36 @@ export const NOXFUNDS_ERROR__NOT_THE_OFFER_TRADER = 0x1793; // 6035
 export const NOXFUNDS_ERROR__OFFER_NOT_OPEN = 0x1794; // 6036
 /** OfferExpired: Offer has expired */
 export const NOXFUNDS_ERROR__OFFER_EXPIRED = 0x1795; // 6037
-/** NotTheListingInvestor: Signer is not this listing's investor */
-export const NOXFUNDS_ERROR__NOT_THE_LISTING_INVESTOR = 0x1796; // 6038
-/** ListingNotOpen: That listing is closed; it is not accepting requests */
-export const NOXFUNDS_ERROR__LISTING_NOT_OPEN = 0x1797; // 6039
-/** NotARequestParty: Signer is neither the trader nor the investor on this request */
-export const NOXFUNDS_ERROR__NOT_A_REQUEST_PARTY = 0x1798; // 6040
-/** EvaluationNotActive: Evaluation is not active */
-export const NOXFUNDS_ERROR__EVALUATION_NOT_ACTIVE = 0x1799; // 6041
-/** InvalidAccountSize: Simulated account size must be between $10,000 and $200,000 */
-export const NOXFUNDS_ERROR__INVALID_ACCOUNT_SIZE = 0x179a; // 6042
-/** EvaluationLeverageTooHigh: Trade is more leveraged than this market allows against the simulated balance */
-export const NOXFUNDS_ERROR__EVALUATION_LEVERAGE_TOO_HIGH = 0x179b; // 6043
-/** DailyLossExceeded: Evaluation has lost more than its daily limit today */
-export const NOXFUNDS_ERROR__DAILY_LOSS_EXCEEDED = 0x179c; // 6044
-/** StopNotTriggered: The oracle price has not reached this stop */
-export const NOXFUNDS_ERROR__STOP_NOT_TRIGGERED = 0x179d; // 6045
-/** EvaluationIncomplete: Evaluation has not yet met every requirement of this stage */
-export const NOXFUNDS_ERROR__EVALUATION_INCOMPLETE = 0x179e; // 6046
-/** ConsistencyRuleViolated: A single day accounts for more than half the profit target */
-export const NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED = 0x179f; // 6047
-/** EvaluationNotFailed: Only a failed evaluation's stake can be forfeited */
-export const NOXFUNDS_ERROR__EVALUATION_NOT_FAILED = 0x17a0; // 6048
-/** PositionSizeOutOfBounds: Position size is outside the market's bounds */
-export const NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS = 0x17a1; // 6049
-/** MarketNotOpen: Market is not open for this action */
-export const NOXFUNDS_ERROR__MARKET_NOT_OPEN = 0x17a2; // 6050
-/** PositionNotInEvaluation: This simulated position does not belong to this evaluation */
-export const NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION = 0x17a3; // 6051
 /** NicknameTooLong: Nickname is longer than the listing's field allows */
-export const NOXFUNDS_ERROR__NICKNAME_TOO_LONG = 0x17a4; // 6052
+export const NOXFUNDS_ERROR__NICKNAME_TOO_LONG = 0x1796; // 6038
+/** NotTheListingInvestor: Signer is not this listing's investor */
+export const NOXFUNDS_ERROR__NOT_THE_LISTING_INVESTOR = 0x1797; // 6039
+/** ListingNotOpen: That listing is closed; it is not accepting requests */
+export const NOXFUNDS_ERROR__LISTING_NOT_OPEN = 0x1798; // 6040
+/** NotARequestParty: Signer is neither the trader nor the investor on this request */
+export const NOXFUNDS_ERROR__NOT_A_REQUEST_PARTY = 0x1799; // 6041
+/** EvaluationNotActive: Evaluation is not active */
+export const NOXFUNDS_ERROR__EVALUATION_NOT_ACTIVE = 0x179a; // 6042
+/** InvalidAccountSize: Simulated account size must be between $10,000 and $200,000 */
+export const NOXFUNDS_ERROR__INVALID_ACCOUNT_SIZE = 0x179b; // 6043
+/** EvaluationLeverageTooHigh: Trade is more leveraged than this market allows against the simulated balance */
+export const NOXFUNDS_ERROR__EVALUATION_LEVERAGE_TOO_HIGH = 0x179c; // 6044
+/** DailyLossExceeded: Evaluation has lost more than its daily limit today */
+export const NOXFUNDS_ERROR__DAILY_LOSS_EXCEEDED = 0x179d; // 6045
+/** StopNotTriggered: The oracle price has not reached this stop */
+export const NOXFUNDS_ERROR__STOP_NOT_TRIGGERED = 0x179e; // 6046
+/** EvaluationIncomplete: Evaluation has not yet met every requirement of this stage */
+export const NOXFUNDS_ERROR__EVALUATION_INCOMPLETE = 0x179f; // 6047
+/** ConsistencyRuleViolated: A single day accounts for more than half the profit target */
+export const NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED = 0x17a0; // 6048
+/** EvaluationNotFailed: Only a failed evaluation's stake can be forfeited */
+export const NOXFUNDS_ERROR__EVALUATION_NOT_FAILED = 0x17a1; // 6049
+/** PositionSizeOutOfBounds: Position size is outside the market's bounds */
+export const NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS = 0x17a2; // 6050
+/** MarketNotOpen: Market is not open for this action */
+export const NOXFUNDS_ERROR__MARKET_NOT_OPEN = 0x17a3; // 6051
+/** PositionNotInEvaluation: This simulated position does not belong to this evaluation */
+export const NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION = 0x17a4; // 6052
 
 export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED

@@ -122,268 +122,268 @@
   "errors": [
     {
       "code": 6000,
-      "msg": "Protocol is paused",
-      "name": "ProtocolPaused"
+      "name": "ProtocolPaused",
+      "msg": "Protocol is paused"
     },
     {
       "code": 6001,
-      "msg": "Only the admin may do this",
-      "name": "NotTheAdmin"
+      "name": "NotTheAdmin",
+      "msg": "Only the admin may do this"
     },
     {
       "code": 6002,
-      "msg": "Signer is not this mandate's trader",
-      "name": "NotTheTrader"
+      "name": "NotTheTrader",
+      "msg": "Signer is not this mandate's trader"
     },
     {
       "code": 6003,
-      "msg": "Mandate is not Active",
-      "name": "MandateNotActive"
+      "name": "MandateNotActive",
+      "msg": "Mandate is not Active"
     },
     {
       "code": 6004,
-      "msg": "Trade notional exceeds the mandate's per-trade ceiling",
-      "name": "TradeExceedsMandate"
+      "name": "TradeExceedsMandate",
+      "msg": "Trade notional exceeds the mandate's per-trade ceiling"
     },
     {
       "code": 6005,
-      "msg": "Risk at the stop exceeds the mandate's per-trade risk limit",
-      "name": "RiskPerTradeExceeded"
+      "name": "RiskPerTradeExceeded",
+      "msg": "Risk at the stop exceeds the mandate's per-trade risk limit"
     },
     {
       "code": 6006,
-      "msg": "Every funded trade must carry a stop-loss",
-      "name": "StopLossRequired"
+      "name": "StopLossRequired",
+      "msg": "Every funded trade must carry a stop-loss"
     },
     {
       "code": 6007,
-      "msg": "Stop-loss is further from entry than the mandate allows",
-      "name": "StopTooFar"
+      "name": "StopTooFar",
+      "msg": "Stop-loss is further from entry than the mandate allows"
     },
     {
       "code": 6008,
-      "msg": "Stop-loss is on the wrong side of the entry price",
-      "name": "StopOnWrongSide"
+      "name": "StopOnWrongSide",
+      "msg": "Stop-loss is on the wrong side of the entry price"
     },
     {
       "code": 6009,
-      "msg": "This market is not in the mandate's permitted set",
-      "name": "MarketNotPermitted"
+      "name": "MarketNotPermitted",
+      "msg": "This market is not in the mandate's permitted set"
     },
     {
       "code": 6010,
-      "msg": "Mandate already holds its maximum number of open positions",
-      "name": "TooManyOpenPositions"
+      "name": "TooManyOpenPositions",
+      "msg": "Mandate already holds its maximum number of open positions"
     },
     {
       "code": 6011,
-      "msg": "Trade would exceed the mandate's total open notional",
-      "name": "TotalNotionalExceeded"
+      "name": "TotalNotionalExceeded",
+      "msg": "Trade would exceed the mandate's total open notional"
     },
     {
       "code": 6012,
-      "msg": "Mandate has breached its maximum drawdown",
-      "name": "DrawdownExceeded"
+      "name": "DrawdownExceeded",
+      "msg": "Mandate has breached its maximum drawdown"
     },
     {
       "code": 6013,
-      "msg": "Position has not been held for the mandate's minimum",
-      "name": "MinimumHoldNotMet"
+      "name": "MinimumHoldNotMet",
+      "msg": "Position has not been held for the mandate's minimum"
     },
     {
       "code": 6014,
-      "msg": "Mandate has not breached anything; there is nothing to flag",
-      "name": "NotBreached"
+      "name": "NotBreached",
+      "msg": "Mandate has not breached anything; there is nothing to flag"
     },
     {
       "code": 6015,
-      "msg": "Only the investor who funded this mandate may do this",
-      "name": "NotTheInvestor"
+      "name": "NotTheInvestor",
+      "msg": "Only the investor who funded this mandate may do this"
     },
     {
       "code": 6016,
-      "msg": "Mandate still holds open positions; close them before settling",
-      "name": "PositionsStillOpen"
+      "name": "PositionsStillOpen",
+      "msg": "Mandate still holds open positions; close them before settling"
     },
     {
       "code": 6017,
-      "msg": "Mandate is not winding down or breached, so it cannot be settled",
-      "name": "MandateNotSettleable"
+      "name": "MandateNotSettleable",
+      "msg": "Mandate is not winding down or breached, so it cannot be settled"
     },
     {
       "code": 6018,
-      "msg": "This mandate is not tracking a position at that market and nonce",
-      "name": "PositionNotTracked"
+      "name": "PositionNotTracked",
+      "msg": "This mandate is not tracking a position at that market and nonce"
     },
     {
       "code": 6019,
-      "msg": "That position still exists on SolFX, so there is nothing to reconcile",
-      "name": "PositionStillOpen"
+      "name": "PositionStillOpen",
+      "msg": "That position still exists on SolFX, so there is nothing to reconcile"
     },
     {
       "code": 6020,
-      "msg": "Equity observation must supply every open position exactly once",
-      "name": "IncompleteObservation"
+      "name": "IncompleteObservation",
+      "msg": "Equity observation must supply every open position exactly once"
     },
     {
       "code": 6021,
-      "msg": "Only a breached or winding-down mandate may be wound down by a third party",
-      "name": "MandateNotWindingDown"
+      "name": "MandateNotWindingDown",
+      "msg": "Only a breached or winding-down mandate may be wound down by a third party"
     },
     {
       "code": 6022,
-      "msg": "A position at this market and nonce closed without being reconciled; reconcile it first",
-      "name": "SlotNotReconciled"
+      "name": "SlotNotReconciled",
+      "msg": "A position at this market and nonce closed without being reconciled; reconcile it first"
     },
     {
       "code": 6023,
-      "msg": "Mandate rules are not internally consistent",
-      "name": "InvalidMandateRules"
+      "name": "InvalidMandateRules",
+      "msg": "Mandate rules are not internally consistent"
     },
     {
       "code": 6024,
-      "msg": "Amount must be greater than zero",
-      "name": "ZeroAmount"
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
     },
     {
       "code": 6025,
-      "msg": "Arithmetic overflow",
-      "name": "MathOverflow"
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow"
     },
     {
       "code": 6026,
-      "msg": "This mandate is larger than the trader's tier permits",
-      "name": "MandateExceedsTierLimit"
+      "name": "MandateExceedsTierLimit",
+      "msg": "This mandate is larger than the trader's tier permits"
     },
     {
       "code": 6027,
-      "msg": "The trader already holds as many mandates as their tier permits",
-      "name": "TooManyActiveMandates"
+      "name": "TooManyActiveMandates",
+      "msg": "The trader already holds as many mandates as their tier permits"
     },
     {
       "code": 6028,
-      "msg": "This profile does not belong to the mandate's trader",
-      "name": "ProfileMismatch"
+      "name": "ProfileMismatch",
+      "msg": "This profile does not belong to the mandate's trader"
     },
     {
       "code": 6029,
-      "msg": "Only the program's upgrade authority may initialise the configuration",
-      "name": "NotTheUpgradeAuthority"
+      "name": "NotTheUpgradeAuthority",
+      "msg": "Only the program's upgrade authority may initialise the configuration"
     },
     {
       "code": 6030,
-      "msg": "The investor's token account holds less than the principal",
-      "name": "InsufficientPrincipal"
+      "name": "InsufficientPrincipal",
+      "msg": "The investor's token account holds less than the principal"
     },
     {
       "code": 6031,
-      "msg": "Note is longer than the on-chain field allows",
-      "name": "NoteTooLong"
+      "name": "NoteTooLong",
+      "msg": "Note is longer than the on-chain field allows"
     },
     {
       "code": 6032,
-      "msg": "Listing terms are not internally consistent",
-      "name": "InvalidListingTerms"
+      "name": "InvalidListingTerms",
+      "msg": "Listing terms are not internally consistent"
     },
     {
       "code": 6033,
-      "msg": "Signer is not this listing's trader",
-      "name": "NotTheListingTrader"
+      "name": "NotTheListingTrader",
+      "msg": "Signer is not this listing's trader"
     },
     {
       "code": 6034,
-      "msg": "Signer is not the investor who posted this offer",
-      "name": "NotTheOfferInvestor"
+      "name": "NotTheOfferInvestor",
+      "msg": "Signer is not the investor who posted this offer"
     },
     {
       "code": 6035,
-      "msg": "Signer is not the trader this offer is addressed to",
-      "name": "NotTheOfferTrader"
+      "name": "NotTheOfferTrader",
+      "msg": "Signer is not the trader this offer is addressed to"
     },
     {
       "code": 6036,
-      "msg": "Offer is not open; it has already been accepted or revoked",
-      "name": "OfferNotOpen"
+      "name": "OfferNotOpen",
+      "msg": "Offer is not open; it has already been accepted or revoked"
     },
     {
       "code": 6037,
-      "msg": "Offer has expired",
-      "name": "OfferExpired"
+      "name": "OfferExpired",
+      "msg": "Offer has expired"
     },
     {
       "code": 6038,
-      "msg": "Signer is not this listing's investor",
-      "name": "NotTheListingInvestor"
+      "name": "NicknameTooLong",
+      "msg": "Nickname is longer than the listing's field allows"
     },
     {
       "code": 6039,
-      "msg": "That listing is closed; it is not accepting requests",
-      "name": "ListingNotOpen"
+      "name": "NotTheListingInvestor",
+      "msg": "Signer is not this listing's investor"
     },
     {
       "code": 6040,
-      "msg": "Signer is neither the trader nor the investor on this request",
-      "name": "NotARequestParty"
+      "name": "ListingNotOpen",
+      "msg": "That listing is closed; it is not accepting requests"
     },
     {
       "code": 6041,
-      "msg": "Evaluation is not active",
-      "name": "EvaluationNotActive"
+      "name": "NotARequestParty",
+      "msg": "Signer is neither the trader nor the investor on this request"
     },
     {
       "code": 6042,
-      "msg": "Simulated account size must be between $10,000 and $200,000",
-      "name": "InvalidAccountSize"
+      "name": "EvaluationNotActive",
+      "msg": "Evaluation is not active"
     },
     {
       "code": 6043,
-      "msg": "Trade is more leveraged than this market allows against the simulated balance",
-      "name": "EvaluationLeverageTooHigh"
+      "name": "InvalidAccountSize",
+      "msg": "Simulated account size must be between $10,000 and $200,000"
     },
     {
       "code": 6044,
-      "msg": "Evaluation has lost more than its daily limit today",
-      "name": "DailyLossExceeded"
+      "name": "EvaluationLeverageTooHigh",
+      "msg": "Trade is more leveraged than this market allows against the simulated balance"
     },
     {
       "code": 6045,
-      "msg": "The oracle price has not reached this stop",
-      "name": "StopNotTriggered"
+      "name": "DailyLossExceeded",
+      "msg": "Evaluation has lost more than its daily limit today"
     },
     {
       "code": 6046,
-      "msg": "Evaluation has not yet met every requirement of this stage",
-      "name": "EvaluationIncomplete"
+      "name": "StopNotTriggered",
+      "msg": "The oracle price has not reached this stop"
     },
     {
       "code": 6047,
-      "msg": "A single day accounts for more than half the profit target",
-      "name": "ConsistencyRuleViolated"
+      "name": "EvaluationIncomplete",
+      "msg": "Evaluation has not yet met every requirement of this stage"
     },
     {
       "code": 6048,
-      "msg": "Only a failed evaluation's stake can be forfeited",
-      "name": "EvaluationNotFailed"
+      "name": "ConsistencyRuleViolated",
+      "msg": "A single day accounts for more than half the profit target"
     },
     {
       "code": 6049,
-      "msg": "Position size is outside the market's bounds",
-      "name": "PositionSizeOutOfBounds"
+      "name": "EvaluationNotFailed",
+      "msg": "Only a failed evaluation's stake can be forfeited"
     },
     {
       "code": 6050,
-      "msg": "Market is not open for this action",
-      "name": "MarketNotOpen"
+      "name": "PositionSizeOutOfBounds",
+      "msg": "Position size is outside the market's bounds"
     },
     {
       "code": 6051,
-      "msg": "This simulated position does not belong to this evaluation",
-      "name": "PositionNotInEvaluation"
+      "name": "MarketNotOpen",
+      "msg": "Market is not open for this action"
     },
     {
       "code": 6052,
-      "name": "NicknameTooLong",
-      "msg": "Nickname is longer than the listing's field allows"
+      "name": "PositionNotInEvaluation",
+      "msg": "This simulated position does not belong to this evaluation"
     }
   ],
   "events": [
