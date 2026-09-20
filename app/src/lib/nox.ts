@@ -623,3 +623,17 @@ export function previewSplit(
   const trader = (net * BigInt(traderBps)) / BPS; // floor, toward the payer
   return { investor: finalEquity - protocol - trader, trader, protocol, gross };
 }
+
+/**
+ * The display name a wallet has given itself, or "" if it has never listed.
+ *
+ * Read from whichever listing the address owns — a trader's or an investor's. A name is a
+ * convenience and never an identity: two wallets may pick the same one, and nothing on chain
+ * stops them, which is exactly why the UI shows the address beside it rather than instead of it.
+ */
+export function nicknameOf(m: Marketplace, who: Address): string {
+  const t = m.traderListings.find((l) => l.data.trader === who);
+  if (t) return noteText(t.data.nickname, t.data.nicknameLen);
+  const i = m.investorListings.find((l) => l.data.investor === who);
+  return i ? noteText(i.data.nickname, i.data.nicknameLen) : "";
+}

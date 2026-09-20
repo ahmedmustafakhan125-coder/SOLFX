@@ -1950,6 +1950,7 @@ async fn negotiate(
             .to_account_metas(None),
             data: noxfunds::instruction::PostListing {
                 terms: ListingTerms {
+                    nickname: String::new(),
                     min_principal: principal_raw,
                     max_principal: principal_raw.saturating_mul(10),
                     wanted_markets: plan.rules.allowed_markets,

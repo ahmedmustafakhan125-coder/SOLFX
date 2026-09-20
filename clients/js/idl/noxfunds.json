@@ -379,6 +379,11 @@
       "code": 6051,
       "msg": "This simulated position does not belong to this evaluation",
       "name": "PositionNotInEvaluation"
+    },
+    {
+      "code": 6052,
+      "name": "NicknameTooLong",
+      "msg": "Nickname is longer than the listing's field allows"
     }
   ],
   "events": [
@@ -4795,11 +4800,24 @@
             "type": "u8"
           },
           {
+            "name": "nickname",
+            "type": {
+              "array": [
+                "u8",
+                24
+              ]
+            }
+          },
+          {
+            "name": "nickname_len",
+            "type": "u8"
+          },
+          {
             "name": "_reserved",
             "type": {
               "array": [
                 "u8",
-                32
+                7
               ]
             }
           }
@@ -4876,6 +4894,10 @@
       "name": "InvestorListingTerms",
       "type": {
         "fields": [
+          {
+            "name": "nickname",
+            "type": "string"
+          },
           {
             "name": "min_principal",
             "type": "u64"
@@ -4977,6 +4999,10 @@
       "name": "ListingTerms",
       "type": {
         "fields": [
+          {
+            "name": "nickname",
+            "type": "string"
+          },
           {
             "name": "min_principal",
             "type": "u64"
@@ -7100,11 +7126,24 @@
             "type": "u8"
           },
           {
+            "name": "nickname",
+            "type": {
+              "array": [
+                "u8",
+                24
+              ]
+            }
+          },
+          {
+            "name": "nickname_len",
+            "type": "u8"
+          },
+          {
             "name": "_reserved",
             "type": {
               "array": [
                 "u8",
-                32
+                7
               ]
             }
           }

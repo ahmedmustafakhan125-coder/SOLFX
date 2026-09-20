@@ -100,6 +100,10 @@ pub enum NoxError {
     OfferNotOpen,
     #[msg("Offer has expired")]
     OfferExpired,
+
+    // --- appended, so no existing error's number moves -------------------------------------
+    #[msg("Nickname is longer than the listing's field allows")]
+    NicknameTooLong,
     #[msg("Signer is not this listing's investor")]
     NotTheListingInvestor,
     #[msg("That listing is closed; it is not accepting requests")]

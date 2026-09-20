@@ -5,7 +5,7 @@
 
 use anchor_lang::prelude::*;
 
-use crate::constants::MAX_NOTE_LEN;
+use crate::constants::{MAX_NICKNAME_LEN, MAX_NOTE_LEN};
 
 /// Protocol configuration. One per deployment, at `["config"]`.
 #[account]
@@ -777,7 +777,16 @@ pub struct TraderListing {
     pub created_at: i64,
     pub updated_at: i64,
     pub bump: u8,
-    pub _reserved: [u8; 32],
+    /// A display name, so the marketplace reads as people rather than as base58.
+    ///
+    /// Carved out of the reserved bytes rather than appended, so `INIT_SPACE` does not move: every
+    /// listing already on chain stays valid and decodes with an empty nickname, because those
+    /// bytes are zero. Growing the account instead would have meant a realloc, a migration, and
+    /// rent nobody agreed to. The address stays beside it everywhere — a name is a convenience,
+    /// never an identity, and two traders may choose the same one.
+    pub nickname: [u8; MAX_NICKNAME_LEN],
+    pub nickname_len: u8,
+    pub _reserved: [u8; 7],
 }
 
 /// Where an offer is in its life.
@@ -893,7 +902,16 @@ pub struct InvestorListing {
     pub created_at: i64,
     pub updated_at: i64,
     pub bump: u8,
-    pub _reserved: [u8; 32],
+    /// A display name, so the marketplace reads as people rather than as base58.
+    ///
+    /// Carved out of the reserved bytes rather than appended, so `INIT_SPACE` does not move: every
+    /// listing already on chain stays valid and decodes with an empty nickname, because those
+    /// bytes are zero. Growing the account instead would have meant a realloc, a migration, and
+    /// rent nobody agreed to. The address stays beside it everywhere — a name is a convenience,
+    /// never an identity, and two traders may choose the same one.
+    pub nickname: [u8; MAX_NICKNAME_LEN],
+    pub nickname_len: u8,
+    pub _reserved: [u8; 7],
 }
 
 /// A trader asking one investor for capital, at `["request", trader, investor]`.

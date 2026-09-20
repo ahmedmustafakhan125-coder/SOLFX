@@ -73,6 +73,8 @@ export type InvestorListing = {
   createdAt: bigint;
   updatedAt: bigint;
   bump: number;
+  nickname: ReadonlyUint8Array;
+  nicknameLen: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -91,6 +93,8 @@ export type InvestorListingArgs = {
   createdAt: number | bigint;
   updatedAt: number | bigint;
   bump: number;
+  nickname: ReadonlyUint8Array;
+  nicknameLen: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -112,7 +116,9 @@ export function getInvestorListingEncoder(): FixedSizeEncoder<InvestorListingArg
       ["createdAt", getI64Encoder()],
       ["updatedAt", getI64Encoder()],
       ["bump", getU8Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 32)],
+      ["nickname", fixEncoderSize(getBytesEncoder(), 24)],
+      ["nicknameLen", getU8Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 7)],
     ]),
     (value) => ({ ...value, discriminator: INVESTOR_LISTING_DISCRIMINATOR }),
   );
@@ -135,7 +141,9 @@ export function getInvestorListingDecoder(): FixedSizeDecoder<InvestorListing> {
     ["createdAt", getI64Decoder()],
     ["updatedAt", getI64Decoder()],
     ["bump", getU8Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 32)],
+    ["nickname", fixDecoderSize(getBytesDecoder(), 24)],
+    ["nicknameLen", getU8Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 7)],
   ]);
 }
 

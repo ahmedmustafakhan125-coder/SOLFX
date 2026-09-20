@@ -22,6 +22,7 @@ import {
   marketBitmap,
   marketIndices,
   nextSeq,
+  nicknameOf,
   noteText,
   OFFER_STATE_NAME,
   parseUsdc,
@@ -99,16 +100,25 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-ink-dim">{children}</p>;
 }
 
-function Who({ address }: { address: string }) {
+/**
+ * A wallet, as a name and an address — never a name alone.
+ *
+ * Nicknames are self-chosen and unenforced: two wallets may pick the same one, so a name that
+ * replaced the address would be an impersonation waiting to happen. The address stays, and stays
+ * the link.
+ */
+function Who({ address, m }: { address: string; m?: Marketplace }) {
+  const name = m ? nicknameOf(m, address as Address) : "";
   return (
     <a
       href={explorer(address)}
       target="_blank"
       rel="noreferrer"
-      className="tnum text-brand-soft hover:underline"
+      className="hover:underline"
       title={address}
     >
-      {short(address)}
+      {name ? <span className="font-bold text-ink">{name} </span> : null}
+      <span className="tnum text-brand-soft">{short(address)}</span>
     </a>
   );
 }
@@ -615,7 +625,7 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
                       className="border-t border-line-soft align-top"
                     >
                       <td className="py-3">
-                        <Who address={r.trader} />
+                        <Who address={r.trader} m={m} />
                       </td>
                       <td className="py-3 text-ink-muted">
                         {TIER_NAME[r.stats.tier]}
@@ -712,7 +722,7 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
                           ${fmtUsd(o.data.principal, 0)}
                         </span>
                         <span className="text-ink-dim">to</span>
-                        <Who address={o.data.trader} />
+                        <Who address={o.data.trader} m={m} />
                         <span
                           className={`ml-auto text-[11px] uppercase tracking-[0.12em] ${
                             st === nox.OfferState.Accepted
@@ -780,7 +790,7 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
                       className="border border-line-soft p-3 text-sm"
                     >
                       <div className="flex flex-wrap items-center gap-3">
-                        <Who address={r.data.trader} />
+                        <Who address={r.data.trader} m={m} />
                         <span className="tnum">
                           wants ${fmtUsd(r.data.wantedPrincipal, 0)}
                         </span>
@@ -1145,7 +1155,7 @@ function OfferForm({
   return (
     <div className="mt-6 border border-brand/40 bg-brand/5 p-5">
       <div className="text-[10px] uppercase tracking-[0.18em] text-brand">
-        Offer to <Who address={trader} />
+        Offer to <Who address={trader} m={m} />
       </div>
       <p className="mt-2 text-xs text-ink-muted">
         The principal moves into escrow when you post. It stays yours until the
@@ -1261,6 +1271,9 @@ function InvestorListingEditor({
   const [split, setSplit] = useState(
     d ? String(d.offeredSplitBps / 100) : "70"
   );
+  const [nickname, setNickname] = useState(
+    d ? noteText(d.nickname, d.nicknameLen) : ""
+  );
   const [note, setNote] = useState(d ? noteText(d.note, d.noteLen) : "");
   const [markets, setMarkets] = useState<number[]>(
     d ? marketIndices(d.allowedMarkets) : []
@@ -1285,6 +1298,7 @@ function InvestorListingEditor({
       await postInvestorListingIx(
         signer,
         {
+          nickname,
           minPrincipal: lo!,
           maxPrincipal: hi!,
           maxDrawdownBps: bps(dd),
@@ -1343,6 +1357,12 @@ function InvestorListingEditor({
               markets={s.markets}
               value={markets}
               onChange={setMarkets}
+            />
+            <Input
+              label="Display name"
+              value={nickname}
+              onChange={setNickname}
+              placeholder="≤ 24 characters, optional"
             />
             <Input
               label="Note"
@@ -1439,7 +1459,7 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
                         ${fmtUsd(d.principal, 0)}
                       </span>
                       <span className="text-xs text-ink-dim">from</span>
-                      <Who address={d.investor} />
+                      <Who address={d.investor} m={m} />
                       <span className="tnum text-xs text-ink-dim">
                         you keep {fmtPctBps(d.traderSplitBps)} of net profit
                       </span>
@@ -1566,7 +1586,7 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
                     className="border border-line-soft p-4 text-sm"
                   >
                     <div className="flex flex-wrap items-center gap-3">
-                      <Who address={d.investor} />
+                      <Who address={d.investor} m={m} />
                       <span className="tnum">
                         ${fmtUsd(d.minPrincipal, 0)}–$
                         {fmtUsd(d.maxPrincipal, 0)}
@@ -1634,7 +1654,7 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
                     key={r.address}
                     className="flex flex-wrap items-center gap-3 border border-line-soft p-3 text-sm"
                   >
-                    <Who address={r.data.investor} />
+                    <Who address={r.data.investor} m={m} />
                     <span className="tnum">
                       ${fmtUsd(r.data.wantedPrincipal, 0)}
                     </span>
@@ -1767,6 +1787,9 @@ function TraderListingEditor({
     d ? fmtUsd(d.maxPrincipal, 0).replace(/,/g, "") : "10000"
   );
   const [split, setSplit] = useState(d ? String(d.wantedSplitBps / 100) : "70");
+  const [nickname, setNickname] = useState(
+    d ? noteText(d.nickname, d.nicknameLen) : ""
+  );
   const [note, setNote] = useState(d ? noteText(d.note, d.noteLen) : "");
   const [markets, setMarkets] = useState<number[]>(
     d ? marketIndices(d.wantedMarkets) : []
@@ -1787,6 +1810,7 @@ function TraderListingEditor({
       await postTraderListingIx(
         signer,
         {
+          nickname,
           minPrincipal: lo!,
           maxPrincipal: hi!,
           wantedMarkets: marketBitmap(markets),
@@ -1822,6 +1846,12 @@ function TraderListingEditor({
               markets={s.markets}
               value={markets}
               onChange={setMarkets}
+            />
+            <Input
+              label="Display name"
+              value={nickname}
+              onChange={setNickname}
+              placeholder="≤ 24 characters, optional"
             />
             <Input
               label="Note"

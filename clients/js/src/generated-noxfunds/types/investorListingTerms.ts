@@ -29,6 +29,7 @@ import {
 
 /** What an investor advertises. Advisory throughout: the binding numbers are on the offer. */
 export type InvestorListingTerms = {
+  nickname: string;
   minPrincipal: bigint;
   maxPrincipal: bigint;
   maxDrawdownBps: number;
@@ -39,6 +40,7 @@ export type InvestorListingTerms = {
 };
 
 export type InvestorListingTermsArgs = {
+  nickname: string;
   minPrincipal: number | bigint;
   maxPrincipal: number | bigint;
   maxDrawdownBps: number;
@@ -50,6 +52,7 @@ export type InvestorListingTermsArgs = {
 
 export function getInvestorListingTermsEncoder(): Encoder<InvestorListingTermsArgs> {
   return getStructEncoder([
+    ["nickname", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
     ["minPrincipal", getU64Encoder()],
     ["maxPrincipal", getU64Encoder()],
     ["maxDrawdownBps", getU16Encoder()],
@@ -62,6 +65,7 @@ export function getInvestorListingTermsEncoder(): Encoder<InvestorListingTermsAr
 
 export function getInvestorListingTermsDecoder(): Decoder<InvestorListingTerms> {
   return getStructDecoder([
+    ["nickname", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
     ["minPrincipal", getU64Decoder()],
     ["maxPrincipal", getU64Decoder()],
     ["maxDrawdownBps", getU16Decoder()],

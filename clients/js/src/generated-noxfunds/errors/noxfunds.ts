@@ -118,6 +118,8 @@ export const NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS = 0x17a1; // 6049
 export const NOXFUNDS_ERROR__MARKET_NOT_OPEN = 0x17a2; // 6050
 /** PositionNotInEvaluation: This simulated position does not belong to this evaluation */
 export const NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION = 0x17a3; // 6051
+/** NicknameTooLong: Nickname is longer than the listing's field allows */
+export const NOXFUNDS_ERROR__NICKNAME_TOO_LONG = 0x17a4; // 6052
 
 export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED
@@ -141,6 +143,7 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__MARKET_NOT_PERMITTED
   | typeof NOXFUNDS_ERROR__MATH_OVERFLOW
   | typeof NOXFUNDS_ERROR__MINIMUM_HOLD_NOT_MET
+  | typeof NOXFUNDS_ERROR__NICKNAME_TOO_LONG
   | typeof NOXFUNDS_ERROR__NOT_A_REQUEST_PARTY
   | typeof NOXFUNDS_ERROR__NOT_BREACHED
   | typeof NOXFUNDS_ERROR__NOTE_TOO_LONG
@@ -197,6 +200,7 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__MARKET_NOT_PERMITTED]: `This market is not in the mandate's permitted set`,
     [NOXFUNDS_ERROR__MATH_OVERFLOW]: `Arithmetic overflow`,
     [NOXFUNDS_ERROR__MINIMUM_HOLD_NOT_MET]: `Position has not been held for the mandate's minimum`,
+    [NOXFUNDS_ERROR__NICKNAME_TOO_LONG]: `Nickname is longer than the listing's field allows`,
     [NOXFUNDS_ERROR__NOT_A_REQUEST_PARTY]: `Signer is neither the trader nor the investor on this request`,
     [NOXFUNDS_ERROR__NOT_BREACHED]: `Mandate has not breached anything; there is nothing to flag`,
     [NOXFUNDS_ERROR__NOTE_TOO_LONG]: `Note is longer than the on-chain field allows`,

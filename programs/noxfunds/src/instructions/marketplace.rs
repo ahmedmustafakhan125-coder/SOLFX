@@ -39,7 +39,8 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 
 use crate::constants::{
     CONFIG_SEED, INVESTOR_LISTING_SEED, LISTING_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED,
-    MANDATE_VAULT_SEED, MAX_NOTE_LEN, OFFER_SEED, OFFER_VAULT_SEED, REQUEST_SEED, TRADER_SEED,
+    MANDATE_VAULT_SEED, MAX_NICKNAME_LEN, MAX_NOTE_LEN, OFFER_SEED, OFFER_VAULT_SEED, REQUEST_SEED,
+    TRADER_SEED,
 };
 use crate::errors::NoxError;
 use crate::events::{
@@ -57,15 +58,28 @@ use crate::state::{
 /// Returns the byte length actually stored. Rejects anything over the cap rather than truncating:
 /// a silently truncated note can cut a multi-byte character in half and is a worse outcome than
 /// being told the note is too long while you can still edit it.
-fn store_note(src: &str, dst: &mut [u8; MAX_NOTE_LEN]) -> Result<u8> {
+fn store_bounded<const N: usize>(src: &str, dst: &mut [u8; N], too_long: NoxError) -> Result<u8> {
     let bytes = src.as_bytes();
-    require!(bytes.len() <= MAX_NOTE_LEN, NoxError::NoteTooLong);
-    *dst = [0u8; MAX_NOTE_LEN];
+    // A plain `if`, not `require!`: the macro wants a literal error path and this one is a
+    // parameter, so the two callers can name their own.
+    if bytes.len() > N {
+        return Err(too_long.into());
+    }
+    *dst = [0u8; N];
     dst.get_mut(..bytes.len())
-        .ok_or(NoxError::NoteTooLong)?
+        .ok_or(too_long)?
         .copy_from_slice(bytes);
-    // `bytes.len() <= MAX_NOTE_LEN` (180) is checked above, so this cannot truncate.
-    u8::try_from(bytes.len()).map_err(|_| NoxError::NoteTooLong.into())
+    // `bytes.len() <= N` is checked above, and every N here is far below 255.
+    u8::try_from(bytes.len()).map_err(|_| too_long.into())
+}
+
+fn store_note(src: &str, dst: &mut [u8; MAX_NOTE_LEN]) -> Result<u8> {
+    store_bounded(src, dst, NoxError::NoteTooLong)
+}
+
+/// A listing's display name, bounded by the bytes the account already reserves.
+fn store_nickname(src: &str, dst: &mut [u8; MAX_NICKNAME_LEN]) -> Result<u8> {
+    store_bounded(src, dst, NoxError::NicknameTooLong)
 }
 
 // --- the trader's side -----------------------------------------------------------------------
@@ -73,6 +87,8 @@ fn store_note(src: &str, dst: &mut [u8; MAX_NOTE_LEN]) -> Result<u8> {
 /// What a trader advertises. One struct, for the same reason `MandateRules` is one.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct ListingTerms {
+    /// A display name, shown beside the address and never instead of it.
+    pub nickname: String,
     pub min_principal: u64,
     pub max_principal: u64,
     pub wanted_markets: u128,
@@ -124,6 +140,7 @@ pub fn post_listing(ctx: Context<PostListing>, terms: ListingTerms) -> Result<()
     l.wanted_markets = terms.wanted_markets;
     l.wanted_split_bps = terms.wanted_split_bps;
     l.note_len = store_note(&terms.note, &mut l.note)?;
+    l.nickname_len = store_nickname(&terms.nickname, &mut l.nickname)?;
     l.open = true;
     l.created_at = now;
     l.updated_at = now;
@@ -190,6 +207,7 @@ pub fn update_listing(ctx: Context<UpdateListing>, terms: ListingTerms, open: bo
     l.wanted_markets = terms.wanted_markets;
     l.wanted_split_bps = terms.wanted_split_bps;
     l.note_len = store_note(&terms.note, &mut l.note)?;
+    l.nickname_len = store_nickname(&terms.nickname, &mut l.nickname)?;
     l.open = open;
     l.updated_at = now;
 
@@ -698,6 +716,8 @@ pub fn decline_offer(ctx: Context<DeclineOffer>, reason: String) -> Result<()> {
 /// What an investor advertises. Advisory throughout: the binding numbers are on the offer.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct InvestorListingTerms {
+    /// A display name, shown beside the address and never instead of it.
+    pub nickname: String,
     pub min_principal: u64,
     pub max_principal: u64,
     pub max_drawdown_bps: u16,
@@ -787,6 +807,7 @@ fn write_investor_terms(l: &mut InvestorListing, t: &InvestorListingTerms) -> Re
     l.allowed_markets = t.allowed_markets;
     l.offered_split_bps = t.offered_split_bps;
     l.note_len = store_note(&t.note, &mut l.note)?;
+    l.nickname_len = store_nickname(&t.nickname, &mut l.nickname)?;
     Ok(())
 }
 

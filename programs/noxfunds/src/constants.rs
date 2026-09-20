@@ -83,6 +83,14 @@ pub const REQUEST_SEED: &[u8] = b"request";
 /// lamports per byte on devnet as measured on 2026-09-19, down from 6,960.
 pub const MAX_NOTE_LEN: usize = 180;
 
+/// How long a listing's display name may be, in bytes.
+///
+/// 24, because it has to fit in the bytes a listing already reserves. `TraderListing` and
+/// `InvestorListing` each carry `_reserved: [u8; 32]`, and 24 + a length byte leaves 7 spare —
+/// so a nickname costs no extra account space, every listing already on chain stays valid, and
+/// nobody pays rent for a field they did not ask for.
+pub const MAX_NICKNAME_LEN: usize = 24;
+
 // --- the evaluation (Stage 3) -----------------------------------------------------------------
 
 /// `Evaluation` — `["eval", trader, seq]`. `seq` lets a trader who failed try again.

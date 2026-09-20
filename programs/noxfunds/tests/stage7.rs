@@ -119,6 +119,7 @@ fn rules() -> MandateRules {
 
 fn terms() -> ListingTerms {
     ListingTerms {
+        nickname: "Ayesha".to_string(),
         min_principal: 1_000 * ONE_USDC,
         max_principal: 50_000 * ONE_USDC,
         wanted_markets: MARKET_0,
@@ -709,6 +710,7 @@ fn request_pda(trader: &Pubkey, investor: &Pubkey) -> Pubkey {
 
 fn investor_terms() -> noxfunds::instructions::marketplace::InvestorListingTerms {
     noxfunds::instructions::marketplace::InvestorListingTerms {
+        nickname: "Karachi Capital".to_string(),
         min_principal: 1_000 * ONE_USDC,
         max_principal: 25_000 * ONE_USDC,
         max_drawdown_bps: 600,
@@ -1113,4 +1115,58 @@ fn every_marketplace_instruction_stays_within_its_budget() {
             r.accounts
         );
     }
+}
+
+// --- nicknames ---------------------------------------------------------------------------
+
+/// **A nickname costs no account space, so nothing on chain has to migrate.**
+///
+/// The sizes pinned here are the sizes of the listings already live on devnet: the trader listing
+/// `9HyC3HA9xXHr2P2G39JgK7VSyFPhj1BxrYtdYZmtKDU5` measures 305 bytes, and an investor listing 309.
+/// The nickname is carved out of the 32 reserved bytes each already carried, so those numbers do
+/// not move and every existing account stays valid, reading as an empty name because the reserved
+/// bytes are zero. Appending the field instead would have made these 330 and 334 — a realloc, a
+/// migration, and rent the lister never agreed to pay. This test fails the moment that happens.
+#[test]
+fn a_nickname_is_carved_from_reserved_space_not_added_to_it() {
+    use anchor_lang::Space as _;
+    assert_eq!(8 + TraderListing::INIT_SPACE, 305, "trader listing grew");
+    assert_eq!(
+        8 + noxfunds::state::InvestorListing::INIT_SPACE,
+        309,
+        "investor listing grew"
+    );
+    // 24 characters, a length byte, and 7 bytes still spare.
+    assert_eq!(noxfunds::constants::MAX_NICKNAME_LEN + 1 + 7, 32);
+}
+
+#[test]
+fn a_listing_carries_its_nickname_and_its_address() {
+    let mut m = setup();
+    m.post_listing(terms()).expect("post a listing");
+    let l: TraderListing = m.env.read(&listing_pda(&m.trader.pubkey()));
+    let len = usize::from(l.nickname_len);
+    assert_eq!(core::str::from_utf8(&l.nickname[..len]).unwrap(), "Ayesha");
+    // The name never replaces the address: the listing still names the trader it belongs to.
+    assert_eq!(l.trader, m.trader.pubkey());
+}
+
+#[test]
+fn a_nickname_longer_than_the_field_is_refused() {
+    let mut m = setup();
+    let mut t = terms();
+    t.nickname = "x".repeat(noxfunds::constants::MAX_NICKNAME_LEN + 1);
+    refused(m.post_listing(t), &["NicknameTooLong"]);
+}
+
+/// An empty nickname is allowed, and is what every listing posted before this existed reads as.
+#[test]
+fn a_listing_without_a_nickname_is_still_valid() {
+    let mut m = setup();
+    let mut t = terms();
+    t.nickname = String::new();
+    m.post_listing(t).expect("a nameless listing is fine");
+    let l: TraderListing = m.env.read(&listing_pda(&m.trader.pubkey()));
+    assert_eq!(l.nickname_len, 0);
+    assert_eq!(l.nickname, [0u8; 24]);
 }

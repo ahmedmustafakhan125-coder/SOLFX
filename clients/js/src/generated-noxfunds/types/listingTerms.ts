@@ -29,6 +29,7 @@ import {
 
 /** What a trader advertises. One struct, for the same reason `MandateRules` is one. */
 export type ListingTerms = {
+  nickname: string;
   minPrincipal: bigint;
   maxPrincipal: bigint;
   wantedMarkets: bigint;
@@ -37,6 +38,7 @@ export type ListingTerms = {
 };
 
 export type ListingTermsArgs = {
+  nickname: string;
   minPrincipal: number | bigint;
   maxPrincipal: number | bigint;
   wantedMarkets: number | bigint;
@@ -46,6 +48,7 @@ export type ListingTermsArgs = {
 
 export function getListingTermsEncoder(): Encoder<ListingTermsArgs> {
   return getStructEncoder([
+    ["nickname", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
     ["minPrincipal", getU64Encoder()],
     ["maxPrincipal", getU64Encoder()],
     ["wantedMarkets", getU128Encoder()],
@@ -56,6 +59,7 @@ export function getListingTermsEncoder(): Encoder<ListingTermsArgs> {
 
 export function getListingTermsDecoder(): Decoder<ListingTerms> {
   return getStructDecoder([
+    ["nickname", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
     ["minPrincipal", getU64Decoder()],
     ["maxPrincipal", getU64Decoder()],
     ["wantedMarkets", getU128Decoder()],
