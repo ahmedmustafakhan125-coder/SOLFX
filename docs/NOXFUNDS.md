@@ -662,6 +662,10 @@ This section exists because a document that only lists what works is marketing.
   page resolves one price account per market and so lists only the markets that need one.
   EUR/JPY and USD/INR are `nox market --execute` for now, and the panel says so rather than
   offering a trade that would be refused.
+- **A mandate's SOL is not recoverable.** The mandate signer is a PDA that pays the rent for
+  the SolFX account and for every resting order, and is refunded when those close. Nothing in
+  the program sweeps what is left, and a PDA has no key, so roughly 0.02 SOL per mandate stays
+  there after settlement. Small, and stated rather than discovered.
 - **The public verification page.** The claim in Part 8 that every statistic is re-derivable
   from events is true of the event data; the page that does the re-deriving does not exist.
 - **The off-chain keeper.** The cranks are public instructions, but nothing runs them

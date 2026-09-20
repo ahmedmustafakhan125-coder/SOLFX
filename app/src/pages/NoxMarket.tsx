@@ -37,6 +37,10 @@ import {
   marketBitmap,
   marketIndices,
   mandateAuthority,
+  type MandateReadiness,
+  prepareMandateIxs,
+  PREPARE_MANDATE_CU,
+  readMandateReadiness,
   fundedCancelOrderIx,
   fundedCloseIx,
   FUNDED_CLOSE_CU,
@@ -1510,6 +1514,7 @@ function FundedTradingPanel({
   // the mandate's own slot array: the slots say a position exists, the position says at what
   // entry and how it is doing.
   const [open, setOpen] = useState<readonly OpenPosition[]>([]);
+  const [ready, setReady] = useState<MandateReadiness | undefined>();
   const priceByIndex = useMemo(() => {
     const out: Record<number, bigint | undefined> = {};
     for (const x of markets) out[x.index] = prices[x.feedIdHex]?.price;
@@ -1524,15 +1529,28 @@ function FundedTradingPanel({
     void (async () => {
       try {
         const signer = await mandateAuthority(mandate.address);
-        const found = await loadPositions(
-          rpc,
-          signer,
-          markets.map((x) => x.index),
-          priceByIndex
-        );
-        if (!cancelled) setOpen(found);
+        const [found, r] = await Promise.all([
+          loadPositions(
+            rpc,
+            signer,
+            markets.map((x) => x.index),
+            priceByIndex
+          ),
+          readMandateReadiness(
+            rpc,
+            mandate.address,
+            m.vaults.get(mandate.address) ?? 0n
+          ),
+        ]);
+        if (!cancelled) {
+          setOpen(found);
+          setReady(r);
+        }
       } catch {
-        if (!cancelled) setOpen([]);
+        if (!cancelled) {
+          setOpen([]);
+          setReady(undefined);
+        }
       }
     })();
     return () => {
@@ -1541,7 +1559,7 @@ function FundedTradingPanel({
     // `priceByIndex` changes on every price tick; re-reading positions that often is wasteful,
     // so the marks are refreshed separately below and this runs on the mandate and market set.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rpc, mandate?.address, markets]);
+  }, [rpc, mandate?.address, markets, m.vaults]);
 
   const marked = useMemo(
     () => repricePositions(open, priceByIndex),
@@ -1567,6 +1585,7 @@ function FundedTradingPanel({
   }
 
   const d = mandate.data;
+  const usdcMint = m.config?.usdcMint;
   const active = d.state === 0;
   const px = price?.price ?? 0n;
   const notionalQuote = parseUsdc(notional) ?? 0n;
@@ -1676,8 +1695,60 @@ function FundedTradingPanel({
         </p>
       ) : null}
 
+      {/* --- setup, when the mandate has never traded ------------------------------------- */}
+      {active && ready && !ready.ready ? (
+        <div className="mt-4 border border-brand/40 bg-brand/5 p-3">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-brand">
+            This mandate is not ready to trade
+          </div>
+          <ul className="mt-2 space-y-1 text-xs text-ink-muted">
+            {ready.needsSolfxAccount ? (
+              <li>
+                · It has no SolFX account yet. One transaction creates it, with
+                the mandate PDA as its authority — not your wallet, and not
+                ours.
+              </li>
+            ) : null}
+            {ready.idleVault > 0n ? (
+              <li>
+                · ${fmtUsd(ready.idleVault, 2)} is sitting in the mandate vault
+                rather than posted as collateral on SolFX. Nothing can be traded
+                against it there.
+              </li>
+            ) : null}
+            {ready.needsLamports > 0n ? (
+              <li>
+                · The mandate PDA needs {Number(ready.needsLamports) / 1e9} SOL
+                of its own. It — not you — pays the rent for the SolFX account
+                and for every stop, and is refunded when they close. Nothing in
+                the program sweeps it afterwards, so treat it as spent.
+              </li>
+            ) : null}
+          </ul>
+          <div className="mt-3">
+            <Btn
+              disabled={busy || !usdcMint}
+              onClick={() =>
+                void act(
+                  (signer) =>
+                    prepareMandateIxs({
+                      signer,
+                      mandate: mandate.address,
+                      usdcMint: usdcMint!,
+                      readiness: ready,
+                    }),
+                  PREPARE_MANDATE_CU
+                )
+              }
+            >
+              Prepare it
+            </Btn>
+          </div>
+        </div>
+      ) : null}
+
       {/* --- the ticket -------------------------------------------------------------------- */}
-      {active ? (
+      {active && ready?.ready ? (
         <div className="mt-4 border border-line-soft p-3">
           {permitted.length === 0 ? (
             <Empty>

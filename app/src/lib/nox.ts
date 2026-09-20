@@ -1208,3 +1208,142 @@ export async function fundedCancelOrderIx(args: {
     orderId: args.orderId,
   });
 }
+
+/**
+ * What a mandate needs before its first trade, and whether it has it.
+ *
+ * Three steps sit between `accept_offer` and `funded_open_position`, and the CLI's ten-step
+ * lifecycle does all three without comment. Skipping them produces `AccountNotInitialized` on
+ * `user_account` from inside `solfx-core` — an error that names an account the trader never
+ * chose, four programs deep, on a mandate whose vault visibly holds their money. Measured on
+ * devnet 2026-09-20: mandate `C5TjG5vv…` held $500 and could not open a position.
+ */
+export type MandateReadiness = {
+  /** Lamports the mandate signer needs and does not have. */
+  readonly needsLamports: bigint;
+  /** True when the mandate has no SolFX `UserAccount` yet. */
+  readonly needsSolfxAccount: boolean;
+  /** USDC still sitting in the mandate vault rather than in SolFX collateral. */
+  readonly idleVault: bigint;
+  readonly ready: boolean;
+};
+
+/**
+ * The mandate signer pays the `UserAccount`'s rent and each trigger order's, and is refunded
+ * when they close — so it needs a working balance, not a one-off fee. `nox lifecycle` tops it
+ * up to the same figure for the same reason.
+ *
+ * It is not recoverable: nothing in the program sweeps the signer, and a PDA has no key. That
+ * is 0.02 SOL per mandate, said out loud rather than buried.
+ */
+export const MANDATE_SIGNER_LAMPORTS = 20_000_000n;
+
+export async function readMandateReadiness(
+  rpc: Rpc<SolanaRpcApi>,
+  mandate: Address,
+  vaultBalance: bigint
+): Promise<MandateReadiness> {
+  const signer = await noxPdas.findMandateSigner(mandate);
+  const [userAccount] = await findUserAccountPda({ authority: signer });
+  const { value } = await rpc
+    .getMultipleAccounts([signer, userAccount], {
+      commitment: READ_COMMITMENT,
+      encoding: "base64",
+    })
+    .send();
+  const have = value[0]?.lamports ?? 0n;
+  const needsLamports =
+    have >= MANDATE_SIGNER_LAMPORTS ? 0n : MANDATE_SIGNER_LAMPORTS - have;
+  const needsSolfxAccount = !value[1];
+  return {
+    needsLamports,
+    needsSolfxAccount,
+    idleVault: vaultBalance,
+    ready: needsLamports === 0n && !needsSolfxAccount && vaultBalance === 0n,
+  };
+}
+
+/**
+ * Everything missing, in one transaction.
+ *
+ * Ordered as the CPIs require: lamports before the rent they pay, the account before the
+ * deposit into it. Each step is skipped when it is already done, so this is safe to re-send —
+ * the same idempotence `init-protocol` and `price-poster` have, and for the same reason: an
+ * operator step that cannot be repeated is one that cannot be recovered.
+ */
+export async function prepareMandateIxs(args: {
+  signer: TransactionSigner;
+  mandate: Address;
+  usdcMint: Address;
+  readiness: MandateReadiness;
+}): Promise<Instruction[]> {
+  const { readiness: r } = args;
+  const mandateSigner = await noxPdas.findMandateSigner(args.mandate);
+  const [protocol] = await findProtocolPda();
+  const [userAccount] = await findUserAccountPda({ authority: mandateSigner });
+  const out: Instruction[] = [];
+
+  if (r.needsLamports > 0n) {
+    out.push(transferSolIx(args.signer, mandateSigner, r.needsLamports));
+  }
+  if (r.needsSolfxAccount) {
+    out.push(
+      await nox.getCreateSolfxAccountInstructionAsync({
+        payer: args.signer,
+        mandate: args.mandate,
+        protocol,
+        userAccount,
+      })
+    );
+  }
+  if (r.idleVault > 0n) {
+    const [collateralVault] = await findCollateralVaultPda();
+    out.push(
+      await nox.getFundSolfxCollateralInstructionAsync({
+        payer: args.signer,
+        mandate: args.mandate,
+        protocol,
+        userAccount,
+        collateralMint: args.usdcMint,
+        collateralVault,
+        amount: r.idleVault,
+      })
+    );
+  }
+  return out;
+}
+
+/** `create_solfx_account` and `fund_solfx_collateral` each CPI into `solfx-core`. */
+export const PREPARE_MANDATE_CU = 160_000;
+
+const SYSTEM_PROGRAM = "11111111111111111111111111111111" as Address;
+
+/**
+ * A plain SOL transfer, encoded here rather than pulled from `@solana-program/system`.
+ *
+ * That package is not a declared dependency of this app — it resolves only because it is
+ * hoisted under `@solana-program/token`, so a dependency bump would break the build with no
+ * warning. The layout is `u32` instruction index 2 followed by the lamports little-endian, and
+ * it is fixed by the runtime rather than by a library version, so there is nothing here to
+ * drift against.
+ */
+function transferSolIx(
+  from: TransactionSigner,
+  to: Address,
+  amount: bigint
+): Instruction {
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, amount, true);
+  return {
+    programAddress: SYSTEM_PROGRAM,
+    accounts: [
+      // The signer instance travels with the meta: kit refuses a transaction whose signers do
+      // not match, and two instances for one address count as two signers.
+      { address: from.address, role: 3 as const, ...{ signer: from } },
+      { address: to, role: 1 as const },
+    ],
+    data,
+  };
+}
