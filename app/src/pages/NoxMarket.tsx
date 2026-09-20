@@ -94,7 +94,7 @@ const TIER_MAX_MANDATE = [
 function explain(error: string | undefined): string | undefined {
   if (!error) return undefined;
   if (/InstructionFallbackNotFound|custom program error: 0x65\b/.test(error)) {
-    return "The marketplace instructions are not deployed on this cluster yet — the NOXFUNDS upgrade is pending.";
+    return "The marketplace instructions are not deployed on this cluster yet. The NOXFUNDS upgrade is pending.";
   }
   return error;
 }
@@ -332,7 +332,7 @@ const HEADINGS: Record<
       </>
     ),
     blurb:
-      "Everything you have offered and every mandate you have funded. Once a trader accepts, the capital sits in that mandate's own vault — not with the trader, not with us — and only settlement moves it.",
+      "Everything you have offered and every mandate you have funded. Once a trader accepts, the capital sits in that mandate's own vault, not with the trader and not with us, and only settlement moves it.",
   },
   trader: {
     eyebrow: "Trader",
@@ -620,7 +620,7 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
         <Panel
           title="Traders"
           count={traders.length}
-          hint="Records are the program's, not the trader's — nobody can edit them"
+          hint="Records are the program's, not the trader's, and nobody can edit them"
         >
           {traders.length === 0 ? (
             <Empty>No trader has a profile on this cluster yet.</Empty>
@@ -909,7 +909,7 @@ function MandatesPanel({
     <Panel
       title={role === "investor" ? "Your mandates" : "Mandates you trade"}
       count={mine.length}
-      hint="The vault is the mandate's own account — not the trader's, and not ours"
+      hint="The vault is the mandate's own account, not the trader's and not ours"
     >
       {!me ? (
         <Empty>Connect a wallet to see your mandates.</Empty>
@@ -1071,7 +1071,7 @@ function Settlement({
               : "Only the investor can end this. You cannot withdraw."
             : !flat
               ? `Closing out: ${data.openPositions} position${data.openPositions === 1 ? "" : "s"} still open. Anyone may close them.`
-              : "Flat and ready. Anyone may run the payout — the investor waits on nobody."}
+              : "Flat and ready. Anyone may run the payout, so the investor waits on nobody."}
         </span>
       </div>
 
@@ -1088,7 +1088,7 @@ function Settlement({
         {split.gross === 0n
           ? "No profit, so no fee and no trader share: the investor takes whatever is left. That is what bearing the loss means."
           : `5% of gross to the protocol first, then ${data.traderSplitBps / 100}% of what remains to the trader.`}{" "}
-        A preview from the last mark — the payout runs against the equity at the
+        A preview from the last mark. The payout runs against the equity at the
         moment of the claim.
       </p>
     </div>
@@ -1233,7 +1233,7 @@ function EvaluationPanel({
           </Btn>
           <span className="text-[11px] text-ink-dim">
             {!hasProfile
-              ? "Create your trader profile first — the pass is recorded against it."
+              ? "Create your trader profile first. The pass is recorded against it."
               : ok
                 ? "A stop-loss is mandatory on every trade, and the 10-minute hold applies to closing by choice."
                 : `Between $${fmtUsd(EVAL.minAccount, 0)} and $${fmtUsd(EVAL.maxAccount, 0)}.`}
@@ -1279,7 +1279,7 @@ function EvaluationPanel({
 
   return (
     <Panel
-      title={`Evaluation — Phase ${p.stage}`}
+      title={`Evaluation · Phase ${p.stage}`}
       hint={`Simulated $${fmtUsd(live.data.accountSize, 0)} · stake $50 held`}
     >
       <div className="grid gap-px border border-line bg-line sm:grid-cols-4">
@@ -1305,7 +1305,7 @@ function EvaluationPanel({
       <p className="mt-3 text-xs text-ink-dim">
         {p.blocker
           ? `Still needed: ${p.blocker}.`
-          : "Every requirement met — claim the stage."}
+          : "Every requirement met. Claim the stage."}
       </p>
 
       {/* --- the ticket ------------------------------------------------------------------- */}
@@ -1360,7 +1360,7 @@ function EvaluationPanel({
         </div>
         <p className="mt-2 text-[11px] text-ink-dim">
           {px > 0n && chosen
-            ? `${chosen.symbol} at ${fmtPrice(px, priceplaces(chosen.symbol))}${price?.stale ? ` — stale by ${price.ageSeconds}s, so the program would refuse this` : ""}. The fill is priced by SolFX's own function, so it crosses the spread exactly as a real one would. Nothing is filled on the venue.`
+            ? `${chosen.symbol} at ${fmtPrice(px, priceplaces(chosen.symbol))}${price?.stale ? `, stale by ${price.ageSeconds}s and the program would refuse this` : ""}. The fill is priced by SolFX's own function, so it crosses the spread exactly as a real one would. Nothing is filled on the venue.`
             : "Waiting for a price."}{" "}
           A stop is mandatory, and risk at it may not exceed{" "}
           {EVAL.maxRiskBps / 100}% of the balance.
@@ -1422,7 +1422,7 @@ function EvaluationPanel({
         >
           {legs.length === open.length
             ? "Mark to market"
-            : "Mark to market — a price account is missing"}
+            : "Mark to market, but a price account is missing"}
         </Btn>
         <Btn
           disabled={busy || !!p.blocker || !usdcMint}
@@ -1441,7 +1441,7 @@ function EvaluationPanel({
             void act((signer) => [abandonEvaluationIx(signer, live.address)])
           }
         >
-          Walk away — the stake is forfeit
+          Walk away, the stake is forfeit
         </Btn>
       </div>
     </Panel>
@@ -1611,7 +1611,7 @@ function FundedTradingPanel({
     px === 0n
       ? "waiting for a price"
       : !slipOk
-        ? "slippage must be 0–1000 bps"
+        ? "slippage must be between 0 and 1000 bps"
         : sizeBase === 0n
           ? "enter a notional"
           : collateralQuote === 0n
@@ -1690,8 +1690,8 @@ function FundedTradingPanel({
       {!active ? (
         <p className="mt-3 text-xs text-short">
           This mandate is{" "}
-          {(MANDATE_STATE[d.state] ?? MANDATE_STATE[0]).name.toLowerCase()} — no
-          new positions. Anything still open can be closed below.
+          {(MANDATE_STATE[d.state] ?? MANDATE_STATE[0]).name.toLowerCase()}, so
+          no new positions. Anything still open can be closed below.
         </p>
       ) : null}
 
@@ -1705,8 +1705,7 @@ function FundedTradingPanel({
             {ready.needsSolfxAccount ? (
               <li>
                 · It has no SolFX account yet. One transaction creates it, with
-                the mandate PDA as its authority — not your wallet, and not
-                ours.
+                the mandate PDA as its authority, not your wallet and not ours.
               </li>
             ) : null}
             {ready.idleVault > 0n ? (
@@ -1719,9 +1718,9 @@ function FundedTradingPanel({
             {ready.needsLamports > 0n ? (
               <li>
                 · The mandate PDA needs {Number(ready.needsLamports) / 1e9} SOL
-                of its own. It — not you — pays the rent for the SolFX account
-                and for every stop, and is refunded when they close. Nothing in
-                the program sweeps it afterwards, so treat it as spent.
+                of its own. It, not you, pays the rent for the SolFX account and
+                for every stop, and is refunded when they close. Nothing in the
+                program sweeps it afterwards, so treat it as spent.
               </li>
             ) : null}
           </ul>
@@ -1843,12 +1842,12 @@ function FundedTradingPanel({
                     {stale ? (
                       <span className="text-short">
                         {" "}
-                        — stale by {price?.ageSeconds}s, and the program refuses
+                        , stale by {price?.ageSeconds}s, and the program refuses
                         anything over 60
                       </span>
                     ) : null}
                     . Stop at {fmtPrice(stopPrice, priceplaces(chosen.symbol))}{" "}
-                    lands in the same transaction as the position — a funded
+                    lands in the same transaction as the position, so a funded
                     trade is never briefly unprotected.
                   </>
                 ) : (
@@ -1865,7 +1864,7 @@ function FundedTradingPanel({
               <p className="mt-2 text-[11px] text-ink-dim">
                 A resting entry order is not offered because SolFX has none:
                 triggers attach to an open position, so a limit entry would be
-                this browser watching a price and sending when it hits — which
+                this browser watching a price and sending when it hits, which
                 stops the moment the tab closes. Stop and take-profit are real
                 on-chain orders a keeper fires.
               </p>
@@ -1877,7 +1876,7 @@ function FundedTradingPanel({
       {/* --- open positions ---------------------------------------------------------------- */}
       <div className="mt-5">
         <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
-          Open — {marked.length}
+          Open · {marked.length}
         </div>
         {marked.length === 0 ? (
           <Empty>Nothing open on this mandate.</Empty>
@@ -2193,8 +2192,8 @@ function OfferForm({
       </div>
       <p className="mt-2 text-xs text-ink-muted">
         The principal moves into escrow when you post. It stays yours until the
-        trader signs, and you can take it back at any moment before that —
-        expired, declined or not.
+        trader signs, and you can take it back at any moment before that,
+        whether it expired, was declined or neither.
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
         <Input
@@ -2352,8 +2351,8 @@ function InvestorListingEditor({
       hint={
         mine
           ? mine.data.open
-            ? "Open — traders can request"
-            : "Closed — no new requests"
+            ? "Open to requests"
+            : "Closed to new requests"
           : "Not listed"
       }
     >
@@ -2561,8 +2560,8 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
                       />
                     </div>
                     <p className="mt-3 text-[11px] text-ink-dim">
-                      These rules are fixed the moment you accept and nobody —
-                      including you and the investor — can change them
+                      These rules are fixed the moment you accept, and nobody,
+                      including you and the investor, can change them
                       afterwards.
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2681,7 +2680,7 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
                     <div className="mt-1 text-xs text-ink-dim">
                       {marketNames(d.allowedMarkets, s.markets)}
                       {noteText(d.note, d.noteLen)
-                        ? ` — ${noteText(d.note, d.noteLen)}`
+                        ? ` · ${noteText(d.note, d.noteLen)}`
                         : ""}
                     </div>
                     {asking === d.investor ? (
@@ -2797,7 +2796,7 @@ function RequestForm({
           label="Why you"
           value={note}
           onChange={setNote}
-          placeholder="≤ 180 bytes — they read it beside your record"
+          placeholder="≤ 180 bytes, read beside your record"
           wide
         />
       </div>
@@ -2892,7 +2891,7 @@ function TraderListingEditor({
       {!s.me ? (
         <Empty>Connect a wallet to list yourself.</Empty>
       ) : !hasProfile ? (
-        <Empty>Create your profile first — a listing points at it.</Empty>
+        <Empty>Create your profile first. A listing points at it.</Empty>
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2">

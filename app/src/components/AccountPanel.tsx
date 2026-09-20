@@ -159,8 +159,8 @@ export function AccountPanel() {
                 <p className="text-[11px] leading-relaxed text-ink-dim">
                   Free collateral is what is not backing an open position. The
                   program checks this again on chain and refuses anything that
-                  would leave a position under-margined — this figure is its
-                  own, not an estimate.
+                  would leave a position under-margined. This figure is its own,
+                  not an estimate.
                 </p>
               ) : null}
               <button

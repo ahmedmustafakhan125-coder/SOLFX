@@ -294,7 +294,7 @@ export const MANDATE_STATE = [
   {
     name: "Breached",
     means:
-      "Drawdown breached — no new trades. Anyone may close it out, then the investor is paid.",
+      "Drawdown breached. No new trades. Anyone may close it out, then the investor is paid.",
   },
   {
     name: "Winding down",
@@ -751,7 +751,7 @@ export function evalProgress(e: nox.Evaluation): EvalProgress {
     e.state !== 0
       ? `This evaluation is ${EVAL_STATE_NAME[e.state] ?? "over"}`
       : e.openPositions > 0
-        ? `Close ${e.openPositions} open position${e.openPositions > 1 ? "s" : ""} — a stage passes flat`
+        ? `Close ${e.openPositions} open position${e.openPositions > 1 ? "s" : ""}. A stage passes flat`
         : drawdownBps > BigInt(EVAL.maxDrawdownBps)
           ? `Drawdown ${Number(drawdownBps) / 100}% is past the ${EVAL.maxDrawdownBps / 100}% limit`
           : equity < targetEquity

@@ -13,7 +13,7 @@ const ME = {
   role: "Founder & Lead AI Engineer at Noxyra AI · Agentic AI & Solana Developer",
   location: "Islamabad, Pakistan",
   bio: [
-    "Passionate about agentic AI — designing systems that learn, decide, and execute autonomously. Currently exploring decentralized finance with a Solana based forex brokerage platform.",
+    "Passionate about agentic AI: designing systems that learn, decide, and execute autonomously. Currently exploring decentralized finance with a Solana based forex brokerage platform.",
     "Solana blockchain developer building the next generation of DeFi applications. Computer Science student at COMSATS University Islamabad.",
     "Focused on bridging AI capabilities with business automation and Web3 technologies.",
   ] as string[],
@@ -85,9 +85,9 @@ export function About() {
               <div className="mt-6 rounded-lg border border-warn/25 bg-warn/5 p-4 text-xs leading-relaxed text-warn">
                 This section is intentionally empty. Fill in{" "}
                 <span className="tnum">ME</span> at the top of{" "}
-                <span className="tnum">src/pages/About.tsx</span> — role,
-                location, bio paragraphs and links. Nothing here was written on
-                your behalf.
+                <span className="tnum">src/pages/About.tsx</span> with your
+                role, location, bio paragraphs and links. Nothing here was
+                written on your behalf.
               </div>
             )}
 
@@ -129,7 +129,7 @@ export function About() {
               <p>
                 Built from the arithmetic up: a dependency free maths crate with
                 property tests, then the vault, then positions, risk,
-                liquidations, an LP vault and an introducing-broker programme —
+                liquidations, an LP vault and an introducing-broker programme,
                 each with exit criteria rather than a deadline.
               </p>
             </div>
@@ -154,7 +154,7 @@ export function About() {
               </li>
               <li>
                 · 549 tests pass. That means the behaviours someone thought to
-                test behave — nothing more.
+                test behave. Nothing more.
               </li>
             </ul>
           </div>

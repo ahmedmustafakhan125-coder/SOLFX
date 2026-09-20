@@ -79,15 +79,16 @@ export function RiskDisclosure() {
             it cannot, the most profitable positions on the other side are
             closed and part of their profit is withheld. This is called
             auto-deleveraging, you cannot opt out of it, and it can happen to a
-            position that is doing nothing wrong. It never takes your collateral
-            — the worst case is being returned to flat. The ADL tab shows the
-            insurance fund and where your positions sit in the queue.
+            position that is doing nothing wrong. It never takes your
+            collateral, and the worst case is being returned to flat. The ADL
+            tab shows the insurance fund and where your positions sit in the
+            queue.
           </li>
           <li>
             <span className="text-ink">Sessions and gaps.</span> FX and metals
             do not trade continuously. A market can reopen far from where it
             closed, and the protocol correctly refuses to trade while its oracle
-            is stale — which can also mean you cannot close when you want to.
+            is stale, which can also mean you cannot close when you want to.
           </li>
           <li>
             <span className="text-ink">Auto-deleveraging.</span> In extreme

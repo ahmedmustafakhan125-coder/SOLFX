@@ -128,8 +128,8 @@ export function Partners() {
             Every FX affiliate has the same complaint: the broker controls the
             ledger. Rebates get miscounted, clients get reassigned, payouts get
             delayed, and there is no way to check any of it. Here the ledger is
-            the chain — an introducing broker can recompute every figure on this
-            page from public state without trusting us.
+            the chain, so an introducing broker can recompute every figure on
+            this page from public state without trusting us.
           </p>
         </div>
 
@@ -155,16 +155,17 @@ export function Partners() {
                   The <span className="text-ink">solfx-referral</span> program
                   is deployed but has not been initialised, and{" "}
                   <span className="text-ink">Protocol.referral_authority</span>{" "}
-                  is still unset — the state the protocol launches in, and the
-                  state in which it pays no rebates. Two admin transactions turn
-                  it on: <span className="text-ink">initialize_referral</span>{" "}
-                  on the referral program, then{" "}
+                  is still unset. That is the state the protocol launches in,
+                  and the state in which it pays no rebates. Two admin
+                  transactions turn it on:{" "}
+                  <span className="text-ink">initialize_referral</span> on the
+                  referral program, then{" "}
                   <span className="text-ink">set_referral_authority</span> on
                   the core. Registration and claiming appear here once they have
                   run.
                 </p>
                 <p className="mt-2 text-ink-muted">
-                  The pool below is accruing regardless. Nothing is being lost —
+                  The pool below is accruing regardless. Nothing is being lost:
                   the money is in the fee vault and the counters are on chain.
                 </p>
               </div>
@@ -199,7 +200,7 @@ export function Partners() {
                     value={
                       status.pool.authority
                         ? short(status.pool.authority)
-                        : "not set — payouts disabled"
+                        : "not set, payouts disabled"
                     }
                   />
                   {status.programme ? (
@@ -219,7 +220,7 @@ export function Partners() {
                 <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
                   A tier is a share of <em>fees</em>; the pool is a share of the
                   same fees. Where a tier would pay more than the pool holds,
-                  the entitlement is capped at the pool — an IB is never paid
+                  the entitlement is capped at the pool, so an IB is never paid
                   out of treasury money.
                 </p>
               </section>
@@ -233,7 +234,7 @@ export function Partners() {
                 <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
                   Boundaries are inclusive at the bottom of the higher tier:
                   exactly $5M is Silver. The tier applies to everything synced
-                  after you cross it, not retroactively — recomputing history at
+                  after you cross it, not retroactively. Recomputing history at
                   each boundary is both unaffordable on chain and the kind of
                   surprise that starts disputes.
                 </p>
@@ -249,7 +250,7 @@ export function Partners() {
               {!status.me ? (
                 <p className="text-xs text-ink-dim">
                   Connect a wallet to see who introduced you, what your trading
-                  has generated, and — once the programme is live — your own
+                  has generated, and, once the programme is live, your own
                   broker account.
                 </p>
               ) : (
@@ -292,7 +293,7 @@ export function Partners() {
                       <p className="text-xs leading-relaxed text-ink-dim">
                         This wallet has no broker account.
                         {status.programme
-                          ? " Registering is permissionless — anyone may become an IB; earning anything still requires a trader to have named you when they created their account."
+                          ? " Registering is permissionless: anyone may become an IB, though earning anything still requires a trader to have named you when they created their account."
                           : " Registration opens when the programme is initialised on this cluster."}
                       </p>
                     ) : (

@@ -123,9 +123,9 @@ export function Nox() {
             Every other prop firm watches trades after they execute and punishes
             violations, because their contracts cannot see an order before the
             venue fills it. NOXFUNDS owns the venue. A trade that breaks the
-            rules is not detected and punished —{" "}
+            rules is not detected and punished.{" "}
             <span className="text-ink">
-              it fails as a transaction. It never existed, and the investor
+              It fails as a transaction. It never existed, and the investor
               never took the loss.
             </span>
           </p>
@@ -187,7 +187,7 @@ export function Nox() {
           <div className="space-y-4 text-sm leading-relaxed text-ink-muted">
             <p>
               The mandate's money sits at a{" "}
-              <span className="text-ink">program derived address</span> — an
+              <span className="text-ink">program derived address</span>, an
               address built so that no private key for it exists or can exist.
               Nobody holds the key, because there is no key.
             </p>
@@ -201,7 +201,7 @@ export function Nox() {
             <p className="text-ink">
               Not the trader. Not the investor. Not the admin. Not the person
               who deployed it. There is no withdraw instruction a trader can
-              call — not a guarded one, none at all.
+              call. Not a guarded one, none at all.
             </p>
           </div>
 
@@ -269,9 +269,9 @@ export function Nox() {
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
               The minimum hold time applies to{" "}
               <span className="text-ink">voluntary</span> closes only. A
-              stop-out is exempt — forcing a trader to sit in a losing position
-              to satisfy an anti-scalping rule would be a rule that causes the
-              loss it exists to prevent.
+              stop-out is exempt, because forcing a trader to sit in a losing
+              position to satisfy an anti-scalping rule would be a rule that
+              causes the loss it exists to prevent.
             </p>
           </div>
         </div>
@@ -323,7 +323,7 @@ export function Nox() {
             <p>
               The 5% comes off <span className="text-ink">gross</span> profit
               first, so the 70/30 split stays exactly 70/30 on what remains. The
-              alternative — a three-way 70/25/5 — would quietly cut the investor
+              alternative, a three-way 70/25/5, would quietly cut the investor
               to 25%.
             </p>
             <p>
@@ -340,16 +340,17 @@ export function Nox() {
               </div>
               <ul className="mt-2 space-y-1.5">
                 <li>
-                  The protocol fee rounds <span className="text-ink">up</span> —
-                  a charge rounds toward whoever charges it.
+                  The protocol fee rounds <span className="text-ink">up</span>,
+                  because a charge rounds toward whoever charges it.
                 </li>
                 <li>
                   The trader's share rounds{" "}
-                  <span className="text-ink">down</span> — a payout rounds down.
+                  <span className="text-ink">down</span>, because a payout
+                  rounds down.
                 </li>
                 <li>
                   The investor receives the remainder, by subtraction rather
-                  than a third division — so the parts sum to the whole by
+                  than a third division, so the parts sum to the whole by
                   construction, and the dust goes to the party whose capital was
                   at risk.
                 </li>
@@ -366,7 +367,7 @@ export function Nox() {
       >
         <p className="mb-8 max-w-3xl text-sm leading-relaxed text-ink-muted">
           A 90% win rate next to a 0.6 profit factor is a trader taking tiny
-          wins and enormous losses — the most common way a track record lies. So
+          wins and enormous losses, the most common way a track record lies. So
           win rate never decides a tier on its own. Profit factor and worst
           drawdown do the work. The thresholds are{" "}
           <span className="text-ink">constants in the program</span>, not
@@ -413,7 +414,7 @@ export function Nox() {
         <p className="mt-6 max-w-3xl text-sm leading-relaxed text-ink-muted">
           Note what Platinum asks for that the others do not:{" "}
           <span className="text-ink">two mandates settled in profit</span>. A
-          live result with real investor money returned — not a statistic
+          live result with real investor money returned, not a statistic
           computed from trades inside a mandate that is still open. Silver also
           requires a 45% win rate as an additional condition.
         </p>
@@ -423,7 +424,7 @@ export function Nox() {
       <Section
         id="proof"
         eyebrow="Proof"
-        title="Four mandates have run end to end on devnet — one of them agreed through the marketplace. Go and read them."
+        title="Four mandates have run end to end on devnet, one of them agreed through the marketplace. Go and read them."
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] border border-line text-sm">
@@ -521,11 +522,14 @@ export function Nox() {
               Not built
             </div>
             <ul className="mt-3 space-y-2 text-sm text-ink-muted">
-              <li>The evaluation stage — mandates are funded directly today</li>
-              <li>The marketplace for browsing and funding traders</li>
               <li>The public page that re-derives statistics from events</li>
               <li>
-                An automated keeper — cranks are public but nothing runs them
+                An automated keeper. The cranks are public, but nothing runs
+                them
+              </li>
+              <li>
+                Resting entry orders. SolFX triggers attach to an open position,
+                so they can close one and cannot open one
               </li>
             </ul>
           </div>
@@ -550,7 +554,7 @@ export function Nox() {
                 single key
               </li>
               <li>
-                That same key holds authority over SolFX — one signature
+                That same key holds authority over SolFX, so one signature
                 controls both
               </li>
               <li>The admin can pause. The admin cannot move funds</li>

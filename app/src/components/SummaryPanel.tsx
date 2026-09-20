@@ -76,7 +76,7 @@ export function SummaryPanel({
     return (
       <div className="px-5 py-4">
         <div className="rounded border border-short/40 bg-short/10 p-2 text-[11px] text-short">
-          Could not read your history — these totals would be wrong, so they are
+          Could not read your history, so these totals would be wrong and are
           not shown. {loadError}
         </div>
       </div>

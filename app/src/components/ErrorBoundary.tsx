@@ -33,8 +33,8 @@ export class ErrorBoundary extends Component<Props, State> {
             The interface failed to render
           </h1>
           <p className="mt-2 text-xs text-ink-muted">
-            The error is below. Everything on chain is unaffected — this is a
-            bug in the page, not in the protocol.
+            The error is below. Everything on chain is unaffected. This is a bug
+            in the page, not in the protocol.
           </p>
 
           <div className="mt-5 rounded-lg border border-short/40 bg-short/5 p-4">

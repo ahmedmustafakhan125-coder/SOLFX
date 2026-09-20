@@ -80,7 +80,7 @@ export function PositionsPanel({
         // Distinguishing "you have none" from "we could not find out" matters here more than
         // almost anywhere else in the app: the two look identical and only one is safe to act on.
         <div className="mx-5 mb-4 rounded border border-short/40 bg-short/10 p-2 text-[11px] text-short">
-          Could not read your positions — this is not the same as having none.{" "}
+          Could not read your positions. This is not the same as having none.{" "}
           {loadError}
         </div>
       ) : positions.length === 0 ? (

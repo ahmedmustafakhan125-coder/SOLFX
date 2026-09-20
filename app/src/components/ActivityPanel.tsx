@@ -216,7 +216,7 @@ export function ActivityPanel({
         </button>
       </div>
       <FloatingPanel
-        title={`Activity — ${positions.length} open`}
+        title={`Activity · ${positions.length} open`}
         rect={layout.rect ?? defaultRect()}
         onRectChange={setRect}
         onDock={() => setFloating(false)}

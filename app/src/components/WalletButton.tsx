@@ -23,7 +23,7 @@ export function WalletButton() {
       <button
         onClick={() => void disconnect()}
         className="tnum rounded-md border border-line bg-surface-high px-3 py-1.5 text-xs text-ink hover:border-brand"
-        title={`${address} — click to disconnect`}
+        title={`${address}. Click to disconnect`}
       >
         {short(address)}
       </button>

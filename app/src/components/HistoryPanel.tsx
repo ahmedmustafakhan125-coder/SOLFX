@@ -41,7 +41,7 @@ export function HistoryPanel({
   if (loadError) {
     return (
       <div className="mx-5 my-4 rounded border border-short/40 bg-short/10 p-2 text-[11px] text-short">
-        Could not read your history — this is not the same as having none.{" "}
+        Could not read your history. This is not the same as having none.{" "}
         {loadError}
       </div>
     );

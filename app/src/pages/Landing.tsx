@@ -177,7 +177,7 @@ const PROOF_GROUPS: readonly {
   {
     title: "The arithmetic cannot drift",
     items: [
-      "Every money path goes through one fixed-point module. No floating point anywhere in the protocol — not in a test, not in a log line.",
+      "Every money path goes through one fixed-point module. No floating point anywhere in the protocol: not in a test, not in a log line.",
       "The build denies overflow, truncation, silent division, unwrap, panic and index-slicing. A money path cannot opt out.",
       "56 property tests assert laws rather than examples: a round trip at an unchanged price always loses, P&L is antisymmetric, fee splits conserve every unit, the book is never crossed.",
     ],
@@ -185,8 +185,8 @@ const PROOF_GROUPS: readonly {
   {
     title: "Solvency is checked, not assumed",
     items: [
-      "Seven accounting invariants are re-asserted after individual instructions in the test suite — vault balances against the sum of accounts, open interest against live positions, LP supply against assets under management.",
-      "Compute and packet ceilings are enforced by tests, so a regression fails CI rather than a transaction: open_position runs at about 55,000–59,000 units — the figure moves in 1,500-unit steps as the address search varies — against asserted ceilings of 120,000 and 140,000, and a liquidation is 758 bytes against Solana's 1,232 limit.",
+      "Seven accounting invariants are re-asserted after individual instructions in the test suite: vault balances against the sum of accounts, open interest against live positions, LP supply against assets under management.",
+      "Compute and packet ceilings are enforced by tests, so a regression fails CI rather than a transaction: open_position runs at about 55,000 to 59,000 units, a figure that moves in 1,500-unit steps as the address search varies, against asserted ceilings of 120,000 and 140,000, and a liquidation is 758 bytes against Solana's 1,232 limit.",
       "Refusal is tested as heavily as success. A venue that accepts everything is not a venue.",
     ],
   },
@@ -194,7 +194,7 @@ const PROOF_GROUPS: readonly {
     title: "It has been run against history",
     items: [
       "Nine crisis replays drive the engine through real events: the 2015 Swiss franc depeg, the 2016 sterling flash crash, COVID's sustained wide spreads, an emerging-market devaluation, and a weekend gap.",
-      "Each one asserts the documented order of absorption — insurance fund, then socialised loss — and that the venue refuses new risk without ever bricking.",
+      "Each one asserts the documented order of absorption, insurance fund first and then socialised loss, and that the venue refuses new risk without ever bricking.",
       "21.7 million fuzzing executions have found zero crashes.",
     ],
   },
@@ -250,7 +250,7 @@ const MAINNET_PATH: readonly {
   },
   {
     area: "Fuzzing",
-    now: "21.7 million executions, zero crashes — but the Trident campaign has not run to its exit criterion.",
+    now: "21.7 million executions, zero crashes, but the Trident campaign has not run to its exit criterion.",
     mainnet:
       "Trident to completion against the stated criterion, then running continuously in CI rather than as a one-off.",
   },
@@ -258,7 +258,7 @@ const MAINNET_PATH: readonly {
     area: "Price feeds",
     now: "Only 8 of 33 markets have a sponsored Pyth feed on devnet, so the protocol posts its own guardian-signed updates.",
     mainnet:
-      "Pyth carries the mainnet aggregate for all 33. The self-posting path exists because devnet is thin, and it retires on mainnet — the on-chain verification requirement does not change.",
+      "Pyth carries the mainnet aggregate for all 33. The self-posting path exists because devnet is thin, and it retires on mainnet. The on-chain verification requirement does not change.",
   },
   {
     area: "Redundancy",
@@ -357,7 +357,7 @@ export function Landing() {
               <p className="max-w-2xl text-lg leading-relaxed text-ink-muted">
                 Margin FX, metals and crypto on Solana, settled in USDC. Prices
                 come from Pyth, collateral stays in your own wallet's control,
-                and the rules that govern a trade are the program's — applied
+                and the rules that govern a trade are the program's, applied
                 before the fill rather than after.
               </p>
 
@@ -382,8 +382,8 @@ export function Landing() {
                 <Quote key={t.symbol} t={t} />
               ))}
               <p className="text-[11px] leading-relaxed text-ink-dim">
-                Live from Pyth — the same feed the program prices against.
-                Change is measured against the feed's own EMA.
+                Live from Pyth, the same feed the program prices against. Change
+                is measured against the feed's own EMA.
               </p>
             </div>
           </div>
@@ -404,7 +404,7 @@ export function Landing() {
             <Feature
               icon="◎"
               title="Fractions of a cent"
-              body="A round trip on $1,000 of notional costs about $0.08 in protocol fees beyond the spread — measured on devnet across all six markets, not estimated."
+              body="A round trip on $1,000 of notional costs about $0.08 in protocol fees beyond the spread, measured on devnet across all six markets rather than estimated."
             />
             <Feature
               icon="⊞"
@@ -427,8 +427,8 @@ export function Landing() {
           </div>
           <p className="mx-auto mt-6 max-w-2xl text-center text-xs leading-relaxed text-ink-dim">
             FX and metals trade Sunday 21:00 to Friday 21:00 UTC and are
-            correctly refused outside it — Pyth stops publishing at the close
-            and the program will not price a stale market. Only BTC/USD is
+            correctly refused outside it. Pyth stops publishing at the close and
+            the program will not price a stale market. Only BTC/USD is
             continuous.
           </p>
         </Band>
@@ -445,7 +445,7 @@ export function Landing() {
                 A Solana program stays upgradeable while an upgrade authority
                 exists. Setting that authority to{" "}
                 <span className="tnum text-ink">None</span> makes the bytecode
-                permanently immutable — nobody, including us, can change it
+                permanently immutable, so nobody, including us, can change it
                 again. That is the intended end state once the protocol stops
                 needing changes.
               </p>
@@ -507,7 +507,7 @@ export function Landing() {
         </Band>
 
         {/* Status */}
-        {/* Verification — measured, reproducible, and paired with what is not true */}
+        {/* Verification: measured, reproducible, and paired with what is not true */}
         <section
           id="verification"
           className="border-t border-line px-4 py-20 md:px-8"
@@ -576,7 +576,7 @@ export function Landing() {
               <p className="mt-3 text-xs leading-relaxed text-ink-dim">
                 The protocol is 38 instructions across two Anchor programs. It
                 has never been upgraded since the markets you can trade here
-                were listed — the extensibility claim was tested by listing two
+                were listed. The extensibility claim was tested by listing two
                 new markets against a byte-identical binary.
               </p>
             </div>
@@ -595,9 +595,9 @@ export function Landing() {
               </h2>
               <p className="mt-3 text-sm text-ink-muted">
                 This is a devnet deployment, and some of what you see is shaped
-                by that. The gap is written down below rather than glossed over
-                — knowing precisely what separates a working protocol from a
-                production one is the difference between a demo and a plan.
+                by that. The gap is written down below rather than glossed over,
+                because knowing precisely what separates a working protocol from
+                a production one is the difference between a demo and a plan.
               </p>
             </div>
 
@@ -606,7 +606,7 @@ export function Landing() {
                 The ceilings, measured
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-                These do not change between devnet and mainnet — they are
+                These do not change between devnet and mainnet. They are
                 properties of the programs and of Solana, and every one is
                 asserted by a test so a regression fails the build.
               </p>
@@ -643,7 +643,7 @@ export function Landing() {
               <p className="mt-4 text-xs leading-relaxed text-ink-dim">
                 Throughput is bounded by the 12,000,000 compute units Solana
                 allows a single writable account per block, not by the
-                100,000,000 block limit — every trade touches the same LP pool,
+                100,000,000 block limit. Every trade touches the same LP pool,
                 so the hot account tops out at 12% of the block. NOXFUNDS costs
                 roughly twice a bare trade because it prices the market, then
                 makes two cross-program calls that each price it again: that is
@@ -683,7 +683,7 @@ export function Landing() {
                 </span>{" "}
                 a roadmap of features. Every item is a thing that must be true
                 before somebody else&rsquo;s money is at risk, and none of it is
-                blocked on the protocol working — the protocol works. It is
+                blocked on the protocol working. The protocol works. It is
                 blocked on the review, the redundancy and the key management
                 that a devnet deployment does not need and a mainnet one cannot
                 open without.
@@ -717,8 +717,8 @@ export function Landing() {
                 <ul className="mt-4 space-y-2 text-sm leading-relaxed text-ink-muted">
                   <li>· Six markets live on devnet, priced and tradeable</li>
                   <li>
-                    · Full round trip — open, hold, close — verified on every
-                    one
+                    · Full round trip, open then hold then close, verified on
+                    every one
                   </li>
                   <li>
                     · 788 tests passing, none ignored; 97% coverage of the
@@ -744,7 +744,7 @@ export function Landing() {
                     not yet the 24 continuous hours the exit criterion asks for
                   </li>
                   <li>
-                    · Devnet only — test money, and nothing here is production
+                    · Devnet only, on test money, and nothing here is production
                   </li>
                   <li>
                     · The upgrade authority still exists, so the code is not yet
@@ -771,29 +771,29 @@ export function Landing() {
               <p>
                 SolFX is B-book: a capitalised LP pool takes the other side of
                 every trade. That is how GMX, gTrade and Hyperliquid's HLP work
-                too — the on-chain norm, not a shortcut, and what lets the venue
-                exist without a banking relationship.
+                too. It is the on-chain norm, not a shortcut, and what lets the
+                venue exist without a banking relationship.
               </p>
               <p>
-                What this set out to be was A-book — orders passed through to
-                real interbank liquidity, the broker earning commission instead
-                of taking the other side. The obstacle was never technology. It
-                is licensing: routing retail FX to a prime broker requires being
-                a regulated broker or an FCM.
+                What this set out to be was A-book, with orders passed through
+                to real interbank liquidity, the broker earning commission
+                instead of taking the other side. The obstacle was never
+                technology. It is licensing: routing retail FX to a prime broker
+                requires being a regulated broker or an FCM.
               </p>
               <p className="text-ink">That gate has started to move.</p>
               <p>
-                Banks now settle with Visa in USDC — over Solana. The CFTC
-                opened stablecoin margin at futures commission merchants in
-                December 2025 and widened it in February 2026, and by July 2026
-                an FCM was accepting USDC as initial margin against derivatives.
+                Banks now settle with Visa in USDC, over Solana. The CFTC opened
+                stablecoin margin at futures commission merchants in December
+                2025 and widened it in February 2026, and by July 2026 an FCM
+                was accepting USDC as initial margin against derivatives.
               </p>
               <p>
                 Retail FX is <span className="text-ink">not</span> in scope yet,
                 and those permissions rest on no-action letters rather than
                 settled rules. So the present is stated plainly: the pool is the
-                counterparty today. The hedging bridge sits at a defined seam —
-                per-market open-interest limits — so when the gate opens, flow
+                counterparty today. The hedging bridge sits at a defined seam,
+                the per-market open-interest limits, so when the gate opens flow
                 above a threshold routes out instead of being warehoused.
               </p>
             </div>
@@ -817,7 +817,7 @@ export function Landing() {
                 ],
                 [
                   "Then",
-                  "Hybrid — internalise small flow, route large or toxic flow out.",
+                  "Hybrid: internalise small flow, route large or toxic flow out.",
                   false,
                 ],
               ].map(([label, body, done]) => (

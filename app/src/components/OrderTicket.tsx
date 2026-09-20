@@ -322,8 +322,8 @@ export function OrderTicket({
           ))}
         </div>
         <p className="mt-1 text-[10px] leading-snug text-ink-dim">
-          A bound, not a preference — the program always compares, so there is
-          no way to disable it.
+          A bound, not a preference. The program always compares, so there is no
+          way to disable it.
         </p>
       </div>
 
@@ -457,7 +457,7 @@ function Warnings(p: {
     );
   }
   if (p.stale)
-    items.push("Oracle is older than 60s — the program would reject this.");
+    items.push("Oracle is older than 60s. The program would reject this.");
   if (p.belowNotional) items.push("Below the $1.00 minimum notional.");
   if (p.belowMin) items.push("Below this market's minimum position size.");
   if (p.aboveMax) items.push("Above this market's maximum position size.");

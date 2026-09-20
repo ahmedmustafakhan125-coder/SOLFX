@@ -120,7 +120,7 @@ export function FloatingPanel({
       <div
         role="toolbar"
         tabIndex={0}
-        aria-label={`${title} — drag to move, arrow keys to nudge, Escape to dock`}
+        aria-label={`${title}. Drag to move, arrow keys to nudge, Escape to dock`}
         onPointerDown={begin("move")}
         onPointerMove={move}
         onPointerUp={end}

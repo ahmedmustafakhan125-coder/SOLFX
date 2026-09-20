@@ -168,7 +168,7 @@ export function ReducePanel({
 
       <p className="text-[11px] leading-relaxed text-ink-muted">
         {full
-          ? "Closing the whole position, which returns its rent as well — that is close_position, not a reduction."
+          ? "Closing the whole position, which returns its rent as well. That is close_position, not a reduction."
           : "Collateral and entry are split in proportion and floored, so the odd unit stays with the position that remains."}{" "}
         P&amp;L is at the current mark, before the spread, the close fee and
         accrued carry.

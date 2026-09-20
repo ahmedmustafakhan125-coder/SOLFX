@@ -103,7 +103,7 @@ export function TriggerPanel({
     <div className="space-y-3 bg-surface-high/40 px-5 py-3">
       <p className="max-w-2xl text-[11px] leading-relaxed text-ink-dim">
         A trigger fires when the <span className="text-ink">oracle</span>{" "}
-        crosses your price, then closes at the execution price — which includes
+        crosses your price, then closes at the execution price, which includes
         the spread, and in a gap may be well past the trigger. It is not a
         guaranteed fill. The order rests on chain, so anyone can execute it and
         you can verify it exists without trusting us.
@@ -192,7 +192,7 @@ export function TriggerPanel({
           A {kind === TriggerKind.StopLoss ? "stop loss" : "take profit"} on a{" "}
           {position.data.direction === Direction.Long ? "long" : "short"} must
           sit {side} the current price. Placed on the other side it is already
-          met, so it would fire on the next keeper pass — the program rejects it
+          met, so it would fire on the next keeper pass. The program rejects it
           as <span className="tnum">TriggerAlreadyMet</span>.
         </p>
       ) : null}

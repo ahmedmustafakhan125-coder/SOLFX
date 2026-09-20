@@ -174,7 +174,7 @@ export function Pool() {
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-dim">
             SolFX is a B-book venue: this pool is the counterparty to every
             trade. It earns the spread, the fees and the losses of unprofitable
-            traders — and it pays the profits of profitable ones. That is the
+            traders, and it pays the profits of profitable ones. That is the
             position you are taking, not a yield.
           </p>
         </div>
@@ -401,7 +401,7 @@ export function Pool() {
                             <span>
                               Exit fee
                               {withdrawalPreview?.drainsThePool
-                                ? " (waived — empties the pool)"
+                                ? " (waived, empties the pool)"
                                 : ""}
                             </span>
                             <span className="text-ink">

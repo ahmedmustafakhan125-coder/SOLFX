@@ -30,7 +30,7 @@ const STEPS: Step[] = [
     n: 1,
     chip: "Fund",
     title: "An investor funds a mandate",
-    body: "USDC leaves the investor's wallet and enters a vault controlled by a program address that has no private key — not the trader's, not the investor's, not the operator's. The rule set is written into the mandate at this moment.",
+    body: "USDC leaves the investor's wallet and enters a vault controlled by a program address that has no private key: not the trader's, not the investor's, not the operator's. The rule set is written into the mandate at this moment.",
     point:
       "The rules are fixed at funding. No instruction in the program can edit them.",
   },
@@ -47,7 +47,7 @@ const STEPS: Step[] = [
     n: 3,
     chip: "Check",
     title: "Every rule is checked before the fill",
-    body: "Position size, total exposure, permitted market, drawdown, hold time — and a stop-loss, which is mandatory and placed in the very same transaction. Only then is the order forwarded.",
+    body: "Position size, total exposure, permitted market, drawdown, hold time, and a stop-loss, which is mandatory and placed in the very same transaction. Only then is the order forwarded.",
     point:
       "A trade that breaks a rule does not get punished. The transaction reverts: no fill, no loss, no trace.",
   },
@@ -65,7 +65,7 @@ const STEPS: Step[] = [
     n: 5,
     chip: "Settle",
     title: "The program divides the money",
-    body: "5% of gross profit to the protocol, then 70/30 of what remains between trader and investor. On a loss there is no fee and no trader share — the investor receives everything left.",
+    body: "5% of gross profit to the protocol, then 70/30 of what remains between trader and investor. On a loss there is no fee and no trader share. The investor receives everything left.",
     point: "Nobody approves the payout. There is nobody to be refused by.",
   },
 ];
@@ -544,7 +544,7 @@ export function NoxFlow() {
             </div>
             <p className="mt-3 text-[11px] text-ink-dim">
               {reduced
-                ? "Motion reduced at your request — use the steps above."
+                ? "Motion reduced at your request. Use the steps above."
                 : paused
                   ? "Paused. Move the pointer away to resume."
                   : "Advances on its own. Hover to pause, or pick a step."}

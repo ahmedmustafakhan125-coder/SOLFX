@@ -96,12 +96,12 @@ export function StaleOrders({
     >
       <div className="mb-2 font-medium">
         {armed
-          ? "Armed orders from a closed position — these can close a new position the moment you open it."
+          ? "Armed orders from a closed position. These can close a new position the moment you open it."
           : "Orders left over from a closed position. They cannot fire, but they hold rent."}
       </div>
       <p className="mb-2 opacity-80">
         A position's address is derived from its market and nonce, and the nonce
-        is reused after a close — so an order left behind attaches itself to
+        is reused after a close, so an order left behind attaches itself to
         whatever opens next, with the old direction's meaning and the old size.
         Cancel them.
       </p>

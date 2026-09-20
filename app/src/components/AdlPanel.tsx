@@ -66,8 +66,8 @@ export function AdlPanel({ positions, markets, active }: Props) {
           exceed the collateral behind it. The insurance fund covers that first.
           If it cannot, the most profitable positions on the other side are
           force-closed and part of their{" "}
-          <span className="text-ink">profit</span> is withheld to cover the rest
-          — never their collateral. Whatever remains is absorbed by the
+          <span className="text-ink">profit</span> is withheld to cover the
+          rest, never their collateral. Whatever remains is absorbed by the
           liquidity pool.
         </p>
         <p className="mt-2 text-ink-muted">
@@ -187,7 +187,7 @@ export function AdlPanel({ positions, markets, active }: Props) {
           </table>
         )}
         <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
-          Only a position in profit can be deleveraged at all — the program
+          Only a position in profit can be deleveraged at all. The program
           refuses anything else with{" "}
           <span className="text-ink-dim">NotAdlEligible</span>. Among those, the
           highest profit-to-collateral goes first, which is why a small position
