@@ -283,13 +283,21 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function RecordStrip({ stats }: { stats: TraderStats }) {
   return (
-    <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4 lg:grid-cols-7">
+    <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4 lg:grid-cols-8">
       <Stat label="Tier" value={TIER_NAME[stats.tier]} />
       <Stat label="Trades" value={String(stats.trades)} />
       <Stat label="Win rate" value={fmtPctBps(stats.winRateBps)} />
       <Stat label="Profit factor" value={fmtFactorBps(stats.profitFactorBps)} />
       <Stat label="Worst drawdown" value={fmtPctBps(stats.maxDrawdownBps)} />
       <Stat label="Avg hold" value={fmtSlots(stats.avgHoldSlots)} />
+      <Stat
+        label="Closed together"
+        value={
+          stats.ambiguousTrades === 0
+            ? "none"
+            : `${stats.ambiguousTrades}, counted against`
+        }
+      />
       <Stat label="Settled in profit" value={String(stats.settledInProfit)} />
     </div>
   );
@@ -2056,16 +2064,6 @@ function FundedRow({
           onClick={() =>
             void act(
               async (signer) => [
-                // The stop's rent goes to the keeper when it fires and to the authority when it
-                // is cancelled — there is no third path, so a voluntary close that leaves it
-                // behind strands 0.002 SOL of the mandate's money for good.
-                await fundedCancelOrderIx({
-                  signer,
-                  mandate: mandate.address,
-                  marketIndex: p.marketIndex,
-                  nonce: p.nonce,
-                  orderId: p.nonce,
-                }),
                 await fundedCloseIx({
                   signer,
                   mandate: mandate.address,
@@ -2077,6 +2075,19 @@ function FundedRow({
                     slippageBps
                   ),
                   legs: { priceUpdate: account! },
+                }),
+                // Then reclaim the stop, in the same transaction. Its rent goes to the keeper when
+                // it fires and to the authority when it is cancelled — there is no third path, so
+                // a close that left it behind would strand 0.002 SOL of the mandate's money.
+                // After the close, not before: the program refuses to remove a stop while its
+                // position is open (review R-4), and within one transaction the close has already
+                // taken the position account by the time this runs.
+                await fundedCancelOrderIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  orderId: p.nonce,
                 }),
               ],
               FUNDED_CLOSE_CU + FUNDED_TRIGGER_CU

@@ -231,6 +231,12 @@ export type TraderStats = {
   readonly profitFactorBps: bigint | null;
   readonly maxDrawdownBps: number;
   readonly avgHoldSlots: bigint | null;
+  /**
+   * Trades that closed outside NOXFUNDS together with another, so how the combined result
+   * divided between them is unknowable. The program resolves them against the trader — a
+   * combined loss in full, a combined profit not credited — and this says how often it had to.
+   */
+  readonly ambiguousTrades: number;
   readonly settledInProfit: number;
   readonly mandatesFunded: number;
   readonly tier: nox.TraderTier;
@@ -244,7 +250,13 @@ export function traderStats(p: nox.TraderProfile): TraderStats {
     profitFactorBps:
       p.grossLoss > 0n ? (p.grossProfit * BPS) / p.grossLoss : null,
     maxDrawdownBps: p.maxDrawdownBps,
-    avgHoldSlots: trades > 0n ? p.totalHoldSlots / trades : null,
+    // Over the trades whose hold was measured: a stop-out reconciled after its position was gone
+    // has no opening slot left, and counting it as zero would make a trader look like a scalper.
+    avgHoldSlots: (() => {
+      const timed = BigInt(Math.max(0, p.trades - p.untimedTrades));
+      return timed > 0n ? p.totalHoldSlots / timed : null;
+    })(),
+    ambiguousTrades: p.ambiguousTrades,
     settledInProfit: p.mandatesSettledInProfit,
     mandatesFunded: p.mandatesFunded,
     tier: p.tier,
@@ -799,6 +811,11 @@ export async function startEvaluationIx(
     }),
     await nox.getStartEvaluationInstructionAsync({
       trader: signer,
+      // The previous attempt, which the program requires to be over (review M-2).
+      previousEvaluation:
+        seq > 0
+          ? await noxPdas.findEvaluation(signer.address, seq - 1)
+          : undefined,
       evaluation: await noxPdas.findEvaluation(signer.address, seq),
       usdcMint,
       traderToken,
@@ -975,7 +992,13 @@ export function ruleRefusal(args: {
 
   // Risk at the stop, the rule no centralized firm can enforce before the fill.
   const risk = ceilDiv(args.sizeBase * distance, NOTIONAL_DIVISOR);
-  const equity = m.peakEquity > 0n ? m.peakEquity : 1n;
+  // The lower of the high-water mark and the last observed equity, as `check_rules` measures it
+  // since review L-1 — the peak alone overstates what a mandate in drawdown has left.
+  const basis =
+    m.lastEquity > 0n && m.lastEquity < m.peakEquity
+      ? m.lastEquity
+      : m.peakEquity;
+  const equity = basis > 0n ? basis : 1n;
   const riskBps = ceilDiv(risk * 10_000n, equity);
   if (riskBps > BigInt(m.maxRiskPerTradeBps))
     return `risking ${Number(riskBps) / 100}% at the stop; the mandate allows ${m.maxRiskPerTradeBps / 100}%`;
@@ -1203,6 +1226,8 @@ export async function fundedCancelOrderIx(args: {
     trader: args.signer,
     mandate: args.mandate,
     triggerOrder,
+    // The program reads it to refuse removing a stop while its position is open (review R-4).
+    position: a.position,
     marketIndex: args.marketIndex,
     nonce: args.nonce,
     orderId: args.orderId,

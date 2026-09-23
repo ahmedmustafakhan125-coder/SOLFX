@@ -312,6 +312,16 @@ describe("ruleRefusal mirrors check_rules", () => {
     );
   });
 
+  it("measures risk against the lower of peak and last equity, as check_rules does since L-1", () => {
+    // $100 of risk is 1% of the $10,000 peak but 1.11% of a mandate now worth $9,000.
+    const wide = (PX * 9_600n) / 10_000n;
+    const down = { ...base, lastEquity: 9_000_000_000n } as nox.Mandate;
+    expect(ask({ sizeBase: size(2_500n), stopPrice: wide })).toBeNull();
+    expect(
+      ask({ mandate: down, sizeBase: size(2_500n), stopPrice: wide })
+    ).toMatch(/risking .* at the stop/);
+  });
+
   it("measures the notional with a ceiling, as notional_in_quote does", () => {
     // The one size where floor and ceil disagree about whether the trade fits. `mul_div_ceil`
     // is what the program uses, so this must be refused; a mirror that floored would call it

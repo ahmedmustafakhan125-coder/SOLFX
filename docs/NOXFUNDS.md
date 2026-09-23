@@ -673,7 +673,8 @@ This section exists because a document that only lists what works is marketing.
 
 **Not done:**
 
-- **No security audit. Zero, by anyone.** Not a formal audit, not an informal one.
+- **No security audit. Zero, by anyone independent.** Not a formal audit. The internal review
+  in Part 11 was done by the model that helped write the code, which is not the same thing.
 - **No fuzzing.** SolFX's own fuzzing is a later-phase exit criterion; NOXFUNDS has none.
 - **Never deployed to mainnet, and no mainnet date.** Devnet only, with test USDC.
 - **Not economically tested at size.** The largest mandate ever run is $200.
@@ -687,6 +688,51 @@ are in [`docs/noxfunds-budgets.md`](noxfunds-budgets.md).
 
 Green tests mean the behaviours someone thought to test behave as expected. Nothing more.
 NOXFUNDS is not audited, not safe, and not production-ready.
+
+---
+
+## 11. Internal review, 23 September 2026
+
+A line-by-line reading of the program by the model that helped write it. **It is not a security
+audit** and should not be described as one: the reviewer is not independent, and no fuzzing or
+formal verification was involved. What it adds is that every serious finding was first written as
+a test of what *should* be true and **run against the deployed code, where it failed** — the failure
+is the evidence, not the description. Those eight tests now pass and stay in the suite as the
+regression tests for the fixes (`tests/stage6.rs`, `tests/stage7.rs`).
+
+| # | Severity | What was wrong | Fix |
+|---|---|---|---|
+| R-1 | Critical | `accept_offer` stored whatever SolFX account address the trader passed. Settlement needs a real account there, so a wrong one locked the investor's principal permanently, for ~0.006 SOL of rent. | The address is checked against `solfx-core`'s own derivation for the mandate signer, in `accept_offer` and `fund_mandate`. |
+| R-2 | High | The equity crank ignored USDC still in the mandate vault. Before the principal reached SolFX, anyone could breach the mandate and put a 100% drawdown on the trader's record. | The vault counts as equity. |
+| R-3 | High | Trades closed by a stop, a take-profit or a wind-down were never recorded — only voluntary closes. A trader who let losers stop out showed 100% wins, and tier (which sets mandate size) is decided on that record. | Wind-down records its trade exactly. Reconciliation recovers a stop-out's result from SolFX's free collateral and position count, to the unit. When two close together, the split is resolved against the trader and published (`ambiguous_trades`). |
+| R-4 | High | The trader could cancel the mandatory stop on an open position. | A stop-loss can only be cancelled once its position is gone. |
+| R-5 | High | A close could release a different position's slot, leaving a live position invisible to the crank and the limits. | The slot released must be the position closed. |
+| R-8 | High | `fund_mandate` needed no trader signature and had no minimum, so a stranger could fill a Bronze trader's only slot with $0.000001 for good. | The trader signs. |
+| R-6 | Medium | `max_daily_loss_bps` was validated and never enforced. | The crank breaches on it, against the day's opening equity. |
+| R-7 | Medium | A mandate whose SolFX account was never created could not be settled. | Settlement pays straight from the vault when there is nothing in SolFX. |
+| M-1 | Medium | "Settled in profit" (a Platinum requirement) was judged on the vault balance, which anyone can top up. | Judged on recorded trades. |
+| M-2 | Medium | Evaluations could run in parallel, so a trader could hedge two and keep the one that passed. | Sequential: the previous attempt must be over. |
+| L-1 | Low | Risk per trade was measured against peak equity, not what a mandate in drawdown has left. | Against the lower of the two. |
+| L-3 | Low | Pausing the protocol also blocked voluntary closes and take-profits. | Both are allowed while paused; only new risk is refused. |
+
+**Found and left as they are, stated plainly:**
+
+- **Evaluation stops and loss limits are enforced only when someone runs the crank.** A virtual
+  stop that nobody fires does not fire. The NOXFUNDS keeper exists to do this; without it running,
+  a trader can ride through a stop.
+- **The permissionless cranks accept any valid price update up to 60 seconds old**, not only the
+  newest, so a caller can pick the most adverse price in that window. Inherited from SolFX's oracle
+  design, where the same is true of liquidations.
+- **A trader can fund their own mandate from a second wallet.** No on-chain rule can see that two
+  wallets have one owner; the record shows the investor address, and that is what an investor
+  should read.
+- **Some rent is never reclaimed**: an offer and its empty escrow, a stake escrow after refund, and
+  about 0.02 SOL left in each mandate signer.
+- **Admin, guardian and treasury cannot be rotated** except by a program upgrade.
+
+Upgrade precondition, checked on devnet before this shipped: no mandate had an open position or
+collateral in SolFX. The new accounting fields were carved from reserved bytes that read as zero,
+which is only the right starting value under that condition.
 
 ---
 
