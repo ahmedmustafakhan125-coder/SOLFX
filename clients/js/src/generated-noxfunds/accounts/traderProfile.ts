@@ -101,6 +101,17 @@ export type TraderProfile = {
   mandatesSettledInProfit: number;
   createdAt: bigint;
   bump: number;
+  /**
+   * Trades recorded with no measurable hold: a stop-out seen only after its position account
+   * was gone. Excluded from the average hold rather than counted as zero-length scalps.
+   */
+  untimedTrades: number;
+  /**
+   * Trades that closed outside NOXFUNDS together with another, so how the combined result
+   * divides between them cannot be known. Published, because the record resolves that
+   * ambiguity against the trader and anyone reading it should be able to see how often.
+   */
+  ambiguousTrades: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -141,6 +152,17 @@ export type TraderProfileArgs = {
   mandatesSettledInProfit: number;
   createdAt: number | bigint;
   bump: number;
+  /**
+   * Trades recorded with no measurable hold: a stop-out seen only after its position account
+   * was gone. Excluded from the average hold rather than counted as zero-length scalps.
+   */
+  untimedTrades: number;
+  /**
+   * Trades that closed outside NOXFUNDS together with another, so how the combined result
+   * divides between them cannot be known. Published, because the record resolves that
+   * ambiguity against the trader and anyone reading it should be able to see how often.
+   */
+  ambiguousTrades: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -165,7 +187,9 @@ export function getTraderProfileEncoder(): FixedSizeEncoder<TraderProfileArgs> {
       ["mandatesSettledInProfit", getU32Encoder()],
       ["createdAt", getI64Encoder()],
       ["bump", getU8Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 64)],
+      ["untimedTrades", getU32Encoder()],
+      ["ambiguousTrades", getU32Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 56)],
     ]),
     (value) => ({ ...value, discriminator: TRADER_PROFILE_DISCRIMINATOR }),
   );
@@ -191,7 +215,9 @@ export function getTraderProfileDecoder(): FixedSizeDecoder<TraderProfile> {
     ["mandatesSettledInProfit", getU32Decoder()],
     ["createdAt", getI64Decoder()],
     ["bump", getU8Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 64)],
+    ["untimedTrades", getU32Decoder()],
+    ["ambiguousTrades", getU32Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 56)],
   ]);
 }
 

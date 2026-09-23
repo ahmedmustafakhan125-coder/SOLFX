@@ -29,6 +29,7 @@ import {
 
 /** What a trader advertises. One struct, for the same reason `MandateRules` is one. */
 export type ListingTerms = {
+  /** A display name, shown beside the address and never instead of it. */
   nickname: string;
   minPrincipal: bigint;
   maxPrincipal: bigint;
@@ -38,6 +39,7 @@ export type ListingTerms = {
 };
 
 export type ListingTermsArgs = {
+  /** A display name, shown beside the address and never instead of it. */
   nickname: string;
   minPrincipal: number | bigint;
   maxPrincipal: number | bigint;

@@ -73,6 +73,15 @@ export type InvestorListing = {
   createdAt: bigint;
   updatedAt: bigint;
   bump: number;
+  /**
+   * A display name, so the marketplace reads as people rather than as base58.
+   *
+   * Carved out of the reserved bytes rather than appended, so `INIT_SPACE` does not move: every
+   * listing already on chain stays valid and decodes with an empty nickname, because those
+   * bytes are zero. Growing the account instead would have meant a realloc, a migration, and
+   * rent nobody agreed to. The address stays beside it everywhere — a name is a convenience,
+   * never an identity, and two traders may choose the same one.
+   */
   nickname: ReadonlyUint8Array;
   nicknameLen: number;
   reserved: ReadonlyUint8Array;
@@ -93,6 +102,15 @@ export type InvestorListingArgs = {
   createdAt: number | bigint;
   updatedAt: number | bigint;
   bump: number;
+  /**
+   * A display name, so the marketplace reads as people rather than as base58.
+   *
+   * Carved out of the reserved bytes rather than appended, so `INIT_SPACE` does not move: every
+   * listing already on chain stays valid and decodes with an empty nickname, because those
+   * bytes are zero. Growing the account instead would have meant a realloc, a migration, and
+   * rent nobody agreed to. The address stays beside it everywhere — a name is a convenience,
+   * never an identity, and two traders may choose the same one.
+   */
   nickname: ReadonlyUint8Array;
   nicknameLen: number;
   reserved: ReadonlyUint8Array;

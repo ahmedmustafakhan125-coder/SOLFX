@@ -933,7 +933,15 @@ async fn lifecycle(
             }
             .data(),
         };
-        step(rpc, investor, vec![ix], 80_000, "3/10 fund mandate").await?;
+        // The trader co-signs: a mandate spends their capacity (review R-8).
+        step_signed(
+            rpc,
+            &[investor, trader],
+            vec![ix],
+            80_000,
+            "3/10 fund mandate",
+        )
+        .await?;
         println!(
             "       vault holds {}",
             usdc(token_balance(rpc, &nox.vault).await)
@@ -1048,11 +1056,10 @@ async fn lifecycle(
     // --- 7. the permissionless equity crank -----------------------------------------------------
     let mut metas = noxfunds::accounts::ObserveMandateEquity {
         observer: investor.pubkey(),
-        config: nox.config,
         mandate: nox.mandate,
-        mandate_signer: nox.signer,
         user_account: nox.user_account,
         trader_profile: nox.profile,
+        mandate_vault: nox.vault,
     }
     .to_account_metas(None);
     metas.push(AccountMeta::new_readonly(position, false));
@@ -1190,6 +1197,7 @@ async fn lifecycle(
             mandate: nox.mandate,
             mandate_signer: nox.signer,
             trigger_order: trigger,
+            position,
             solfx_core_program: solfx_core::ID,
         }
         .to_account_metas(None),
@@ -1602,6 +1610,10 @@ async fn eval(
                 trader: trader.pubkey(),
                 config: nox.config,
                 trader_profile: nox.profile,
+                previous_evaluation: args
+                    .seq
+                    .checked_sub(1)
+                    .map(|prev| eval_pda(&trader.pubkey(), prev)),
                 evaluation,
                 usdc_mint: dep.usdc_mint,
                 trader_token,
@@ -2124,6 +2136,18 @@ async fn step(
     cu: u32,
     label: &str,
 ) -> Result<()> {
+    step_signed(rpc, &[payer], ixs, cu, label).await
+}
+
+/// `step`, for an instruction more than one party must sign. The first signer pays.
+async fn step_signed(
+    rpc: &RpcClient,
+    signers: &[&Keypair],
+    ixs: Vec<Instruction>,
+    cu: u32,
+    label: &str,
+) -> Result<()> {
+    let payer = signers.first().context("at least one signer")?;
     let mut all = vec![
         ComputeBudgetInstruction::set_compute_unit_limit(cu),
         ComputeBudgetInstruction::set_compute_unit_price(10_000),
@@ -2132,7 +2156,7 @@ async fn step(
     let blockhash = rpc.get_latest_blockhash().await.context("blockhash")?;
     let msg = Message::new(&all, Some(&payer.pubkey()));
     let mut tx = Transaction::new_unsigned(msg);
-    tx.try_sign(&[payer], blockhash).context("signing")?;
+    tx.try_sign(signers, blockhash).context("signing")?;
     match rpc.send_and_confirm_transaction(&tx).await {
         Ok(sig) => {
             println!("  {label:<17} {sig}");

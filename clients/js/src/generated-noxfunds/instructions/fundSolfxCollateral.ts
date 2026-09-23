@@ -82,7 +82,7 @@ export type FundSolfxCollateralInstruction<
         ? ReadonlyAccount<TAccountConfig>
         : TAccountConfig,
       TAccountMandate extends string
-        ? ReadonlyAccount<TAccountMandate>
+        ? WritableAccount<TAccountMandate>
         : TAccountMandate,
       TAccountMandateSigner extends string
         ? WritableAccount<TAccountMandateSigner>
@@ -166,6 +166,10 @@ export type FundSolfxCollateralAsyncInput<
 > = {
   payer: TransactionSigner<TAccountPayer>;
   config?: Address<TAccountConfig>;
+  /**
+   * `mut`: the deposit is recorded in `last_free_collateral`, so a later external close can be
+   * told apart from money NOXFUNDS itself put in.
+   */
   mandate: Address<TAccountMandate>;
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
@@ -239,7 +243,7 @@ export async function getFundSolfxCollateralInstructionAsync<
   const originalAccounts = {
     payer: { value: input.payer ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
-    mandate: { value: input.mandate ?? null, isWritable: false },
+    mandate: { value: input.mandate ?? null, isWritable: true },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
     protocol: { value: input.protocol ?? null, isWritable: true },
     userAccount: { value: input.userAccount ?? null, isWritable: true },
@@ -333,6 +337,10 @@ export type FundSolfxCollateralInput<
 > = {
   payer: TransactionSigner<TAccountPayer>;
   config: Address<TAccountConfig>;
+  /**
+   * `mut`: the deposit is recorded in `last_free_collateral`, so a later external close can be
+   * told apart from money NOXFUNDS itself put in.
+   */
   mandate: Address<TAccountMandate>;
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
@@ -404,7 +412,7 @@ export function getFundSolfxCollateralInstruction<
   const originalAccounts = {
     payer: { value: input.payer ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
-    mandate: { value: input.mandate ?? null, isWritable: false },
+    mandate: { value: input.mandate ?? null, isWritable: true },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
     protocol: { value: input.protocol ?? null, isWritable: true },
     userAccount: { value: input.userAccount ?? null, isWritable: true },
@@ -478,6 +486,10 @@ export type ParsedFundSolfxCollateralInstruction<
   accounts: {
     payer: TAccountMetas[0];
     config: TAccountMetas[1];
+    /**
+     * `mut`: the deposit is recorded in `last_free_collateral`, so a later external close can be
+     * told apart from money NOXFUNDS itself put in.
+     */
     mandate: TAccountMetas[2];
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];

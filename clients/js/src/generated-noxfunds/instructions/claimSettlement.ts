@@ -178,7 +178,14 @@ export type ClaimSettlementAsyncInput<
   mandate: Address<TAccountMandate>;
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
-  /** Deserialized: settlement withdraws exactly the free collateral recorded here. */
+  /**
+   * anything that is not a SolFX `UserAccount`. Settlement withdraws exactly the free
+   * collateral recorded here.
+   *
+   * It may not exist. A mandate nobody ever moved into SolFX used to be unsettleable until
+   * someone funded its signer and created the account — the investor's "without anyone's
+   * cooperation" guarantee, broken for exactly the mandates that never traded (review R-7).
+   */
   userAccount: Address<TAccountUserAccount>;
   /**
    * `mut` because `solfx-core`'s `MoveCollateral` marks it so — a CPI cannot ask for a
@@ -384,7 +391,14 @@ export type ClaimSettlementInput<
   mandate: Address<TAccountMandate>;
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
-  /** Deserialized: settlement withdraws exactly the free collateral recorded here. */
+  /**
+   * anything that is not a SolFX `UserAccount`. Settlement withdraws exactly the free
+   * collateral recorded here.
+   *
+   * It may not exist. A mandate nobody ever moved into SolFX used to be unsettleable until
+   * someone funded its signer and created the account — the investor's "without anyone's
+   * cooperation" guarantee, broken for exactly the mandates that never traded (review R-7).
+   */
   userAccount: Address<TAccountUserAccount>;
   /**
    * `mut` because `solfx-core`'s `MoveCollateral` marks it so — a CPI cannot ask for a
@@ -564,7 +578,14 @@ export type ParsedClaimSettlementInstruction<
     mandate: TAccountMetas[2];
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];
-    /** Deserialized: settlement withdraws exactly the free collateral recorded here. */
+    /**
+     * anything that is not a SolFX `UserAccount`. Settlement withdraws exactly the free
+     * collateral recorded here.
+     *
+     * It may not exist. A mandate nobody ever moved into SolFX used to be unsettleable until
+     * someone funded its signer and created the account — the investor's "without anyone's
+     * cooperation" guarantee, broken for exactly the mandates that never traded (review R-7).
+     */
     userAccount: TAccountMetas[5];
     /**
      * `mut` because `solfx-core`'s `MoveCollateral` marks it so — a CPI cannot ask for a

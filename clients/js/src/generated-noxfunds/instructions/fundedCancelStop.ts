@@ -59,6 +59,7 @@ export type FundedCancelStopInstruction<
   TAccountMandate extends string | AccountMeta<string> = string,
   TAccountMandateSigner extends string | AccountMeta<string> = string,
   TAccountTriggerOrder extends string | AccountMeta<string> = string,
+  TAccountPosition extends string | AccountMeta<string> = string,
   TAccountSolfxCoreProgram extends string | AccountMeta<string> =
     "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -82,6 +83,9 @@ export type FundedCancelStopInstruction<
       TAccountTriggerOrder extends string
         ? WritableAccount<TAccountTriggerOrder>
         : TAccountTriggerOrder,
+      TAccountPosition extends string
+        ? ReadonlyAccount<TAccountPosition>
+        : TAccountPosition,
       TAccountSolfxCoreProgram extends string
         ? ReadonlyAccount<TAccountSolfxCoreProgram>
         : TAccountSolfxCoreProgram,
@@ -139,13 +143,21 @@ export type FundedCancelStopAsyncInput<
   TAccountMandate extends string = string,
   TAccountMandateSigner extends string = string,
   TAccountTriggerOrder extends string = string,
+  TAccountPosition extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
   trader: TransactionSigner<TAccountTrader>;
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
   mandateSigner?: Address<TAccountMandateSigner>;
+  /**
+   * Deserialized so its kind and position can be read: a take-profit may be cancelled at any
+   * time, a stop-loss only once the position it protects is gone. `solfx-core` owns it, so
+   * Anchor never writes it back, and its close in the CPI below is not disturbed.
+   */
   triggerOrder: Address<TAccountTriggerOrder>;
+  /** whether it still exists is read. */
+  position: Address<TAccountPosition>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
   marketIndex: FundedCancelStopInstructionDataArgs["marketIndex"];
   nonce: FundedCancelStopInstructionDataArgs["nonce"];
@@ -158,6 +170,7 @@ export async function getFundedCancelStopInstructionAsync<
   TAccountMandate extends string,
   TAccountMandateSigner extends string,
   TAccountTriggerOrder extends string,
+  TAccountPosition extends string,
   TAccountSolfxCoreProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
@@ -167,6 +180,7 @@ export async function getFundedCancelStopInstructionAsync<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -178,6 +192,7 @@ export async function getFundedCancelStopInstructionAsync<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >
 > {
@@ -191,6 +206,7 @@ export async function getFundedCancelStopInstructionAsync<
     mandate: { value: input.mandate ?? null, isWritable: false },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
     triggerOrder: { value: input.triggerOrder ?? null, isWritable: true },
+    position: { value: input.position ?? null, isWritable: false },
     solfxCoreProgram: {
       value: input.solfxCoreProgram ?? null,
       isWritable: false,
@@ -226,6 +242,7 @@ export async function getFundedCancelStopInstructionAsync<
       getAccountMeta(accounts.mandate),
       getAccountMeta(accounts.mandateSigner),
       getAccountMeta(accounts.triggerOrder),
+      getAccountMeta(accounts.position),
       getAccountMeta(accounts.solfxCoreProgram),
     ],
     data: getFundedCancelStopInstructionDataEncoder().encode(
@@ -239,6 +256,7 @@ export async function getFundedCancelStopInstructionAsync<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >);
 }
@@ -249,13 +267,21 @@ export type FundedCancelStopInput<
   TAccountMandate extends string = string,
   TAccountMandateSigner extends string = string,
   TAccountTriggerOrder extends string = string,
+  TAccountPosition extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
   trader: TransactionSigner<TAccountTrader>;
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
   mandateSigner: Address<TAccountMandateSigner>;
+  /**
+   * Deserialized so its kind and position can be read: a take-profit may be cancelled at any
+   * time, a stop-loss only once the position it protects is gone. `solfx-core` owns it, so
+   * Anchor never writes it back, and its close in the CPI below is not disturbed.
+   */
   triggerOrder: Address<TAccountTriggerOrder>;
+  /** whether it still exists is read. */
+  position: Address<TAccountPosition>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
   marketIndex: FundedCancelStopInstructionDataArgs["marketIndex"];
   nonce: FundedCancelStopInstructionDataArgs["nonce"];
@@ -268,6 +294,7 @@ export function getFundedCancelStopInstruction<
   TAccountMandate extends string,
   TAccountMandateSigner extends string,
   TAccountTriggerOrder extends string,
+  TAccountPosition extends string,
   TAccountSolfxCoreProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
@@ -277,6 +304,7 @@ export function getFundedCancelStopInstruction<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -287,6 +315,7 @@ export function getFundedCancelStopInstruction<
   TAccountMandate,
   TAccountMandateSigner,
   TAccountTriggerOrder,
+  TAccountPosition,
   TAccountSolfxCoreProgram
 > {
   // Program address.
@@ -299,6 +328,7 @@ export function getFundedCancelStopInstruction<
     mandate: { value: input.mandate ?? null, isWritable: false },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
     triggerOrder: { value: input.triggerOrder ?? null, isWritable: true },
+    position: { value: input.position ?? null, isWritable: false },
     solfxCoreProgram: {
       value: input.solfxCoreProgram ?? null,
       isWritable: false,
@@ -326,6 +356,7 @@ export function getFundedCancelStopInstruction<
       getAccountMeta(accounts.mandate),
       getAccountMeta(accounts.mandateSigner),
       getAccountMeta(accounts.triggerOrder),
+      getAccountMeta(accounts.position),
       getAccountMeta(accounts.solfxCoreProgram),
     ],
     data: getFundedCancelStopInstructionDataEncoder().encode(
@@ -339,6 +370,7 @@ export function getFundedCancelStopInstruction<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >);
 }
@@ -353,8 +385,15 @@ export type ParsedFundedCancelStopInstruction<
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];
     mandateSigner: TAccountMetas[3];
+    /**
+     * Deserialized so its kind and position can be read: a take-profit may be cancelled at any
+     * time, a stop-loss only once the position it protects is gone. `solfx-core` owns it, so
+     * Anchor never writes it back, and its close in the CPI below is not disturbed.
+     */
     triggerOrder: TAccountMetas[4];
-    solfxCoreProgram: TAccountMetas[5];
+    /** whether it still exists is read. */
+    position: TAccountMetas[5];
+    solfxCoreProgram: TAccountMetas[6];
   };
   data: FundedCancelStopInstructionData;
 };
@@ -367,7 +406,7 @@ export function parseFundedCancelStopInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFundedCancelStopInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 7) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -385,6 +424,7 @@ export function parseFundedCancelStopInstruction<
       mandate: getNextAccount(),
       mandateSigner: getNextAccount(),
       triggerOrder: getNextAccount(),
+      position: getNextAccount(),
       solfxCoreProgram: getNextAccount(),
     },
     data: getFundedCancelStopInstructionDataDecoder().decode(instruction.data),

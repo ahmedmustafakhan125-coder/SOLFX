@@ -122,268 +122,283 @@
   "errors": [
     {
       "code": 6000,
-      "name": "ProtocolPaused",
-      "msg": "Protocol is paused"
+      "msg": "Protocol is paused",
+      "name": "ProtocolPaused"
     },
     {
       "code": 6001,
-      "name": "NotTheAdmin",
-      "msg": "Only the admin may do this"
+      "msg": "Only the admin may do this",
+      "name": "NotTheAdmin"
     },
     {
       "code": 6002,
-      "name": "NotTheTrader",
-      "msg": "Signer is not this mandate's trader"
+      "msg": "Signer is not this mandate's trader",
+      "name": "NotTheTrader"
     },
     {
       "code": 6003,
-      "name": "MandateNotActive",
-      "msg": "Mandate is not Active"
+      "msg": "Mandate is not Active",
+      "name": "MandateNotActive"
     },
     {
       "code": 6004,
-      "name": "TradeExceedsMandate",
-      "msg": "Trade notional exceeds the mandate's per-trade ceiling"
+      "msg": "Trade notional exceeds the mandate's per-trade ceiling",
+      "name": "TradeExceedsMandate"
     },
     {
       "code": 6005,
-      "name": "RiskPerTradeExceeded",
-      "msg": "Risk at the stop exceeds the mandate's per-trade risk limit"
+      "msg": "Risk at the stop exceeds the mandate's per-trade risk limit",
+      "name": "RiskPerTradeExceeded"
     },
     {
       "code": 6006,
-      "name": "StopLossRequired",
-      "msg": "Every funded trade must carry a stop-loss"
+      "msg": "Every funded trade must carry a stop-loss",
+      "name": "StopLossRequired"
     },
     {
       "code": 6007,
-      "name": "StopTooFar",
-      "msg": "Stop-loss is further from entry than the mandate allows"
+      "msg": "Stop-loss is further from entry than the mandate allows",
+      "name": "StopTooFar"
     },
     {
       "code": 6008,
-      "name": "StopOnWrongSide",
-      "msg": "Stop-loss is on the wrong side of the entry price"
+      "msg": "Stop-loss is on the wrong side of the entry price",
+      "name": "StopOnWrongSide"
     },
     {
       "code": 6009,
-      "name": "MarketNotPermitted",
-      "msg": "This market is not in the mandate's permitted set"
+      "msg": "This market is not in the mandate's permitted set",
+      "name": "MarketNotPermitted"
     },
     {
       "code": 6010,
-      "name": "TooManyOpenPositions",
-      "msg": "Mandate already holds its maximum number of open positions"
+      "msg": "Mandate already holds its maximum number of open positions",
+      "name": "TooManyOpenPositions"
     },
     {
       "code": 6011,
-      "name": "TotalNotionalExceeded",
-      "msg": "Trade would exceed the mandate's total open notional"
+      "msg": "Trade would exceed the mandate's total open notional",
+      "name": "TotalNotionalExceeded"
     },
     {
       "code": 6012,
-      "name": "DrawdownExceeded",
-      "msg": "Mandate has breached its maximum drawdown"
+      "msg": "Mandate has breached its maximum drawdown",
+      "name": "DrawdownExceeded"
     },
     {
       "code": 6013,
-      "name": "MinimumHoldNotMet",
-      "msg": "Position has not been held for the mandate's minimum"
+      "msg": "Position has not been held for the mandate's minimum",
+      "name": "MinimumHoldNotMet"
     },
     {
       "code": 6014,
-      "name": "NotBreached",
-      "msg": "Mandate has not breached anything; there is nothing to flag"
+      "msg": "Mandate has not breached anything; there is nothing to flag",
+      "name": "NotBreached"
     },
     {
       "code": 6015,
-      "name": "NotTheInvestor",
-      "msg": "Only the investor who funded this mandate may do this"
+      "msg": "Only the investor who funded this mandate may do this",
+      "name": "NotTheInvestor"
     },
     {
       "code": 6016,
-      "name": "PositionsStillOpen",
-      "msg": "Mandate still holds open positions; close them before settling"
+      "msg": "Mandate still holds open positions; close them before settling",
+      "name": "PositionsStillOpen"
     },
     {
       "code": 6017,
-      "name": "MandateNotSettleable",
-      "msg": "Mandate is not winding down or breached, so it cannot be settled"
+      "msg": "Mandate is not winding down or breached, so it cannot be settled",
+      "name": "MandateNotSettleable"
     },
     {
       "code": 6018,
-      "name": "PositionNotTracked",
-      "msg": "This mandate is not tracking a position at that market and nonce"
+      "msg": "This mandate is not tracking a position at that market and nonce",
+      "name": "PositionNotTracked"
     },
     {
       "code": 6019,
-      "name": "PositionStillOpen",
-      "msg": "That position still exists on SolFX, so there is nothing to reconcile"
+      "msg": "That position still exists on SolFX, so there is nothing to reconcile",
+      "name": "PositionStillOpen"
     },
     {
       "code": 6020,
-      "name": "IncompleteObservation",
-      "msg": "Equity observation must supply every open position exactly once"
+      "msg": "Equity observation must supply every open position exactly once",
+      "name": "IncompleteObservation"
     },
     {
       "code": 6021,
-      "name": "MandateNotWindingDown",
-      "msg": "Only a breached or winding-down mandate may be wound down by a third party"
+      "msg": "Only a breached or winding-down mandate may be wound down by a third party",
+      "name": "MandateNotWindingDown"
     },
     {
       "code": 6022,
-      "name": "SlotNotReconciled",
-      "msg": "A position at this market and nonce closed without being reconciled; reconcile it first"
+      "msg": "A position at this market and nonce closed without being reconciled; reconcile it first",
+      "name": "SlotNotReconciled"
     },
     {
       "code": 6023,
-      "name": "InvalidMandateRules",
-      "msg": "Mandate rules are not internally consistent"
+      "msg": "Mandate rules are not internally consistent",
+      "name": "InvalidMandateRules"
     },
     {
       "code": 6024,
-      "name": "ZeroAmount",
-      "msg": "Amount must be greater than zero"
+      "msg": "Amount must be greater than zero",
+      "name": "ZeroAmount"
     },
     {
       "code": 6025,
-      "name": "MathOverflow",
-      "msg": "Arithmetic overflow"
+      "msg": "Arithmetic overflow",
+      "name": "MathOverflow"
     },
     {
       "code": 6026,
-      "name": "MandateExceedsTierLimit",
-      "msg": "This mandate is larger than the trader's tier permits"
+      "msg": "This mandate is larger than the trader's tier permits",
+      "name": "MandateExceedsTierLimit"
     },
     {
       "code": 6027,
-      "name": "TooManyActiveMandates",
-      "msg": "The trader already holds as many mandates as their tier permits"
+      "msg": "The trader already holds as many mandates as their tier permits",
+      "name": "TooManyActiveMandates"
     },
     {
       "code": 6028,
-      "name": "ProfileMismatch",
-      "msg": "This profile does not belong to the mandate's trader"
+      "msg": "This profile does not belong to the mandate's trader",
+      "name": "ProfileMismatch"
     },
     {
       "code": 6029,
-      "name": "NotTheUpgradeAuthority",
-      "msg": "Only the program's upgrade authority may initialise the configuration"
+      "msg": "Only the program's upgrade authority may initialise the configuration",
+      "name": "NotTheUpgradeAuthority"
     },
     {
       "code": 6030,
-      "name": "InsufficientPrincipal",
-      "msg": "The investor's token account holds less than the principal"
+      "msg": "The investor's token account holds less than the principal",
+      "name": "InsufficientPrincipal"
     },
     {
       "code": 6031,
-      "name": "NoteTooLong",
-      "msg": "Note is longer than the on-chain field allows"
+      "msg": "Note is longer than the on-chain field allows",
+      "name": "NoteTooLong"
     },
     {
       "code": 6032,
-      "name": "InvalidListingTerms",
-      "msg": "Listing terms are not internally consistent"
+      "msg": "Listing terms are not internally consistent",
+      "name": "InvalidListingTerms"
     },
     {
       "code": 6033,
-      "name": "NotTheListingTrader",
-      "msg": "Signer is not this listing's trader"
+      "msg": "Signer is not this listing's trader",
+      "name": "NotTheListingTrader"
     },
     {
       "code": 6034,
-      "name": "NotTheOfferInvestor",
-      "msg": "Signer is not the investor who posted this offer"
+      "msg": "Signer is not the investor who posted this offer",
+      "name": "NotTheOfferInvestor"
     },
     {
       "code": 6035,
-      "name": "NotTheOfferTrader",
-      "msg": "Signer is not the trader this offer is addressed to"
+      "msg": "Signer is not the trader this offer is addressed to",
+      "name": "NotTheOfferTrader"
     },
     {
       "code": 6036,
-      "name": "OfferNotOpen",
-      "msg": "Offer is not open; it has already been accepted or revoked"
+      "msg": "Offer is not open; it has already been accepted or revoked",
+      "name": "OfferNotOpen"
     },
     {
       "code": 6037,
-      "name": "OfferExpired",
-      "msg": "Offer has expired"
+      "msg": "Offer has expired",
+      "name": "OfferExpired"
     },
     {
       "code": 6038,
-      "name": "NicknameTooLong",
-      "msg": "Nickname is longer than the listing's field allows"
+      "msg": "Nickname is longer than the listing's field allows",
+      "name": "NicknameTooLong"
     },
     {
       "code": 6039,
-      "name": "NotTheListingInvestor",
-      "msg": "Signer is not this listing's investor"
+      "msg": "Signer is not this listing's investor",
+      "name": "NotTheListingInvestor"
     },
     {
       "code": 6040,
-      "name": "ListingNotOpen",
-      "msg": "That listing is closed; it is not accepting requests"
+      "msg": "That listing is closed; it is not accepting requests",
+      "name": "ListingNotOpen"
     },
     {
       "code": 6041,
-      "name": "NotARequestParty",
-      "msg": "Signer is neither the trader nor the investor on this request"
+      "msg": "Signer is neither the trader nor the investor on this request",
+      "name": "NotARequestParty"
     },
     {
       "code": 6042,
-      "name": "EvaluationNotActive",
-      "msg": "Evaluation is not active"
+      "msg": "Evaluation is not active",
+      "name": "EvaluationNotActive"
     },
     {
       "code": 6043,
-      "name": "InvalidAccountSize",
-      "msg": "Simulated account size must be between $10,000 and $200,000"
+      "msg": "Simulated account size must be between $10,000 and $200,000",
+      "name": "InvalidAccountSize"
     },
     {
       "code": 6044,
-      "name": "EvaluationLeverageTooHigh",
-      "msg": "Trade is more leveraged than this market allows against the simulated balance"
+      "msg": "Trade is more leveraged than this market allows against the simulated balance",
+      "name": "EvaluationLeverageTooHigh"
     },
     {
       "code": 6045,
-      "name": "DailyLossExceeded",
-      "msg": "Evaluation has lost more than its daily limit today"
+      "msg": "Evaluation has lost more than its daily limit today",
+      "name": "DailyLossExceeded"
     },
     {
       "code": 6046,
-      "name": "StopNotTriggered",
-      "msg": "The oracle price has not reached this stop"
+      "msg": "The oracle price has not reached this stop",
+      "name": "StopNotTriggered"
     },
     {
       "code": 6047,
-      "name": "EvaluationIncomplete",
-      "msg": "Evaluation has not yet met every requirement of this stage"
+      "msg": "Evaluation has not yet met every requirement of this stage",
+      "name": "EvaluationIncomplete"
     },
     {
       "code": 6048,
-      "name": "ConsistencyRuleViolated",
-      "msg": "A single day accounts for more than half the profit target"
+      "msg": "A single day accounts for more than half the profit target",
+      "name": "ConsistencyRuleViolated"
     },
     {
       "code": 6049,
-      "name": "EvaluationNotFailed",
-      "msg": "Only a failed evaluation's stake can be forfeited"
+      "msg": "Only a failed evaluation's stake can be forfeited",
+      "name": "EvaluationNotFailed"
     },
     {
       "code": 6050,
-      "name": "PositionSizeOutOfBounds",
-      "msg": "Position size is outside the market's bounds"
+      "msg": "Position size is outside the market's bounds",
+      "name": "PositionSizeOutOfBounds"
     },
     {
       "code": 6051,
-      "name": "MarketNotOpen",
-      "msg": "Market is not open for this action"
+      "msg": "Market is not open for this action",
+      "name": "MarketNotOpen"
     },
     {
       "code": 6052,
-      "name": "PositionNotInEvaluation",
-      "msg": "This simulated position does not belong to this evaluation"
+      "msg": "This simulated position does not belong to this evaluation",
+      "name": "PositionNotInEvaluation"
+    },
+    {
+      "code": 6053,
+      "msg": "The position closed is not the one named in the instruction",
+      "name": "PositionArgsMismatch"
+    },
+    {
+      "code": 6054,
+      "msg": "A stop-loss cannot be removed while its position is open",
+      "name": "StopProtectsOpenPosition"
+    },
+    {
+      "code": 6055,
+      "msg": "Finish or walk away from your previous evaluation first",
+      "name": "PreviousEvaluationActive"
     }
   ],
   "events": [
@@ -944,9 +959,69 @@
         },
         {
           "docs": [
-            "on every CPI; only its address is recorded."
+            "`solfx-core` will create for the mandate signer, and is checked here to be exactly that.",
+            "",
+            "It used to be recorded as passed. Every later instruction is pinned to the stored address",
+            "and settlement requires a real SolFX account there, so a trader who named anything else",
+            "emptied the investor's escrow into a vault no instruction could pay out of again, for the",
+            "price of the mandate's rent (internal review R-1, 2026-09-23). It does not exist yet \u2014",
+            "`create_solfx_account` makes it \u2014 so this is a seeds check on the address alone."
           ],
-          "name": "solfx_user_account"
+          "name": "solfx_user_account",
+          "pda": {
+            "program": {
+              "kind": "const",
+              "value": [
+                18,
+                75,
+                95,
+                168,
+                155,
+                136,
+                124,
+                239,
+                240,
+                178,
+                63,
+                227,
+                170,
+                219,
+                176,
+                217,
+                252,
+                142,
+                47,
+                148,
+                247,
+                41,
+                3,
+                251,
+                100,
+                136,
+                166,
+                50,
+                48,
+                83,
+                129,
+                189
+              ]
+            },
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate_signer"
+              }
+            ]
+          }
         },
         {
           "name": "usdc_mint"
@@ -1086,7 +1161,12 @@
         },
         {
           "docs": [
-            "Deserialized: settlement withdraws exactly the free collateral recorded here."
+            "anything that is not a SolFX `UserAccount`. Settlement withdraws exactly the free",
+            "collateral recorded here.",
+            "",
+            "It may not exist. A mandate nobody ever moved into SolFX used to be unsettleable until",
+            "someone funded its signer and created the account \u2014 the investor's \"without anyone's",
+            "cooperation\" guarantee, broken for exactly the mandates that never traded (review R-7)."
           ],
           "name": "user_account",
           "writable": true
@@ -1808,9 +1888,16 @@
         },
         {
           "docs": [
-            "nothing here, which is the point \u2014 an investor funds a trader without their cooperation."
+            "The trader this mandate authorises, **and they sign**.",
+            "",
+            "They used not to, on the theory that an investor should be able to fund a trader without",
+            "their cooperation. But a mandate counts against the trader's `active_mandates`, only its",
+            "investor can end it, and there was no minimum principal \u2014 so a stranger could fill a",
+            "Bronze trader's only slot with one base unit and hold it forever (internal review R-8).",
+            "Capacity a trader did not agree to spend is not theirs to have spent for them."
           ],
-          "name": "trader"
+          "name": "trader",
+          "signer": true
         },
         {
           "docs": [
@@ -1875,9 +1962,63 @@
         },
         {
           "docs": [
-            "`solfx-core` on every CPI; only its address is recorded here."
+            "See `AcceptOffer::solfx_user_account` for why recording it unchecked was a fund lock."
           ],
-          "name": "solfx_user_account"
+          "name": "solfx_user_account",
+          "pda": {
+            "program": {
+              "kind": "const",
+              "value": [
+                18,
+                75,
+                95,
+                168,
+                155,
+                136,
+                124,
+                239,
+                240,
+                178,
+                63,
+                227,
+                170,
+                219,
+                176,
+                217,
+                252,
+                142,
+                47,
+                148,
+                247,
+                41,
+                3,
+                251,
+                100,
+                136,
+                166,
+                50,
+                48,
+                83,
+                129,
+                189
+              ]
+            },
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate_signer"
+              }
+            ]
+          }
         },
         {
           "name": "usdc_mint"
@@ -1995,7 +2136,12 @@
           }
         },
         {
-          "name": "mandate"
+          "docs": [
+            "`mut`: the deposit is recorded in `last_free_collateral`, so a later external close can be",
+            "told apart from money NOXFUNDS itself put in."
+          ],
+          "name": "mandate",
+          "writable": true
         },
         {
           "name": "mandate_signer",
@@ -2150,8 +2296,19 @@
           "writable": true
         },
         {
+          "docs": [
+            "Deserialized so its kind and position can be read: a take-profit may be cancelled at any",
+            "time, a stop-loss only once the position it protects is gone. `solfx-core` owns it, so",
+            "Anchor never writes it back, and its close in the CPI below is not disturbed."
+          ],
           "name": "trigger_order",
           "writable": true
+        },
+        {
+          "docs": [
+            "whether it still exists is read."
+          ],
+          "name": "position"
         },
         {
           "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
@@ -2550,32 +2707,15 @@
       "name": "funded_open_position"
     },
     {
-      "name": "funded_place_take_profit",
-      "docs": [
-        "Add a take-profit to an open funded position. The stop is placed at open and is",
-        "mandatory; this is optional and can be cancelled with `funded_cancel_stop`, which is",
-        "generic over `order_id`. An `order_id` already in use \u2014 the trade's stop, say \u2014 fails",
-        "in `solfx-core` as \"account already in use\", so a take-profit can never replace a stop."
-      ],
-      "discriminator": [
-        195,
-        75,
-        243,
-        152,
-        49,
-        23,
-        236,
-        177
-      ],
       "accounts": [
         {
-          "name": "trader",
           "docs": [
             "Pays the transaction fee. Pays no rent: the trigger's rent comes from the mandate signer,",
             "and comes back to it on a cancel."
           ],
-          "writable": true,
-          "signer": true
+          "name": "trader",
+          "signer": true,
+          "writable": true
         },
         {
           "name": "config",
@@ -2599,11 +2739,10 @@
           "name": "mandate"
         },
         {
-          "name": "mandate_signer",
           "docs": [
             "The SolFX authority: dataless, system-owned, signs the CPI and pays the trigger's rent."
           ],
-          "writable": true,
+          "name": "mandate_signer",
           "pda": {
             "seeds": [
               {
@@ -2622,34 +2761,35 @@
                 "path": "mandate"
               }
             ]
-          }
+          },
+          "writable": true
         },
         {
           "name": "protocol"
         },
         {
-          "name": "user_account",
           "docs": [
             "this program can sign for. Not deserialized \u2014 this instruction prices nothing."
-          ]
+          ],
+          "name": "user_account"
         },
         {
           "name": "market"
         },
         {
-          "name": "position",
           "docs": [
             "Read-only: `place_trigger_order` reads the position's size, direction and opening slot",
             "and writes none of them. An unnecessary write lock would serialise this against a close",
             "on the same position for no reason."
-          ]
+          ],
+          "name": "position"
         },
         {
-          "name": "trigger_order",
           "docs": [
             "the mandate signer. An `order_id` already in use fails there as \"account already in use\",",
             "which is how a take-profit is prevented from ever overwriting the trade's stop."
           ],
+          "name": "trigger_order",
           "writable": true
         },
         {
@@ -2664,12 +2804,12 @@
           "optional": true
         },
         {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
         },
         {
-          "name": "solfx_core_program",
-          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi"
+          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+          "name": "solfx_core_program"
         }
       ],
       "args": [
@@ -2685,7 +2825,24 @@
           "name": "size_base",
           "type": "u64"
         }
-      ]
+      ],
+      "discriminator": [
+        195,
+        75,
+        243,
+        152,
+        49,
+        23,
+        236,
+        177
+      ],
+      "docs": [
+        "Add a take-profit to an open funded position. The stop is placed at open and is",
+        "mandatory; this is optional and can be cancelled with `funded_cancel_stop`, which is",
+        "generic over `order_id`. An `order_id` already in use \u2014 the trade's stop, say \u2014 fails",
+        "in `solfx-core` as \"account already in use\", so a take-profit can never replace a stop."
+      ],
+      "name": "funded_place_take_profit"
     },
     {
       "accounts": [
@@ -2831,50 +2988,14 @@
           "signer": true
         },
         {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
           "name": "mandate",
           "writable": true
         },
         {
-          "name": "mandate_signer",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  105,
-                  103,
-                  110,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mandate"
-              }
-            ]
-          }
-        },
-        {
+          "docs": [
+            "it is funded, before anyone has created its SolFX account \u2014 and is read through",
+            "`venue::read_user_account`, which refuses anything that is not a SolFX `UserAccount`."
+          ],
           "name": "user_account"
         },
         {
@@ -2909,6 +3030,40 @@
             ]
           },
           "writable": true
+        },
+        {
+          "docs": [
+            "The mandate's own vault. **Principal not yet moved into SolFX is still the investor's",
+            "equity**, and leaving it out made a freshly funded mandate read as a 100% drawdown that any",
+            "stranger could breach \u2014 permanently, with the 100% written onto the trader's record",
+            "(internal review R-2).",
+            "",
+            "Bound by its seeds and stored bump alone. That identifies the one token account",
+            "`fund_mandate` or `accept_offer` created, with the configured mint and the mandate signer",
+            "as authority; a token account's mint cannot change, and only that signer \u2014 which this",
+            "program never uses for `SetAuthority` \u2014 could change its authority. So `config` and",
+            "`mandate_signer`, which were here only to restate those facts, are no longer passed: the",
+            "crank must fit every open position in one transaction, and each account costs 32 bytes."
+          ],
+          "name": "mandate_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mandate"
+              }
+            ]
+          }
         }
       ],
       "args": [],
@@ -2927,8 +3082,9 @@
         "too far. **Permissionless** \u2014 investor capital is never hostage to an absent trader or",
         "an absent operator.",
         "",
-        "`remaining_accounts` carries (position, market, price_update) triples, one per open",
-        "position."
+        "`remaining_accounts` carries one group per open position: the position, its market and",
+        "its primary price update, then the secondary update if the market is synthetic and the",
+        "quote-conversion update if it is not USD-quoted \u2014 the same legs `open_position` takes."
       ],
       "name": "observe_mandate_equity"
     },
@@ -3500,26 +3656,37 @@
         },
         {
           "docs": [
-            "the nonce, under `solfx-core`'s program id \u2014 so it can only be the position this slot",
-            "describes. Only whether it still exists is read."
+            "SolFX's own account of this mandate: how much free collateral it holds, and how many",
+            "positions it still has open. Those two numbers are what makes the result recoverable."
           ],
-          "name": "position"
+          "name": "user_account"
         },
         {
-          "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
-          "name": "solfx_core_program"
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "account": "Mandate",
+                "kind": "account",
+                "path": "mandate.trader"
+              }
+            ]
+          },
+          "writable": true
         }
       ],
-      "args": [
-        {
-          "name": "market_index",
-          "type": "u16"
-        },
-        {
-          "name": "nonce",
-          "type": "u8"
-        }
-      ],
+      "args": [],
       "discriminator": [
         112,
         179,
@@ -3531,8 +3698,9 @@
         78
       ],
       "docs": [
-        "Release a slot whose position closed without NOXFUNDS seeing it \u2014 a stop-out.",
-        "**Permissionless**, and only if the derived position account is genuinely gone."
+        "Account for positions that closed without NOXFUNDS seeing them \u2014 a stop, a take-profit, a",
+        "liquidation \u2014 release their slots, and record their result on the trader's record.",
+        "**Permissionless.** Takes every open slot's position in `remaining_accounts`, in slot order."
       ],
       "name": "reconcile_position"
     },
@@ -3727,6 +3895,21 @@
               }
             ]
           }
+        },
+        {
+          "docs": [
+            "The trader's evaluation at `seq - 1`, which must be over. Absent only for `seq == 0`.",
+            "",
+            "Evaluations used to run in parallel. Passing one gates nothing on chain but is read as a",
+            "signal, and a trader could stake two at once \u2014 long in one, short in the other \u2014 and keep",
+            "whichever passed: a `StagePassed` bought for one forfeited stake (internal review M-2).",
+            "Requiring the previous one to have ended makes them strictly sequential, and requiring it",
+            "to *exist* means `seq` cannot skip. Identified by its own `trader` and `seq` fields: an",
+            "`Evaluation` is only ever created at its PDA, with those fields set from the signer and",
+            "the argument, so they cannot describe any other account."
+          ],
+          "name": "previous_evaluation",
+          "optional": true
         },
         {
           "name": "evaluation",
@@ -4024,8 +4207,14 @@
           "writable": true
         },
         {
+          "docs": [
+            "Deserialized for its kind and position; see `funded_cancel_stop`."
+          ],
           "name": "trigger_order",
           "writable": true
+        },
+        {
+          "name": "position"
         },
         {
           "address": "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
@@ -4107,6 +4296,10 @@
           "writable": true
         },
         {
+          "docs": [
+            "Deserialized and reloaded after the CPI, exactly as on the trader's own close: the change",
+            "in free collateral across the close is what the trade made."
+          ],
           "name": "user_account",
           "writable": true
         },
@@ -4120,6 +4313,34 @@
             "which slot to release. Bound to this mandate's SolFX account."
           ],
           "name": "position",
+          "writable": true
+        },
+        {
+          "docs": [
+            "The trader's record. A forced close is still the trader's trade, and it was the one kind",
+            "the record never saw (internal review R-3)."
+          ],
+          "name": "trader_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "account": "Mandate",
+                "kind": "account",
+                "path": "mandate.trader"
+              }
+            ]
+          },
           "writable": true
         },
         {
@@ -4951,6 +5172,15 @@
             "type": "u8"
           },
           {
+            "docs": [
+              "A display name, so the marketplace reads as people rather than as base58.",
+              "",
+              "Carved out of the reserved bytes rather than appended, so `INIT_SPACE` does not move: every",
+              "listing already on chain stays valid and decodes with an empty nickname, because those",
+              "bytes are zero. Growing the account instead would have meant a realloc, a migration, and",
+              "rent nobody agreed to. The address stays beside it everywhere \u2014 a name is a convenience,",
+              "never an identity, and two traders may choose the same one."
+            ],
             "name": "nickname",
             "type": {
               "array": [
@@ -5046,6 +5276,9 @@
       "type": {
         "fields": [
           {
+            "docs": [
+              "A display name, shown beside the address and never instead of it."
+            ],
             "name": "nickname",
             "type": "string"
           },
@@ -5151,6 +5384,9 @@
       "type": {
         "fields": [
           {
+            "docs": [
+              "A display name, shown beside the address and never instead of it."
+            ],
             "name": "nickname",
             "type": "string"
           },
@@ -5388,11 +5624,53 @@
             "type": "u8"
           },
           {
+            "docs": [
+              "SolFX free collateral as NOXFUNDS last accounted for it.",
+              "",
+              "Moved only by the effect of NOXFUNDS' own instructions \u2014 never re-read from the account \u2014",
+              "so `free_collateral - last_free_collateral` is always exactly what positions closed",
+              "*outside* NOXFUNDS (a stop, a take-profit, a liquidation) have credited back. That is how",
+              "`reconcile_position` learns what a stop-out made after the position account is gone.",
+              "Signed because a trader may spend a credit before it is reconciled."
+            ],
+            "name": "last_free_collateral",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "Margin plus open fee of every tracked open position: what SolFX debited to open them."
+            ],
+            "name": "booked_margin_fees",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "The UTC day `day_start_equity` belongs to, as `unix_timestamp / 86_400`."
+            ],
+            "name": "day",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "Equity when `day` began, as last observed \u2014 the daily loss limit's baseline."
+            ],
+            "name": "day_start_equity",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Net result of every trade recorded against this mandate. Decides whether it settled in",
+              "profit, because the vault balance can be inflated by anyone sending USDC to it."
+            ],
+            "name": "realized_pnl",
+            "type": "i64"
+          },
+          {
             "name": "_reserved",
             "type": {
               "array": [
                 "u8",
-                63
+                23
               ]
             }
           }
@@ -7316,6 +7594,15 @@
             "type": "u8"
           },
           {
+            "docs": [
+              "A display name, so the marketplace reads as people rather than as base58.",
+              "",
+              "Carved out of the reserved bytes rather than appended, so `INIT_SPACE` does not move: every",
+              "listing already on chain stays valid and decodes with an empty nickname, because those",
+              "bytes are zero. Growing the account instead would have meant a realloc, a migration, and",
+              "rent nobody agreed to. The address stays beside it everywhere \u2014 a name is a convenience,",
+              "never an identity, and two traders may choose the same one."
+            ],
             "name": "nickname",
             "type": {
               "array": [
@@ -7458,11 +7745,28 @@
             "type": "u8"
           },
           {
+            "docs": [
+              "Trades recorded with no measurable hold: a stop-out seen only after its position account",
+              "was gone. Excluded from the average hold rather than counted as zero-length scalps."
+            ],
+            "name": "untimed_trades",
+            "type": "u32"
+          },
+          {
+            "docs": [
+              "Trades that closed outside NOXFUNDS together with another, so how the combined result",
+              "divides between them cannot be known. Published, because the record resolves that",
+              "ambiguity against the trader and anyone reading it should be able to see how often."
+            ],
+            "name": "ambiguous_trades",
+            "type": "u32"
+          },
+          {
             "name": "_reserved",
             "type": {
               "array": [
                 "u8",
-                64
+                56
               ]
             }
           }
@@ -7519,6 +7823,158 @@
             "name": "Platinum"
           }
         ]
+      }
+    },
+    {
+      "docs": [
+        "Take-profit or stop-loss.",
+        "",
+        "The two differ only in which side of the trigger price fires them, but they are named",
+        "separately because the *risk* they carry is not the same: a stop-loss that fails to fire",
+        "is a position that keeps losing, while a take-profit that fails to fire is a trader who is",
+        "merely annoyed. Naming them apart means monitoring can alert on one and not the other."
+      ],
+      "name": "TriggerKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "TakeProfit"
+          },
+          {
+            "name": "StopLoss"
+          }
+        ]
+      }
+    },
+    {
+      "docs": [
+        "A resting take-profit or stop-loss. PDA at `[\"order\", position, order_id]`.",
+        "",
+        "# Why this is on chain rather than in the keeper",
+        "",
+        "A stop-loss held off-chain is a promise from whoever runs the bot. On chain it is an",
+        "account with rules: **anyone** can execute it, the conditions are public, and the trader",
+        "can verify the order exists without trusting us. That is the same argument as the IB",
+        "ledger (\u00a7 8.5) applied to risk management \u2014 and it is why this arrived with its executor",
+        "in Phase 7 rather than alone in Phase 4, since an order nothing fires is worse than no",
+        "order at all.",
+        "",
+        "# What it does not promise",
+        "",
+        "**A trigger is not a guaranteed fill price.** It fires when the *oracle* crosses the",
+        "trigger, and then fills at the execution price \u2014 which includes the adverse spread, and in",
+        "a gap may be far past the trigger. This is exactly how a stop works at any broker, and the",
+        "UI must say so, because the alternative is a trader who believes they were promised",
+        "something and discovers otherwise during the one event that matters."
+      ],
+      "name": "TriggerOrder",
+      "type": {
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "user_account",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "The wallet that placed it \u2014 also the only one that can cancel it."
+            ],
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "docs": [
+              "Distinguishes several orders on one position: a TP and an SL are the usual pair."
+            ],
+            "name": "order_id",
+            "type": "u8"
+          },
+          {
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "TriggerKind"
+              }
+            }
+          },
+          {
+            "docs": [
+              "At `PRICE_PRECISION`. Compared against the oracle price, not the fill price."
+            ],
+            "name": "trigger_price",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "Base units to close. May be less than the position, for scaling out."
+            ],
+            "name": "size_base",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "docs": [
+              "The `opened_at_slot` of the position this order was placed against.",
+              "",
+              "# Why an order needs to know which position it belongs to",
+              "",
+              "A position's address is `[\"position\", user_account, market_index, nonce]`, and a client",
+              "picks the lowest free nonce \u2014 so closing a position and opening another on the same",
+              "market lands on the **same address**. `close_position` does not cancel outstanding",
+              "orders, and without this field nothing distinguishes one occupant of that address from",
+              "the next: a stop left behind by the closed position silently re-arms itself against",
+              "whatever opens there, carrying the old direction's meaning.",
+              "",
+              "Measured on devnet 2026-09-13. A take-profit at 2500 left by a closed ETH **short** was",
+              "inherited by a fresh ETH **long** entered at 2509.61; a take-profit on a long fires when",
+              "the price rises past it, so it was already met the instant the position existed and the",
+              "keeper closed it nineteen seconds after it opened. Every layer behaved correctly \u2014 the",
+              "account model let two logical objects share one identity, which `.claude/rules/solana.md`",
+              "\u00a7 3 already calls a bug rather than a collision to handle later.",
+              "",
+              "The slot rather than the timestamp because it is strictly monotonic: two positions",
+              "cannot occupy one address in the same slot, since the first must be closed and \u00a7 6.6's",
+              "minimum-hold rule forbids reopening that fast. `Position` already stores it for exactly",
+              "that check.",
+              "",
+              "# Why this costs no migration",
+              "",
+              "The eight bytes come out of the former `[u8; 32]` reserve, so `InitSpace` is unchanged",
+              "at 32 and every account written by the previous program still passes Anchor's",
+              "minimum-length check. Those accounts read back as slot `0`, which matches no real",
+              "position, so they refuse to execute \u2014 **fail-closed on purpose**. Grandfathering in the",
+              "orders that caused the bug is the one outcome worth ruling out, and their rent is still",
+              "reclaimable through `cancel_trigger_order`, which does not consult this field."
+            ],
+            "name": "position_opened_at_slot",
+            "type": "u64"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                24
+              ]
+            }
+          }
+        ],
+        "kind": "struct"
       }
     },
     {

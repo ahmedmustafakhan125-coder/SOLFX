@@ -120,6 +120,12 @@ export const NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS = 0x17a2; // 6050
 export const NOXFUNDS_ERROR__MARKET_NOT_OPEN = 0x17a3; // 6051
 /** PositionNotInEvaluation: This simulated position does not belong to this evaluation */
 export const NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION = 0x17a4; // 6052
+/** PositionArgsMismatch: The position closed is not the one named in the instruction */
+export const NOXFUNDS_ERROR__POSITION_ARGS_MISMATCH = 0x17a5; // 6053
+/** StopProtectsOpenPosition: A stop-loss cannot be removed while its position is open */
+export const NOXFUNDS_ERROR__STOP_PROTECTS_OPEN_POSITION = 0x17a6; // 6054
+/** PreviousEvaluationActive: Finish or walk away from your previous evaluation first */
+export const NOXFUNDS_ERROR__PREVIOUS_EVALUATION_ACTIVE = 0x17a7; // 6055
 
 export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED
@@ -157,11 +163,13 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY
   | typeof NOXFUNDS_ERROR__OFFER_EXPIRED
   | typeof NOXFUNDS_ERROR__OFFER_NOT_OPEN
+  | typeof NOXFUNDS_ERROR__POSITION_ARGS_MISMATCH
   | typeof NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION
   | typeof NOXFUNDS_ERROR__POSITION_NOT_TRACKED
   | typeof NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS
   | typeof NOXFUNDS_ERROR__POSITIONS_STILL_OPEN
   | typeof NOXFUNDS_ERROR__POSITION_STILL_OPEN
+  | typeof NOXFUNDS_ERROR__PREVIOUS_EVALUATION_ACTIVE
   | typeof NOXFUNDS_ERROR__PROFILE_MISMATCH
   | typeof NOXFUNDS_ERROR__PROTOCOL_PAUSED
   | typeof NOXFUNDS_ERROR__RISK_PER_TRADE_EXCEEDED
@@ -169,6 +177,7 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__STOP_LOSS_REQUIRED
   | typeof NOXFUNDS_ERROR__STOP_NOT_TRIGGERED
   | typeof NOXFUNDS_ERROR__STOP_ON_WRONG_SIDE
+  | typeof NOXFUNDS_ERROR__STOP_PROTECTS_OPEN_POSITION
   | typeof NOXFUNDS_ERROR__STOP_TOO_FAR
   | typeof NOXFUNDS_ERROR__TOO_MANY_ACTIVE_MANDATES
   | typeof NOXFUNDS_ERROR__TOO_MANY_OPEN_POSITIONS
@@ -214,11 +223,13 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY]: `Only the program's upgrade authority may initialise the configuration`,
     [NOXFUNDS_ERROR__OFFER_EXPIRED]: `Offer has expired`,
     [NOXFUNDS_ERROR__OFFER_NOT_OPEN]: `Offer is not open; it has already been accepted or revoked`,
+    [NOXFUNDS_ERROR__POSITION_ARGS_MISMATCH]: `The position closed is not the one named in the instruction`,
     [NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION]: `This simulated position does not belong to this evaluation`,
     [NOXFUNDS_ERROR__POSITION_NOT_TRACKED]: `This mandate is not tracking a position at that market and nonce`,
     [NOXFUNDS_ERROR__POSITION_SIZE_OUT_OF_BOUNDS]: `Position size is outside the market's bounds`,
     [NOXFUNDS_ERROR__POSITIONS_STILL_OPEN]: `Mandate still holds open positions; close them before settling`,
     [NOXFUNDS_ERROR__POSITION_STILL_OPEN]: `That position still exists on SolFX, so there is nothing to reconcile`,
+    [NOXFUNDS_ERROR__PREVIOUS_EVALUATION_ACTIVE]: `Finish or walk away from your previous evaluation first`,
     [NOXFUNDS_ERROR__PROFILE_MISMATCH]: `This profile does not belong to the mandate's trader`,
     [NOXFUNDS_ERROR__PROTOCOL_PAUSED]: `Protocol is paused`,
     [NOXFUNDS_ERROR__RISK_PER_TRADE_EXCEEDED]: `Risk at the stop exceeds the mandate's per-trade risk limit`,
@@ -226,6 +237,7 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__STOP_LOSS_REQUIRED]: `Every funded trade must carry a stop-loss`,
     [NOXFUNDS_ERROR__STOP_NOT_TRIGGERED]: `The oracle price has not reached this stop`,
     [NOXFUNDS_ERROR__STOP_ON_WRONG_SIDE]: `Stop-loss is on the wrong side of the entry price`,
+    [NOXFUNDS_ERROR__STOP_PROTECTS_OPEN_POSITION]: `A stop-loss cannot be removed while its position is open`,
     [NOXFUNDS_ERROR__STOP_TOO_FAR]: `Stop-loss is further from entry than the mandate allows`,
     [NOXFUNDS_ERROR__TOO_MANY_ACTIVE_MANDATES]: `The trader already holds as many mandates as their tier permits`,
     [NOXFUNDS_ERROR__TOO_MANY_OPEN_POSITIONS]: `Mandate already holds its maximum number of open positions`,

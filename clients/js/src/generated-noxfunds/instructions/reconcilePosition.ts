@@ -14,10 +14,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU16Decoder,
-  getU16Encoder,
-  getU8Decoder,
-  getU8Encoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
@@ -51,9 +47,8 @@ export type ReconcilePositionInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountMandate extends string | AccountMeta<string> = string,
-  TAccountPosition extends string | AccountMeta<string> = string,
-  TAccountSolfxCoreProgram extends string | AccountMeta<string> =
-    "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
+  TAccountUserAccount extends string | AccountMeta<string> = string,
+  TAccountTraderProfile extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -66,34 +61,25 @@ export type ReconcilePositionInstruction<
       TAccountMandate extends string
         ? WritableAccount<TAccountMandate>
         : TAccountMandate,
-      TAccountPosition extends string
-        ? ReadonlyAccount<TAccountPosition>
-        : TAccountPosition,
-      TAccountSolfxCoreProgram extends string
-        ? ReadonlyAccount<TAccountSolfxCoreProgram>
-        : TAccountSolfxCoreProgram,
+      TAccountUserAccount extends string
+        ? ReadonlyAccount<TAccountUserAccount>
+        : TAccountUserAccount,
+      TAccountTraderProfile extends string
+        ? WritableAccount<TAccountTraderProfile>
+        : TAccountTraderProfile,
       ...TRemainingAccounts,
     ]
   >;
 
 export type ReconcilePositionInstructionData = {
   discriminator: ReadonlyUint8Array;
-  marketIndex: number;
-  nonce: number;
 };
 
-export type ReconcilePositionInstructionDataArgs = {
-  marketIndex: number;
-  nonce: number;
-};
+export type ReconcilePositionInstructionDataArgs = {};
 
 export function getReconcilePositionInstructionDataEncoder(): FixedSizeEncoder<ReconcilePositionInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([
-      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["marketIndex", getU16Encoder()],
-      ["nonce", getU8Encoder()],
-    ]),
+    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
     (value) => ({ ...value, discriminator: RECONCILE_POSITION_DISCRIMINATOR }),
   );
 }
@@ -101,8 +87,6 @@ export function getReconcilePositionInstructionDataEncoder(): FixedSizeEncoder<R
 export function getReconcilePositionInstructionDataDecoder(): FixedSizeDecoder<ReconcilePositionInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["marketIndex", getU16Decoder()],
-    ["nonce", getU8Decoder()],
   ]);
 }
 
@@ -119,42 +103,40 @@ export function getReconcilePositionInstructionDataCodec(): FixedSizeCodec<
 export type ReconcilePositionInput<
   TAccountCaller extends string = string,
   TAccountMandate extends string = string,
-  TAccountPosition extends string = string,
-  TAccountSolfxCoreProgram extends string = string,
+  TAccountUserAccount extends string = string,
+  TAccountTraderProfile extends string = string,
 > = {
   /** **Anyone.** */
   caller: TransactionSigner<TAccountCaller>;
   mandate: Address<TAccountMandate>;
   /**
-   * the nonce, under `solfx-core`'s program id — so it can only be the position this slot
-   * describes. Only whether it still exists is read.
+   * SolFX's own account of this mandate: how much free collateral it holds, and how many
+   * positions it still has open. Those two numbers are what makes the result recoverable.
    */
-  position: Address<TAccountPosition>;
-  solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
-  marketIndex: ReconcilePositionInstructionDataArgs["marketIndex"];
-  nonce: ReconcilePositionInstructionDataArgs["nonce"];
+  userAccount: Address<TAccountUserAccount>;
+  traderProfile: Address<TAccountTraderProfile>;
 };
 
 export function getReconcilePositionInstruction<
   TAccountCaller extends string,
   TAccountMandate extends string,
-  TAccountPosition extends string,
-  TAccountSolfxCoreProgram extends string,
+  TAccountUserAccount extends string,
+  TAccountTraderProfile extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
   input: ReconcilePositionInput<
     TAccountCaller,
     TAccountMandate,
-    TAccountPosition,
-    TAccountSolfxCoreProgram
+    TAccountUserAccount,
+    TAccountTraderProfile
   >,
   config?: { programAddress?: TProgramAddress },
 ): ReconcilePositionInstruction<
   TProgramAddress,
   TAccountCaller,
   TAccountMandate,
-  TAccountPosition,
-  TAccountSolfxCoreProgram
+  TAccountUserAccount,
+  TAccountTraderProfile
 > {
   // Program address.
   const programAddress = config?.programAddress ?? NOXFUNDS_PROGRAM_ADDRESS;
@@ -163,44 +145,30 @@ export function getReconcilePositionInstruction<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: false },
     mandate: { value: input.mandate ?? null, isWritable: true },
-    position: { value: input.position ?? null, isWritable: false },
-    solfxCoreProgram: {
-      value: input.solfxCoreProgram ?? null,
-      isWritable: false,
-    },
+    userAccount: { value: input.userAccount ?? null, isWritable: false },
+    traderProfile: { value: input.traderProfile ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
-  // Resolve default values.
-  if (!accounts.solfxCoreProgram.value) {
-    accounts.solfxCoreProgram.value =
-      "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi" as Address<"2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi">;
-  }
-
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.caller),
       getAccountMeta(accounts.mandate),
-      getAccountMeta(accounts.position),
-      getAccountMeta(accounts.solfxCoreProgram),
+      getAccountMeta(accounts.userAccount),
+      getAccountMeta(accounts.traderProfile),
     ],
-    data: getReconcilePositionInstructionDataEncoder().encode(
-      args as ReconcilePositionInstructionDataArgs,
-    ),
+    data: getReconcilePositionInstructionDataEncoder().encode({}),
     programAddress,
   } as ReconcilePositionInstruction<
     TProgramAddress,
     TAccountCaller,
     TAccountMandate,
-    TAccountPosition,
-    TAccountSolfxCoreProgram
+    TAccountUserAccount,
+    TAccountTraderProfile
   >);
 }
 
@@ -214,11 +182,11 @@ export type ParsedReconcilePositionInstruction<
     caller: TAccountMetas[0];
     mandate: TAccountMetas[1];
     /**
-     * the nonce, under `solfx-core`'s program id — so it can only be the position this slot
-     * describes. Only whether it still exists is read.
+     * SolFX's own account of this mandate: how much free collateral it holds, and how many
+     * positions it still has open. Those two numbers are what makes the result recoverable.
      */
-    position: TAccountMetas[2];
-    solfxCoreProgram: TAccountMetas[3];
+    userAccount: TAccountMetas[2];
+    traderProfile: TAccountMetas[3];
   };
   data: ReconcilePositionInstructionData;
 };
@@ -246,8 +214,8 @@ export function parseReconcilePositionInstruction<
     accounts: {
       caller: getNextAccount(),
       mandate: getNextAccount(),
-      position: getNextAccount(),
-      solfxCoreProgram: getNextAccount(),
+      userAccount: getNextAccount(),
+      traderProfile: getNextAccount(),
     },
     data: getReconcilePositionInstructionDataDecoder().decode(instruction.data),
   };

@@ -10,8 +10,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   transformEncoder,
@@ -176,8 +178,16 @@ export type AcceptOfferAsyncInput<
    * `open_position` and `place_trigger_order` perform. See `Mandate`'s documentation.
    */
   mandateSigner?: Address<TAccountMandateSigner>;
-  /** on every CPI; only its address is recorded. */
-  solfxUserAccount: Address<TAccountSolfxUserAccount>;
+  /**
+   * `solfx-core` will create for the mandate signer, and is checked here to be exactly that.
+   *
+   * It used to be recorded as passed. Every later instruction is pinned to the stored address
+   * and settlement requires a real SolFX account there, so a trader who named anything else
+   * emptied the investor's escrow into a vault no instruction could pay out of again, for the
+   * price of the mandate's rent (internal review R-1, 2026-09-23). It does not exist yet —
+   * `create_solfx_account` makes it — so this is a seeds check on the address alone.
+   */
+  solfxUserAccount?: Address<TAccountSolfxUserAccount>;
   usdcMint: Address<TAccountUsdcMint>;
   offerVault?: Address<TAccountOfferVault>;
   mandateVault?: Address<TAccountMandateVault>;
@@ -272,6 +282,16 @@ export async function getAcceptOfferInstructionAsync<
       mandate: expectAddress(accounts.mandate.value),
     });
   }
+  if (!accounts.solfxUserAccount.value) {
+    accounts.solfxUserAccount.value = await getProgramDerivedAddress({
+      programAddress:
+        "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi" as Address<"2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi">,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([117, 115, 101, 114])),
+        getAddressEncoder().encode(expectAddress(accounts.mandateSigner.value)),
+      ],
+    });
+  }
   if (!accounts.offerVault.value) {
     accounts.offerVault.value = await findOfferVaultPda({
       offer: expectAddress(accounts.offer.value),
@@ -359,7 +379,15 @@ export type AcceptOfferInput<
    * `open_position` and `place_trigger_order` perform. See `Mandate`'s documentation.
    */
   mandateSigner: Address<TAccountMandateSigner>;
-  /** on every CPI; only its address is recorded. */
+  /**
+   * `solfx-core` will create for the mandate signer, and is checked here to be exactly that.
+   *
+   * It used to be recorded as passed. Every later instruction is pinned to the stored address
+   * and settlement requires a real SolFX account there, so a trader who named anything else
+   * emptied the investor's escrow into a vault no instruction could pay out of again, for the
+   * price of the mandate's rent (internal review R-1, 2026-09-23). It does not exist yet —
+   * `create_solfx_account` makes it — so this is a seeds check on the address alone.
+   */
   solfxUserAccount: Address<TAccountSolfxUserAccount>;
   usdcMint: Address<TAccountUsdcMint>;
   offerVault: Address<TAccountOfferVault>;
@@ -509,7 +537,15 @@ export type ParsedAcceptOfferInstruction<
      * `open_position` and `place_trigger_order` perform. See `Mandate`'s documentation.
      */
     mandateSigner: TAccountMetas[5];
-    /** on every CPI; only its address is recorded. */
+    /**
+     * `solfx-core` will create for the mandate signer, and is checked here to be exactly that.
+     *
+     * It used to be recorded as passed. Every later instruction is pinned to the stored address
+     * and settlement requires a real SolFX account there, so a trader who named anything else
+     * emptied the investor's escrow into a vault no instruction could pay out of again, for the
+     * price of the mandate's rent (internal review R-1, 2026-09-23). It does not exist yet —
+     * `create_solfx_account` makes it — so this is a seeds check on the address alone.
+     */
     solfxUserAccount: TAccountMetas[6];
     usdcMint: TAccountMetas[7];
     offerVault: TAccountMetas[8];

@@ -30,7 +30,7 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findConfigPda, findMandateSignerPda } from "../pdas";
+import { findMandateVaultPda } from "../pdas";
 import { NOXFUNDS_PROGRAM_ADDRESS } from "../programs";
 import {
   expectAddress,
@@ -51,11 +51,10 @@ export function getObserveMandateEquityDiscriminatorBytes() {
 export type ObserveMandateEquityInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
   TAccountObserver extends string | AccountMeta<string> = string,
-  TAccountConfig extends string | AccountMeta<string> = string,
   TAccountMandate extends string | AccountMeta<string> = string,
-  TAccountMandateSigner extends string | AccountMeta<string> = string,
   TAccountUserAccount extends string | AccountMeta<string> = string,
   TAccountTraderProfile extends string | AccountMeta<string> = string,
+  TAccountMandateVault extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -65,21 +64,18 @@ export type ObserveMandateEquityInstruction<
         ? ReadonlySignerAccount<TAccountObserver> &
             AccountSignerMeta<TAccountObserver>
         : TAccountObserver,
-      TAccountConfig extends string
-        ? ReadonlyAccount<TAccountConfig>
-        : TAccountConfig,
       TAccountMandate extends string
         ? WritableAccount<TAccountMandate>
         : TAccountMandate,
-      TAccountMandateSigner extends string
-        ? ReadonlyAccount<TAccountMandateSigner>
-        : TAccountMandateSigner,
       TAccountUserAccount extends string
         ? ReadonlyAccount<TAccountUserAccount>
         : TAccountUserAccount,
       TAccountTraderProfile extends string
         ? WritableAccount<TAccountTraderProfile>
         : TAccountTraderProfile,
+      TAccountMandateVault extends string
+        ? ReadonlyAccount<TAccountMandateVault>
+        : TAccountMandateVault,
       ...TRemainingAccounts,
     ]
   >;
@@ -118,20 +114,21 @@ export function getObserveMandateEquityInstructionDataCodec(): FixedSizeCodec<
 
 export type ObserveMandateEquityAsyncInput<
   TAccountObserver extends string = string,
-  TAccountConfig extends string = string,
   TAccountMandate extends string = string,
-  TAccountMandateSigner extends string = string,
   TAccountUserAccount extends string = string,
   TAccountTraderProfile extends string = string,
+  TAccountMandateVault extends string = string,
 > = {
   /**
    * **Anyone.** Investor capital must never be hostage to an absent trader or an absent
    * operator, so the instruction that can free it takes no privileged signer.
    */
   observer: TransactionSigner<TAccountObserver>;
-  config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
-  mandateSigner?: Address<TAccountMandateSigner>;
+  /**
+   * it is funded, before anyone has created its SolFX account — and is read through
+   * `venue::read_user_account`, which refuses anything that is not a SolFX `UserAccount`.
+   */
   userAccount: Address<TAccountUserAccount>;
   /**
    * The trader's record, so the worst drawdown ever *observed* lands on it.
@@ -143,35 +140,46 @@ export type ObserveMandateEquityAsyncInput<
    * or not.
    */
   traderProfile: Address<TAccountTraderProfile>;
+  /**
+   * The mandate's own vault. **Principal not yet moved into SolFX is still the investor's
+   * equity**, and leaving it out made a freshly funded mandate read as a 100% drawdown that any
+   * stranger could breach — permanently, with the 100% written onto the trader's record
+   * (internal review R-2).
+   *
+   * Bound by its seeds and stored bump alone. That identifies the one token account
+   * `fund_mandate` or `accept_offer` created, with the configured mint and the mandate signer
+   * as authority; a token account's mint cannot change, and only that signer — which this
+   * program never uses for `SetAuthority` — could change its authority. So `config` and
+   * `mandate_signer`, which were here only to restate those facts, are no longer passed: the
+   * crank must fit every open position in one transaction, and each account costs 32 bytes.
+   */
+  mandateVault?: Address<TAccountMandateVault>;
 };
 
 export async function getObserveMandateEquityInstructionAsync<
   TAccountObserver extends string,
-  TAccountConfig extends string,
   TAccountMandate extends string,
-  TAccountMandateSigner extends string,
   TAccountUserAccount extends string,
   TAccountTraderProfile extends string,
+  TAccountMandateVault extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
   input: ObserveMandateEquityAsyncInput<
     TAccountObserver,
-    TAccountConfig,
     TAccountMandate,
-    TAccountMandateSigner,
     TAccountUserAccount,
-    TAccountTraderProfile
+    TAccountTraderProfile,
+    TAccountMandateVault
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
   ObserveMandateEquityInstruction<
     TProgramAddress,
     TAccountObserver,
-    TAccountConfig,
     TAccountMandate,
-    TAccountMandateSigner,
     TAccountUserAccount,
-    TAccountTraderProfile
+    TAccountTraderProfile,
+    TAccountMandateVault
   >
 > {
   // Program address.
@@ -180,11 +188,10 @@ export async function getObserveMandateEquityInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     observer: { value: input.observer ?? null, isWritable: false },
-    config: { value: input.config ?? null, isWritable: false },
     mandate: { value: input.mandate ?? null, isWritable: true },
-    mandateSigner: { value: input.mandateSigner ?? null, isWritable: false },
     userAccount: { value: input.userAccount ?? null, isWritable: false },
     traderProfile: { value: input.traderProfile ?? null, isWritable: true },
+    mandateVault: { value: input.mandateVault ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -192,11 +199,8 @@ export async function getObserveMandateEquityInstructionAsync<
   >;
 
   // Resolve default values.
-  if (!accounts.config.value) {
-    accounts.config.value = await findConfigPda();
-  }
-  if (!accounts.mandateSigner.value) {
-    accounts.mandateSigner.value = await findMandateSignerPda({
+  if (!accounts.mandateVault.value) {
+    accounts.mandateVault.value = await findMandateVaultPda({
       mandate: expectAddress(accounts.mandate.value),
     });
   }
@@ -205,41 +209,40 @@ export async function getObserveMandateEquityInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.observer),
-      getAccountMeta(accounts.config),
       getAccountMeta(accounts.mandate),
-      getAccountMeta(accounts.mandateSigner),
       getAccountMeta(accounts.userAccount),
       getAccountMeta(accounts.traderProfile),
+      getAccountMeta(accounts.mandateVault),
     ],
     data: getObserveMandateEquityInstructionDataEncoder().encode({}),
     programAddress,
   } as ObserveMandateEquityInstruction<
     TProgramAddress,
     TAccountObserver,
-    TAccountConfig,
     TAccountMandate,
-    TAccountMandateSigner,
     TAccountUserAccount,
-    TAccountTraderProfile
+    TAccountTraderProfile,
+    TAccountMandateVault
   >);
 }
 
 export type ObserveMandateEquityInput<
   TAccountObserver extends string = string,
-  TAccountConfig extends string = string,
   TAccountMandate extends string = string,
-  TAccountMandateSigner extends string = string,
   TAccountUserAccount extends string = string,
   TAccountTraderProfile extends string = string,
+  TAccountMandateVault extends string = string,
 > = {
   /**
    * **Anyone.** Investor capital must never be hostage to an absent trader or an absent
    * operator, so the instruction that can free it takes no privileged signer.
    */
   observer: TransactionSigner<TAccountObserver>;
-  config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
-  mandateSigner: Address<TAccountMandateSigner>;
+  /**
+   * it is funded, before anyone has created its SolFX account — and is read through
+   * `venue::read_user_account`, which refuses anything that is not a SolFX `UserAccount`.
+   */
   userAccount: Address<TAccountUserAccount>;
   /**
    * The trader's record, so the worst drawdown ever *observed* lands on it.
@@ -251,34 +254,45 @@ export type ObserveMandateEquityInput<
    * or not.
    */
   traderProfile: Address<TAccountTraderProfile>;
+  /**
+   * The mandate's own vault. **Principal not yet moved into SolFX is still the investor's
+   * equity**, and leaving it out made a freshly funded mandate read as a 100% drawdown that any
+   * stranger could breach — permanently, with the 100% written onto the trader's record
+   * (internal review R-2).
+   *
+   * Bound by its seeds and stored bump alone. That identifies the one token account
+   * `fund_mandate` or `accept_offer` created, with the configured mint and the mandate signer
+   * as authority; a token account's mint cannot change, and only that signer — which this
+   * program never uses for `SetAuthority` — could change its authority. So `config` and
+   * `mandate_signer`, which were here only to restate those facts, are no longer passed: the
+   * crank must fit every open position in one transaction, and each account costs 32 bytes.
+   */
+  mandateVault: Address<TAccountMandateVault>;
 };
 
 export function getObserveMandateEquityInstruction<
   TAccountObserver extends string,
-  TAccountConfig extends string,
   TAccountMandate extends string,
-  TAccountMandateSigner extends string,
   TAccountUserAccount extends string,
   TAccountTraderProfile extends string,
+  TAccountMandateVault extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
   input: ObserveMandateEquityInput<
     TAccountObserver,
-    TAccountConfig,
     TAccountMandate,
-    TAccountMandateSigner,
     TAccountUserAccount,
-    TAccountTraderProfile
+    TAccountTraderProfile,
+    TAccountMandateVault
   >,
   config?: { programAddress?: TProgramAddress },
 ): ObserveMandateEquityInstruction<
   TProgramAddress,
   TAccountObserver,
-  TAccountConfig,
   TAccountMandate,
-  TAccountMandateSigner,
   TAccountUserAccount,
-  TAccountTraderProfile
+  TAccountTraderProfile,
+  TAccountMandateVault
 > {
   // Program address.
   const programAddress = config?.programAddress ?? NOXFUNDS_PROGRAM_ADDRESS;
@@ -286,11 +300,10 @@ export function getObserveMandateEquityInstruction<
   // Original accounts.
   const originalAccounts = {
     observer: { value: input.observer ?? null, isWritable: false },
-    config: { value: input.config ?? null, isWritable: false },
     mandate: { value: input.mandate ?? null, isWritable: true },
-    mandateSigner: { value: input.mandateSigner ?? null, isWritable: false },
     userAccount: { value: input.userAccount ?? null, isWritable: false },
     traderProfile: { value: input.traderProfile ?? null, isWritable: true },
+    mandateVault: { value: input.mandateVault ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -301,22 +314,20 @@ export function getObserveMandateEquityInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.observer),
-      getAccountMeta(accounts.config),
       getAccountMeta(accounts.mandate),
-      getAccountMeta(accounts.mandateSigner),
       getAccountMeta(accounts.userAccount),
       getAccountMeta(accounts.traderProfile),
+      getAccountMeta(accounts.mandateVault),
     ],
     data: getObserveMandateEquityInstructionDataEncoder().encode({}),
     programAddress,
   } as ObserveMandateEquityInstruction<
     TProgramAddress,
     TAccountObserver,
-    TAccountConfig,
     TAccountMandate,
-    TAccountMandateSigner,
     TAccountUserAccount,
-    TAccountTraderProfile
+    TAccountTraderProfile,
+    TAccountMandateVault
   >);
 }
 
@@ -331,10 +342,12 @@ export type ParsedObserveMandateEquityInstruction<
      * operator, so the instruction that can free it takes no privileged signer.
      */
     observer: TAccountMetas[0];
-    config: TAccountMetas[1];
-    mandate: TAccountMetas[2];
-    mandateSigner: TAccountMetas[3];
-    userAccount: TAccountMetas[4];
+    mandate: TAccountMetas[1];
+    /**
+     * it is funded, before anyone has created its SolFX account — and is read through
+     * `venue::read_user_account`, which refuses anything that is not a SolFX `UserAccount`.
+     */
+    userAccount: TAccountMetas[2];
     /**
      * The trader's record, so the worst drawdown ever *observed* lands on it.
      *
@@ -344,7 +357,21 @@ export type ParsedObserveMandateEquityInstruction<
      * means the gaming vector that matters most costs the trader their tier whether they close
      * or not.
      */
-    traderProfile: TAccountMetas[5];
+    traderProfile: TAccountMetas[3];
+    /**
+     * The mandate's own vault. **Principal not yet moved into SolFX is still the investor's
+     * equity**, and leaving it out made a freshly funded mandate read as a 100% drawdown that any
+     * stranger could breach — permanently, with the 100% written onto the trader's record
+     * (internal review R-2).
+     *
+     * Bound by its seeds and stored bump alone. That identifies the one token account
+     * `fund_mandate` or `accept_offer` created, with the configured mint and the mandate signer
+     * as authority; a token account's mint cannot change, and only that signer — which this
+     * program never uses for `SetAuthority` — could change its authority. So `config` and
+     * `mandate_signer`, which were here only to restate those facts, are no longer passed: the
+     * crank must fit every open position in one transaction, and each account costs 32 bytes.
+     */
+    mandateVault: TAccountMetas[4];
   };
   data: ObserveMandateEquityInstructionData;
 };
@@ -357,7 +384,7 @@ export function parseObserveMandateEquityInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedObserveMandateEquityInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 5) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -371,11 +398,10 @@ export function parseObserveMandateEquityInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       observer: getNextAccount(),
-      config: getNextAccount(),
       mandate: getNextAccount(),
-      mandateSigner: getNextAccount(),
       userAccount: getNextAccount(),
       traderProfile: getNextAccount(),
+      mandateVault: getNextAccount(),
     },
     data: getObserveMandateEquityInstructionDataDecoder().decode(
       instruction.data,

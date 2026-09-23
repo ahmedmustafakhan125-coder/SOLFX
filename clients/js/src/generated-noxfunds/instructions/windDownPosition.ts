@@ -58,6 +58,7 @@ export type WindDownPositionInstruction<
   TAccountUserAccount extends string | AccountMeta<string> = string,
   TAccountMarket extends string | AccountMeta<string> = string,
   TAccountPosition extends string | AccountMeta<string> = string,
+  TAccountTraderProfile extends string | AccountMeta<string> = string,
   TAccountCollateralVault extends string | AccountMeta<string> = string,
   TAccountLpPool extends string | AccountMeta<string> = string,
   TAccountLpVault extends string | AccountMeta<string> = string,
@@ -102,6 +103,9 @@ export type WindDownPositionInstruction<
       TAccountPosition extends string
         ? WritableAccount<TAccountPosition>
         : TAccountPosition,
+      TAccountTraderProfile extends string
+        ? WritableAccount<TAccountTraderProfile>
+        : TAccountTraderProfile,
       TAccountCollateralVault extends string
         ? WritableAccount<TAccountCollateralVault>
         : TAccountCollateralVault,
@@ -177,6 +181,7 @@ export type WindDownPositionAsyncInput<
   TAccountUserAccount extends string = string,
   TAccountMarket extends string = string,
   TAccountPosition extends string = string,
+  TAccountTraderProfile extends string = string,
   TAccountCollateralVault extends string = string,
   TAccountLpPool extends string = string,
   TAccountLpVault extends string = string,
@@ -195,6 +200,10 @@ export type WindDownPositionAsyncInput<
   mandate: Address<TAccountMandate>;
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
+  /**
+   * Deserialized and reloaded after the CPI, exactly as on the trader's own close: the change
+   * in free collateral across the close is what the trade made.
+   */
   userAccount: Address<TAccountUserAccount>;
   market: Address<TAccountMarket>;
   /**
@@ -202,6 +211,11 @@ export type WindDownPositionAsyncInput<
    * which slot to release. Bound to this mandate's SolFX account.
    */
   position: Address<TAccountPosition>;
+  /**
+   * The trader's record. A forced close is still the trader's trade, and it was the one kind
+   * the record never saw (internal review R-3).
+   */
+  traderProfile: Address<TAccountTraderProfile>;
   collateralVault: Address<TAccountCollateralVault>;
   lpPool: Address<TAccountLpPool>;
   lpVault: Address<TAccountLpVault>;
@@ -228,6 +242,7 @@ export async function getWindDownPositionInstructionAsync<
   TAccountUserAccount extends string,
   TAccountMarket extends string,
   TAccountPosition extends string,
+  TAccountTraderProfile extends string,
   TAccountCollateralVault extends string,
   TAccountLpPool extends string,
   TAccountLpVault extends string,
@@ -250,6 +265,7 @@ export async function getWindDownPositionInstructionAsync<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
+    TAccountTraderProfile,
     TAccountCollateralVault,
     TAccountLpPool,
     TAccountLpVault,
@@ -274,6 +290,7 @@ export async function getWindDownPositionInstructionAsync<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
+    TAccountTraderProfile,
     TAccountCollateralVault,
     TAccountLpPool,
     TAccountLpVault,
@@ -300,6 +317,7 @@ export async function getWindDownPositionInstructionAsync<
     userAccount: { value: input.userAccount ?? null, isWritable: true },
     market: { value: input.market ?? null, isWritable: true },
     position: { value: input.position ?? null, isWritable: true },
+    traderProfile: { value: input.traderProfile ?? null, isWritable: true },
     collateralVault: { value: input.collateralVault ?? null, isWritable: true },
     lpPool: { value: input.lpPool ?? null, isWritable: true },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
@@ -355,6 +373,7 @@ export async function getWindDownPositionInstructionAsync<
       getAccountMeta(accounts.userAccount),
       getAccountMeta(accounts.market),
       getAccountMeta(accounts.position),
+      getAccountMeta(accounts.traderProfile),
       getAccountMeta(accounts.collateralVault),
       getAccountMeta(accounts.lpPool),
       getAccountMeta(accounts.lpVault),
@@ -379,6 +398,7 @@ export async function getWindDownPositionInstructionAsync<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
+    TAccountTraderProfile,
     TAccountCollateralVault,
     TAccountLpPool,
     TAccountLpVault,
@@ -402,6 +422,7 @@ export type WindDownPositionInput<
   TAccountUserAccount extends string = string,
   TAccountMarket extends string = string,
   TAccountPosition extends string = string,
+  TAccountTraderProfile extends string = string,
   TAccountCollateralVault extends string = string,
   TAccountLpPool extends string = string,
   TAccountLpVault extends string = string,
@@ -420,6 +441,10 @@ export type WindDownPositionInput<
   mandate: Address<TAccountMandate>;
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
+  /**
+   * Deserialized and reloaded after the CPI, exactly as on the trader's own close: the change
+   * in free collateral across the close is what the trade made.
+   */
   userAccount: Address<TAccountUserAccount>;
   market: Address<TAccountMarket>;
   /**
@@ -427,6 +452,11 @@ export type WindDownPositionInput<
    * which slot to release. Bound to this mandate's SolFX account.
    */
   position: Address<TAccountPosition>;
+  /**
+   * The trader's record. A forced close is still the trader's trade, and it was the one kind
+   * the record never saw (internal review R-3).
+   */
+  traderProfile: Address<TAccountTraderProfile>;
   collateralVault: Address<TAccountCollateralVault>;
   lpPool: Address<TAccountLpPool>;
   lpVault: Address<TAccountLpVault>;
@@ -453,6 +483,7 @@ export function getWindDownPositionInstruction<
   TAccountUserAccount extends string,
   TAccountMarket extends string,
   TAccountPosition extends string,
+  TAccountTraderProfile extends string,
   TAccountCollateralVault extends string,
   TAccountLpPool extends string,
   TAccountLpVault extends string,
@@ -475,6 +506,7 @@ export function getWindDownPositionInstruction<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
+    TAccountTraderProfile,
     TAccountCollateralVault,
     TAccountLpPool,
     TAccountLpVault,
@@ -498,6 +530,7 @@ export function getWindDownPositionInstruction<
   TAccountUserAccount,
   TAccountMarket,
   TAccountPosition,
+  TAccountTraderProfile,
   TAccountCollateralVault,
   TAccountLpPool,
   TAccountLpVault,
@@ -523,6 +556,7 @@ export function getWindDownPositionInstruction<
     userAccount: { value: input.userAccount ?? null, isWritable: true },
     market: { value: input.market ?? null, isWritable: true },
     position: { value: input.position ?? null, isWritable: true },
+    traderProfile: { value: input.traderProfile ?? null, isWritable: true },
     collateralVault: { value: input.collateralVault ?? null, isWritable: true },
     lpPool: { value: input.lpPool ?? null, isWritable: true },
     lpVault: { value: input.lpVault ?? null, isWritable: true },
@@ -570,6 +604,7 @@ export function getWindDownPositionInstruction<
       getAccountMeta(accounts.userAccount),
       getAccountMeta(accounts.market),
       getAccountMeta(accounts.position),
+      getAccountMeta(accounts.traderProfile),
       getAccountMeta(accounts.collateralVault),
       getAccountMeta(accounts.lpPool),
       getAccountMeta(accounts.lpVault),
@@ -594,6 +629,7 @@ export function getWindDownPositionInstruction<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
+    TAccountTraderProfile,
     TAccountCollateralVault,
     TAccountLpPool,
     TAccountLpVault,
@@ -620,6 +656,10 @@ export type ParsedWindDownPositionInstruction<
     mandate: TAccountMetas[2];
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];
+    /**
+     * Deserialized and reloaded after the CPI, exactly as on the trader's own close: the change
+     * in free collateral across the close is what the trade made.
+     */
     userAccount: TAccountMetas[5];
     market: TAccountMetas[6];
     /**
@@ -627,21 +667,26 @@ export type ParsedWindDownPositionInstruction<
      * which slot to release. Bound to this mandate's SolFX account.
      */
     position: TAccountMetas[7];
-    collateralVault: TAccountMetas[8];
-    lpPool: TAccountMetas[9];
-    lpVault: TAccountMetas[10];
-    insuranceFund: TAccountMetas[11];
-    insuranceVault: TAccountMetas[12];
-    feeVault: TAccountMetas[13];
+    /**
+     * The trader's record. A forced close is still the trader's trade, and it was the one kind
+     * the record never saw (internal review R-3).
+     */
+    traderProfile: TAccountMetas[8];
+    collateralVault: TAccountMetas[9];
+    lpPool: TAccountMetas[10];
+    lpVault: TAccountMetas[11];
+    insuranceFund: TAccountMetas[12];
+    insuranceVault: TAccountMetas[13];
+    feeVault: TAccountMetas[14];
     /**
      * Validated by `solfx-core` against the market's feed id and its staleness gate, so an
      * untrusted caller cannot supply a stale or foreign price to close at.
      */
-    priceUpdate: TAccountMetas[14];
-    secondaryPriceUpdate?: TAccountMetas[15] | undefined;
-    quoteConversionPriceUpdate?: TAccountMetas[16] | undefined;
-    tokenProgram: TAccountMetas[17];
-    solfxCoreProgram: TAccountMetas[18];
+    priceUpdate: TAccountMetas[15];
+    secondaryPriceUpdate?: TAccountMetas[16] | undefined;
+    quoteConversionPriceUpdate?: TAccountMetas[17] | undefined;
+    tokenProgram: TAccountMetas[18];
+    solfxCoreProgram: TAccountMetas[19];
   };
   data: WindDownPositionInstructionData;
 };
@@ -654,7 +699,7 @@ export function parseWindDownPositionInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedWindDownPositionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 19) {
+  if (instruction.accounts.length < 20) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -681,6 +726,7 @@ export function parseWindDownPositionInstruction<
       userAccount: getNextAccount(),
       market: getNextAccount(),
       position: getNextAccount(),
+      traderProfile: getNextAccount(),
       collateralVault: getNextAccount(),
       lpPool: getNextAccount(),
       lpVault: getNextAccount(),

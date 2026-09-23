@@ -143,6 +143,27 @@ export type Mandate = {
    * touches the vault re-checks its address without re-deriving it.
    */
   vaultBump: number;
+  /**
+   * SolFX free collateral as NOXFUNDS last accounted for it.
+   *
+   * Moved only by the effect of NOXFUNDS' own instructions — never re-read from the account —
+   * so `free_collateral - last_free_collateral` is always exactly what positions closed
+   * *outside* NOXFUNDS (a stop, a take-profit, a liquidation) have credited back. That is how
+   * `reconcile_position` learns what a stop-out made after the position account is gone.
+   * Signed because a trader may spend a credit before it is reconciled.
+   */
+  lastFreeCollateral: bigint;
+  /** Margin plus open fee of every tracked open position: what SolFX debited to open them. */
+  bookedMarginFees: bigint;
+  /** The UTC day `day_start_equity` belongs to, as `unix_timestamp / 86_400`. */
+  day: bigint;
+  /** Equity when `day` began, as last observed — the daily loss limit's baseline. */
+  dayStartEquity: bigint;
+  /**
+   * Net result of every trade recorded against this mandate. Decides whether it settled in
+   * profit, because the vault balance can be inflated by anyone sending USDC to it.
+   */
+  realizedPnl: bigint;
   reserved: ReadonlyUint8Array;
 };
 
@@ -223,6 +244,27 @@ export type MandateArgs = {
    * touches the vault re-checks its address without re-deriving it.
    */
   vaultBump: number;
+  /**
+   * SolFX free collateral as NOXFUNDS last accounted for it.
+   *
+   * Moved only by the effect of NOXFUNDS' own instructions — never re-read from the account —
+   * so `free_collateral - last_free_collateral` is always exactly what positions closed
+   * *outside* NOXFUNDS (a stop, a take-profit, a liquidation) have credited back. That is how
+   * `reconcile_position` learns what a stop-out made after the position account is gone.
+   * Signed because a trader may spend a credit before it is reconciled.
+   */
+  lastFreeCollateral: number | bigint;
+  /** Margin plus open fee of every tracked open position: what SolFX debited to open them. */
+  bookedMarginFees: number | bigint;
+  /** The UTC day `day_start_equity` belongs to, as `unix_timestamp / 86_400`. */
+  day: number | bigint;
+  /** Equity when `day` began, as last observed — the daily loss limit's baseline. */
+  dayStartEquity: number | bigint;
+  /**
+   * Net result of every trade recorded against this mandate. Decides whether it settled in
+   * profit, because the vault balance can be inflated by anyone sending USDC to it.
+   */
+  realizedPnl: number | bigint;
   reserved: ReadonlyUint8Array;
 };
 
@@ -257,7 +299,12 @@ export function getMandateEncoder(): FixedSizeEncoder<MandateArgs> {
       ["openedAt", getI64Encoder()],
       ["bump", getU8Encoder()],
       ["vaultBump", getU8Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 63)],
+      ["lastFreeCollateral", getI64Encoder()],
+      ["bookedMarginFees", getU64Encoder()],
+      ["day", getI64Encoder()],
+      ["dayStartEquity", getU64Encoder()],
+      ["realizedPnl", getI64Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 23)],
     ]),
     (value) => ({ ...value, discriminator: MANDATE_DISCRIMINATOR }),
   );
@@ -293,7 +340,12 @@ export function getMandateDecoder(): FixedSizeDecoder<Mandate> {
     ["openedAt", getI64Decoder()],
     ["bump", getU8Decoder()],
     ["vaultBump", getU8Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 63)],
+    ["lastFreeCollateral", getI64Decoder()],
+    ["bookedMarginFees", getU64Decoder()],
+    ["day", getI64Decoder()],
+    ["dayStartEquity", getU64Decoder()],
+    ["realizedPnl", getI64Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 23)],
   ]);
 }
 

@@ -24,5 +24,7 @@ export * from "./priceSource";
 export * from "./priceUpdateV2";
 export * from "./quoteConversionKind";
 export * from "./traderTier";
+export * from "./triggerKind";
+export * from "./triggerOrder";
 export * from "./userAccount";
 export * from "./verificationLevel";

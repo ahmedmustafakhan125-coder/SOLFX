@@ -61,6 +61,7 @@ export type StartEvaluationInstruction<
   TAccountTrader extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountTraderProfile extends string | AccountMeta<string> = string,
+  TAccountPreviousEvaluation extends string | AccountMeta<string> = string,
   TAccountEvaluation extends string | AccountMeta<string> = string,
   TAccountUsdcMint extends string | AccountMeta<string> = string,
   TAccountTraderToken extends string | AccountMeta<string> = string,
@@ -84,6 +85,9 @@ export type StartEvaluationInstruction<
       TAccountTraderProfile extends string
         ? ReadonlyAccount<TAccountTraderProfile>
         : TAccountTraderProfile,
+      TAccountPreviousEvaluation extends string
+        ? ReadonlyAccount<TAccountPreviousEvaluation>
+        : TAccountPreviousEvaluation,
       TAccountEvaluation extends string
         ? WritableAccount<TAccountEvaluation>
         : TAccountEvaluation,
@@ -150,6 +154,7 @@ export type StartEvaluationAsyncInput<
   TAccountTrader extends string = string,
   TAccountConfig extends string = string,
   TAccountTraderProfile extends string = string,
+  TAccountPreviousEvaluation extends string = string,
   TAccountEvaluation extends string = string,
   TAccountUsdcMint extends string = string,
   TAccountTraderToken extends string = string,
@@ -164,6 +169,18 @@ export type StartEvaluationAsyncInput<
    * with no profile would earn a record nobody could find.
    */
   traderProfile?: Address<TAccountTraderProfile>;
+  /**
+   * The trader's evaluation at `seq - 1`, which must be over. Absent only for `seq == 0`.
+   *
+   * Evaluations used to run in parallel. Passing one gates nothing on chain but is read as a
+   * signal, and a trader could stake two at once — long in one, short in the other — and keep
+   * whichever passed: a `StagePassed` bought for one forfeited stake (internal review M-2).
+   * Requiring the previous one to have ended makes them strictly sequential, and requiring it
+   * to *exist* means `seq` cannot skip. Identified by its own `trader` and `seq` fields: an
+   * `Evaluation` is only ever created at its PDA, with those fields set from the signer and
+   * the argument, so they cannot describe any other account.
+   */
+  previousEvaluation?: Address<TAccountPreviousEvaluation>;
   evaluation: Address<TAccountEvaluation>;
   usdcMint: Address<TAccountUsdcMint>;
   traderToken: Address<TAccountTraderToken>;
@@ -182,6 +199,7 @@ export async function getStartEvaluationInstructionAsync<
   TAccountTrader extends string,
   TAccountConfig extends string,
   TAccountTraderProfile extends string,
+  TAccountPreviousEvaluation extends string,
   TAccountEvaluation extends string,
   TAccountUsdcMint extends string,
   TAccountTraderToken extends string,
@@ -194,6 +212,7 @@ export async function getStartEvaluationInstructionAsync<
     TAccountTrader,
     TAccountConfig,
     TAccountTraderProfile,
+    TAccountPreviousEvaluation,
     TAccountEvaluation,
     TAccountUsdcMint,
     TAccountTraderToken,
@@ -208,6 +227,7 @@ export async function getStartEvaluationInstructionAsync<
     TAccountTrader,
     TAccountConfig,
     TAccountTraderProfile,
+    TAccountPreviousEvaluation,
     TAccountEvaluation,
     TAccountUsdcMint,
     TAccountTraderToken,
@@ -224,6 +244,10 @@ export async function getStartEvaluationInstructionAsync<
     trader: { value: input.trader ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     traderProfile: { value: input.traderProfile ?? null, isWritable: false },
+    previousEvaluation: {
+      value: input.previousEvaluation ?? null,
+      isWritable: false,
+    },
     evaluation: { value: input.evaluation ?? null, isWritable: true },
     usdcMint: { value: input.usdcMint ?? null, isWritable: false },
     traderToken: { value: input.traderToken ?? null, isWritable: true },
@@ -268,6 +292,7 @@ export async function getStartEvaluationInstructionAsync<
       getAccountMeta(accounts.trader),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.traderProfile),
+      getAccountMeta(accounts.previousEvaluation),
       getAccountMeta(accounts.evaluation),
       getAccountMeta(accounts.usdcMint),
       getAccountMeta(accounts.traderToken),
@@ -284,6 +309,7 @@ export async function getStartEvaluationInstructionAsync<
     TAccountTrader,
     TAccountConfig,
     TAccountTraderProfile,
+    TAccountPreviousEvaluation,
     TAccountEvaluation,
     TAccountUsdcMint,
     TAccountTraderToken,
@@ -297,6 +323,7 @@ export type StartEvaluationInput<
   TAccountTrader extends string = string,
   TAccountConfig extends string = string,
   TAccountTraderProfile extends string = string,
+  TAccountPreviousEvaluation extends string = string,
   TAccountEvaluation extends string = string,
   TAccountUsdcMint extends string = string,
   TAccountTraderToken extends string = string,
@@ -311,6 +338,18 @@ export type StartEvaluationInput<
    * with no profile would earn a record nobody could find.
    */
   traderProfile: Address<TAccountTraderProfile>;
+  /**
+   * The trader's evaluation at `seq - 1`, which must be over. Absent only for `seq == 0`.
+   *
+   * Evaluations used to run in parallel. Passing one gates nothing on chain but is read as a
+   * signal, and a trader could stake two at once — long in one, short in the other — and keep
+   * whichever passed: a `StagePassed` bought for one forfeited stake (internal review M-2).
+   * Requiring the previous one to have ended makes them strictly sequential, and requiring it
+   * to *exist* means `seq` cannot skip. Identified by its own `trader` and `seq` fields: an
+   * `Evaluation` is only ever created at its PDA, with those fields set from the signer and
+   * the argument, so they cannot describe any other account.
+   */
+  previousEvaluation?: Address<TAccountPreviousEvaluation>;
   evaluation: Address<TAccountEvaluation>;
   usdcMint: Address<TAccountUsdcMint>;
   traderToken: Address<TAccountTraderToken>;
@@ -329,6 +368,7 @@ export function getStartEvaluationInstruction<
   TAccountTrader extends string,
   TAccountConfig extends string,
   TAccountTraderProfile extends string,
+  TAccountPreviousEvaluation extends string,
   TAccountEvaluation extends string,
   TAccountUsdcMint extends string,
   TAccountTraderToken extends string,
@@ -341,6 +381,7 @@ export function getStartEvaluationInstruction<
     TAccountTrader,
     TAccountConfig,
     TAccountTraderProfile,
+    TAccountPreviousEvaluation,
     TAccountEvaluation,
     TAccountUsdcMint,
     TAccountTraderToken,
@@ -354,6 +395,7 @@ export function getStartEvaluationInstruction<
   TAccountTrader,
   TAccountConfig,
   TAccountTraderProfile,
+  TAccountPreviousEvaluation,
   TAccountEvaluation,
   TAccountUsdcMint,
   TAccountTraderToken,
@@ -369,6 +411,10 @@ export function getStartEvaluationInstruction<
     trader: { value: input.trader ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     traderProfile: { value: input.traderProfile ?? null, isWritable: false },
+    previousEvaluation: {
+      value: input.previousEvaluation ?? null,
+      isWritable: false,
+    },
     evaluation: { value: input.evaluation ?? null, isWritable: true },
     usdcMint: { value: input.usdcMint ?? null, isWritable: false },
     traderToken: { value: input.traderToken ?? null, isWritable: true },
@@ -400,6 +446,7 @@ export function getStartEvaluationInstruction<
       getAccountMeta(accounts.trader),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.traderProfile),
+      getAccountMeta(accounts.previousEvaluation),
       getAccountMeta(accounts.evaluation),
       getAccountMeta(accounts.usdcMint),
       getAccountMeta(accounts.traderToken),
@@ -416,6 +463,7 @@ export function getStartEvaluationInstruction<
     TAccountTrader,
     TAccountConfig,
     TAccountTraderProfile,
+    TAccountPreviousEvaluation,
     TAccountEvaluation,
     TAccountUsdcMint,
     TAccountTraderToken,
@@ -438,16 +486,28 @@ export type ParsedStartEvaluationInstruction<
      * with no profile would earn a record nobody could find.
      */
     traderProfile: TAccountMetas[2];
-    evaluation: TAccountMetas[3];
-    usdcMint: TAccountMetas[4];
-    traderToken: TAccountMetas[5];
+    /**
+     * The trader's evaluation at `seq - 1`, which must be over. Absent only for `seq == 0`.
+     *
+     * Evaluations used to run in parallel. Passing one gates nothing on chain but is read as a
+     * signal, and a trader could stake two at once — long in one, short in the other — and keep
+     * whichever passed: a `StagePassed` bought for one forfeited stake (internal review M-2).
+     * Requiring the previous one to have ended makes them strictly sequential, and requiring it
+     * to *exist* means `seq` cannot skip. Identified by its own `trader` and `seq` fields: an
+     * `Evaluation` is only ever created at its PDA, with those fields set from the signer and
+     * the argument, so they cannot describe any other account.
+     */
+    previousEvaluation?: TAccountMetas[3] | undefined;
+    evaluation: TAccountMetas[4];
+    usdcMint: TAccountMetas[5];
+    traderToken: TAccountMetas[6];
     /**
      * The stake escrow, owned by the evaluation PDA. Nobody else can move it: refunded to the
      * trader on a pass, forfeited to the treasury on a failure, and there is no third door.
      */
-    stakeVault: TAccountMetas[6];
-    tokenProgram: TAccountMetas[7];
-    systemProgram: TAccountMetas[8];
+    stakeVault: TAccountMetas[7];
+    tokenProgram: TAccountMetas[8];
+    systemProgram: TAccountMetas[9];
   };
   data: StartEvaluationInstructionData;
 };
@@ -460,7 +520,7 @@ export function parseStartEvaluationInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedStartEvaluationInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+  if (instruction.accounts.length < 10) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -470,12 +530,19 @@ export function parseStartEvaluationInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === NOXFUNDS_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
       trader: getNextAccount(),
       config: getNextAccount(),
       traderProfile: getNextAccount(),
+      previousEvaluation: getNextOptionalAccount(),
       evaluation: getNextAccount(),
       usdcMint: getNextAccount(),
       traderToken: getNextAccount(),

@@ -55,6 +55,7 @@ export type WindDownCancelStopInstruction<
   TAccountMandate extends string | AccountMeta<string> = string,
   TAccountMandateSigner extends string | AccountMeta<string> = string,
   TAccountTriggerOrder extends string | AccountMeta<string> = string,
+  TAccountPosition extends string | AccountMeta<string> = string,
   TAccountSolfxCoreProgram extends string | AccountMeta<string> =
     "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -78,6 +79,9 @@ export type WindDownCancelStopInstruction<
       TAccountTriggerOrder extends string
         ? WritableAccount<TAccountTriggerOrder>
         : TAccountTriggerOrder,
+      TAccountPosition extends string
+        ? ReadonlyAccount<TAccountPosition>
+        : TAccountPosition,
       TAccountSolfxCoreProgram extends string
         ? ReadonlyAccount<TAccountSolfxCoreProgram>
         : TAccountSolfxCoreProgram,
@@ -123,6 +127,7 @@ export type WindDownCancelStopAsyncInput<
   TAccountMandate extends string = string,
   TAccountMandateSigner extends string = string,
   TAccountTriggerOrder extends string = string,
+  TAccountPosition extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
   /** **Anyone.** */
@@ -130,7 +135,9 @@ export type WindDownCancelStopAsyncInput<
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
   mandateSigner?: Address<TAccountMandateSigner>;
+  /** Deserialized for its kind and position; see `funded_cancel_stop`. */
   triggerOrder: Address<TAccountTriggerOrder>;
+  position: Address<TAccountPosition>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
 };
 
@@ -140,6 +147,7 @@ export async function getWindDownCancelStopInstructionAsync<
   TAccountMandate extends string,
   TAccountMandateSigner extends string,
   TAccountTriggerOrder extends string,
+  TAccountPosition extends string,
   TAccountSolfxCoreProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
@@ -149,6 +157,7 @@ export async function getWindDownCancelStopInstructionAsync<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -160,6 +169,7 @@ export async function getWindDownCancelStopInstructionAsync<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >
 > {
@@ -173,6 +183,7 @@ export async function getWindDownCancelStopInstructionAsync<
     mandate: { value: input.mandate ?? null, isWritable: false },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
     triggerOrder: { value: input.triggerOrder ?? null, isWritable: true },
+    position: { value: input.position ?? null, isWritable: false },
     solfxCoreProgram: {
       value: input.solfxCoreProgram ?? null,
       isWritable: false,
@@ -205,6 +216,7 @@ export async function getWindDownCancelStopInstructionAsync<
       getAccountMeta(accounts.mandate),
       getAccountMeta(accounts.mandateSigner),
       getAccountMeta(accounts.triggerOrder),
+      getAccountMeta(accounts.position),
       getAccountMeta(accounts.solfxCoreProgram),
     ],
     data: getWindDownCancelStopInstructionDataEncoder().encode({}),
@@ -216,6 +228,7 @@ export async function getWindDownCancelStopInstructionAsync<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >);
 }
@@ -226,6 +239,7 @@ export type WindDownCancelStopInput<
   TAccountMandate extends string = string,
   TAccountMandateSigner extends string = string,
   TAccountTriggerOrder extends string = string,
+  TAccountPosition extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
   /** **Anyone.** */
@@ -233,7 +247,9 @@ export type WindDownCancelStopInput<
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
   mandateSigner: Address<TAccountMandateSigner>;
+  /** Deserialized for its kind and position; see `funded_cancel_stop`. */
   triggerOrder: Address<TAccountTriggerOrder>;
+  position: Address<TAccountPosition>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
 };
 
@@ -243,6 +259,7 @@ export function getWindDownCancelStopInstruction<
   TAccountMandate extends string,
   TAccountMandateSigner extends string,
   TAccountTriggerOrder extends string,
+  TAccountPosition extends string,
   TAccountSolfxCoreProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
@@ -252,6 +269,7 @@ export function getWindDownCancelStopInstruction<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -262,6 +280,7 @@ export function getWindDownCancelStopInstruction<
   TAccountMandate,
   TAccountMandateSigner,
   TAccountTriggerOrder,
+  TAccountPosition,
   TAccountSolfxCoreProgram
 > {
   // Program address.
@@ -274,6 +293,7 @@ export function getWindDownCancelStopInstruction<
     mandate: { value: input.mandate ?? null, isWritable: false },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
     triggerOrder: { value: input.triggerOrder ?? null, isWritable: true },
+    position: { value: input.position ?? null, isWritable: false },
     solfxCoreProgram: {
       value: input.solfxCoreProgram ?? null,
       isWritable: false,
@@ -298,6 +318,7 @@ export function getWindDownCancelStopInstruction<
       getAccountMeta(accounts.mandate),
       getAccountMeta(accounts.mandateSigner),
       getAccountMeta(accounts.triggerOrder),
+      getAccountMeta(accounts.position),
       getAccountMeta(accounts.solfxCoreProgram),
     ],
     data: getWindDownCancelStopInstructionDataEncoder().encode({}),
@@ -309,6 +330,7 @@ export function getWindDownCancelStopInstruction<
     TAccountMandate,
     TAccountMandateSigner,
     TAccountTriggerOrder,
+    TAccountPosition,
     TAccountSolfxCoreProgram
   >);
 }
@@ -324,8 +346,10 @@ export type ParsedWindDownCancelStopInstruction<
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];
     mandateSigner: TAccountMetas[3];
+    /** Deserialized for its kind and position; see `funded_cancel_stop`. */
     triggerOrder: TAccountMetas[4];
-    solfxCoreProgram: TAccountMetas[5];
+    position: TAccountMetas[5];
+    solfxCoreProgram: TAccountMetas[6];
   };
   data: WindDownCancelStopInstructionData;
 };
@@ -338,7 +362,7 @@ export function parseWindDownCancelStopInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedWindDownCancelStopInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 7) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -356,6 +380,7 @@ export function parseWindDownCancelStopInstruction<
       mandate: getNextAccount(),
       mandateSigner: getNextAccount(),
       triggerOrder: getNextAccount(),
+      position: getNextAccount(),
       solfxCoreProgram: getNextAccount(),
     },
     data: getWindDownCancelStopInstructionDataDecoder().decode(

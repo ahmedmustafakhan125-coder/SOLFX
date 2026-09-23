@@ -29,6 +29,7 @@ import {
 
 /** What an investor advertises. Advisory throughout: the binding numbers are on the offer. */
 export type InvestorListingTerms = {
+  /** A display name, shown beside the address and never instead of it. */
   nickname: string;
   minPrincipal: bigint;
   maxPrincipal: bigint;
@@ -40,6 +41,7 @@ export type InvestorListingTerms = {
 };
 
 export type InvestorListingTermsArgs = {
+  /** A display name, shown beside the address and never instead of it. */
   nickname: string;
   minPrincipal: number | bigint;
   maxPrincipal: number | bigint;

@@ -10,8 +10,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -29,6 +31,7 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
+  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
@@ -92,7 +95,8 @@ export type FundMandateInstruction<
         ? ReadonlyAccount<TAccountConfig>
         : TAccountConfig,
       TAccountTrader extends string
-        ? ReadonlyAccount<TAccountTrader>
+        ? ReadonlySignerAccount<TAccountTrader> &
+            AccountSignerMeta<TAccountTrader>
         : TAccountTrader,
       TAccountTraderProfile extends string
         ? WritableAccount<TAccountTraderProfile>
@@ -185,8 +189,16 @@ export type FundMandateAsyncInput<
 > = {
   investor: TransactionSigner<TAccountInvestor>;
   config?: Address<TAccountConfig>;
-  /** nothing here, which is the point — an investor funds a trader without their cooperation. */
-  trader: Address<TAccountTrader>;
+  /**
+   * The trader this mandate authorises, **and they sign**.
+   *
+   * They used not to, on the theory that an investor should be able to fund a trader without
+   * their cooperation. But a mandate counts against the trader's `active_mandates`, only its
+   * investor can end it, and there was no minimum principal — so a stranger could fill a
+   * Bronze trader's only slot with one base unit and hold it forever (internal review R-8).
+   * Capacity a trader did not agree to spend is not theirs to have spent for them.
+   */
+  trader: TransactionSigner<TAccountTrader>;
   /**
    * The trader's record. Required, so a mandate can never be opened against a trader with
    * no tier — and so the tier's size and concurrency limits have something to bind to.
@@ -201,8 +213,8 @@ export type FundMandateAsyncInput<
    * account cannot serve — see `Mandate`'s documentation.
    */
   mandateSigner?: Address<TAccountMandateSigner>;
-  /** `solfx-core` on every CPI; only its address is recorded here. */
-  solfxUserAccount: Address<TAccountSolfxUserAccount>;
+  /** See `AcceptOffer::solfx_user_account` for why recording it unchecked was a fund lock. */
+  solfxUserAccount?: Address<TAccountSolfxUserAccount>;
   usdcMint: Address<TAccountUsdcMint>;
   /** Where the principal comes from. Must be the investor's own USDC. */
   investorToken: Address<TAccountInvestorToken>;
@@ -319,6 +331,16 @@ export async function getFundMandateInstructionAsync<
       mandate: expectAddress(accounts.mandate.value),
     });
   }
+  if (!accounts.solfxUserAccount.value) {
+    accounts.solfxUserAccount.value = await getProgramDerivedAddress({
+      programAddress:
+        "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi" as Address<"2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi">,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([117, 115, 101, 114])),
+        getAddressEncoder().encode(expectAddress(accounts.mandateSigner.value)),
+      ],
+    });
+  }
   if (!accounts.mandateVault.value) {
     accounts.mandateVault.value = await findMandateVaultPda({
       mandate: expectAddress(accounts.mandate.value),
@@ -386,8 +408,16 @@ export type FundMandateInput<
 > = {
   investor: TransactionSigner<TAccountInvestor>;
   config: Address<TAccountConfig>;
-  /** nothing here, which is the point — an investor funds a trader without their cooperation. */
-  trader: Address<TAccountTrader>;
+  /**
+   * The trader this mandate authorises, **and they sign**.
+   *
+   * They used not to, on the theory that an investor should be able to fund a trader without
+   * their cooperation. But a mandate counts against the trader's `active_mandates`, only its
+   * investor can end it, and there was no minimum principal — so a stranger could fill a
+   * Bronze trader's only slot with one base unit and hold it forever (internal review R-8).
+   * Capacity a trader did not agree to spend is not theirs to have spent for them.
+   */
+  trader: TransactionSigner<TAccountTrader>;
   /**
    * The trader's record. Required, so a mandate can never be opened against a trader with
    * no tier — and so the tier's size and concurrency limits have something to bind to.
@@ -402,7 +432,7 @@ export type FundMandateInput<
    * account cannot serve — see `Mandate`'s documentation.
    */
   mandateSigner: Address<TAccountMandateSigner>;
-  /** `solfx-core` on every CPI; only its address is recorded here. */
+  /** See `AcceptOffer::solfx_user_account` for why recording it unchecked was a fund lock. */
   solfxUserAccount: Address<TAccountSolfxUserAccount>;
   usdcMint: Address<TAccountUsdcMint>;
   /** Where the principal comes from. Must be the investor's own USDC. */
@@ -559,7 +589,15 @@ export type ParsedFundMandateInstruction<
   accounts: {
     investor: TAccountMetas[0];
     config: TAccountMetas[1];
-    /** nothing here, which is the point — an investor funds a trader without their cooperation. */
+    /**
+     * The trader this mandate authorises, **and they sign**.
+     *
+     * They used not to, on the theory that an investor should be able to fund a trader without
+     * their cooperation. But a mandate counts against the trader's `active_mandates`, only its
+     * investor can end it, and there was no minimum principal — so a stranger could fill a
+     * Bronze trader's only slot with one base unit and hold it forever (internal review R-8).
+     * Capacity a trader did not agree to spend is not theirs to have spent for them.
+     */
     trader: TAccountMetas[2];
     /**
      * The trader's record. Required, so a mandate can never be opened against a trader with
@@ -575,7 +613,7 @@ export type ParsedFundMandateInstruction<
      * account cannot serve — see `Mandate`'s documentation.
      */
     mandateSigner: TAccountMetas[5];
-    /** `solfx-core` on every CPI; only its address is recorded here. */
+    /** See `AcceptOffer::solfx_user_account` for why recording it unchecked was a fund lock. */
     solfxUserAccount: TAccountMetas[6];
     usdcMint: TAccountMetas[7];
     /** Where the principal comes from. Must be the investor's own USDC. */
