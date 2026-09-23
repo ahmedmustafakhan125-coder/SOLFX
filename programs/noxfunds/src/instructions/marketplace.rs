@@ -518,8 +518,19 @@ pub struct AcceptOffer<'info> {
     )]
     pub mandate_signer: SystemAccount<'info>,
 
-    /// CHECK: the SolFX `UserAccount` this mandate will trade through. Validated by `solfx-core`
-    /// on every CPI; only its address is recorded.
+    /// CHECK: the SolFX `UserAccount` this mandate will trade through — which must be the one
+    /// `solfx-core` will create for the mandate signer, and is checked here to be exactly that.
+    ///
+    /// It used to be recorded as passed. Every later instruction is pinned to the stored address
+    /// and settlement requires a real SolFX account there, so a trader who named anything else
+    /// emptied the investor's escrow into a vault no instruction could pay out of again, for the
+    /// price of the mandate's rent (internal review R-1, 2026-09-23). It does not exist yet —
+    /// `create_solfx_account` makes it — so this is a seeds check on the address alone.
+    #[account(
+        seeds = [solfx_core::constants::USER_SEED, mandate_signer.key().as_ref()],
+        bump,
+        seeds::program = solfx_core::ID,
+    )]
     pub solfx_user_account: UncheckedAccount<'info>,
 
     #[account(address = config.usdc_mint)]

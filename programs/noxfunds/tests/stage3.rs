@@ -194,6 +194,11 @@ impl Eval {
                 trader: trader.pubkey(),
                 config: config_pda(),
                 trader_profile: profile_pda(&trader.pubkey()),
+                // Sequential: the attempt before this one, which must be over (review M-2).
+                previous_evaluation: self
+                    .seq
+                    .checked_sub(1)
+                    .map(|prev| eval_pda(&trader.pubkey(), prev)),
                 evaluation,
                 usdc_mint: self.env.usdc_mint,
                 trader_token: self.trader_token,
@@ -861,3 +866,34 @@ const TRIGGER_CEILING: u64 = 20_000; //    15,415
 const REFUND_CEILING: u64 = 21_000; //     16,105 (phase 2, stake refunded)
 const OPEN_CEILING: u64 = 39_000; //       20,949 + 18,000
 const START_CEILING: u64 = 61_000; //      24,705 + 36,000
+
+/// Review M-2. **Evaluations run one at a time, in order.** A trader who could stake two at
+/// once — long in one, short in the other — would keep whichever passed, buying a `StagePassed`
+/// for one forfeited stake. The next attempt needs the previous one finished, and must follow it.
+#[test]
+fn evaluations_run_one_at_a_time_and_in_order() {
+    let mut e = setup();
+    e.start(20_000 * ONE_USDC).expect("the first attempt");
+
+    // A second while the first is live.
+    e.seq = 1;
+    let err = e
+        .start(20_000 * ONE_USDC)
+        .expect_err("two evaluations at once");
+    assert!(err.contains("PreviousEvaluationActive"), "{err}");
+
+    // Skipping a number, so there is no predecessor to check.
+    e.seq = 2;
+    let err = e.start(20_000 * ONE_USDC).expect_err("seq cannot skip");
+    assert!(
+        err.contains("PreviousEvaluationActive") || err.contains("AccountNotInitialized"),
+        "{err}"
+    );
+
+    // Once the first is over, the next may begin.
+    e.seq = 0;
+    e.abandon().expect("walk away from the first");
+    e.seq = 1;
+    e.start(20_000 * ONE_USDC)
+        .expect("the second attempt, after the first ended");
+}

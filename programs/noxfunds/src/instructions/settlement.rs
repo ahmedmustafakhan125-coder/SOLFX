@@ -15,7 +15,6 @@
 
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
-use solfx_core::state::UserAccount;
 
 use crate::constants::{
     CONFIG_SEED, MANDATE_SEED, MANDATE_SIGNER_SEED, MANDATE_VAULT_SEED, TRADER_SEED,
@@ -24,6 +23,7 @@ use crate::errors::NoxError;
 use crate::events::{MandateSettled, SettlementRequested};
 use crate::settlement::split;
 use crate::state::{Mandate, MandateState, NoxConfig, TraderProfile};
+use crate::venue::read_user_account;
 use crate::SolfxCore;
 
 #[derive(Accounts)]
@@ -82,9 +82,15 @@ pub struct ClaimSettlement<'info> {
     /// CHECK: validated by `solfx-core`.
     #[account(mut)]
     pub protocol: UncheckedAccount<'info>,
-    /// Deserialized: settlement withdraws exactly the free collateral recorded here.
+    /// CHECK: bound to the mandate, and read through `venue::read_user_account`, which refuses
+    /// anything that is not a SolFX `UserAccount`. Settlement withdraws exactly the free
+    /// collateral recorded here.
+    ///
+    /// It may not exist. A mandate nobody ever moved into SolFX used to be unsettleable until
+    /// someone funded its signer and created the account — the investor's "without anyone's
+    /// cooperation" guarantee, broken for exactly the mandates that never traded (review R-7).
     #[account(mut, address = mandate.solfx_user_account)]
-    pub user_account: Box<Account<'info, UserAccount>>,
+    pub user_account: UncheckedAccount<'info>,
     /// `mut` because `solfx-core`'s `MoveCollateral` marks it so — a CPI cannot ask for a
     /// privilege the outer instruction did not grant.
     #[account(mut, address = config.usdc_mint)]
@@ -163,7 +169,7 @@ pub fn claim_settlement(ctx: Context<ClaimSettlement>) -> Result<()> {
     let bump = ctx.accounts.mandate.signer_bump;
     let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];
 
-    let free = ctx.accounts.user_account.free_collateral;
+    let free = read_user_account(&ctx.accounts.user_account)?.map_or(0, |v| v.free_collateral);
     if free > 0 {
         cpi_withdraw(&ctx, seeds, free)?;
     }
@@ -194,15 +200,24 @@ pub fn claim_settlement(ctx: Context<ClaimSettlement>) -> Result<()> {
     // trader permanently one mandate below their tier's limit. Only the *profit* count is
     // conditional, and it is measured against principal rather than against the trader's payout,
     // because a mandate that made money for its investor is the claim the tier is about.
+    //
+    // "In profit" is judged on the trades, not on the vault. The vault is a token account anyone
+    // can send USDC to, so a trader could top up a losing mandate by a dollar and have it count
+    // toward Platinum's two profitable settlements (internal review M-1). `realized_pnl` moves
+    // only when a trade is recorded.
     let profile = &mut ctx.accounts.trader_profile;
     profile.active_mandates = profile.active_mandates.saturating_sub(1);
-    if final_equity > ctx.accounts.mandate.principal {
+    if ctx.accounts.mandate.realized_pnl > 0 {
         profile.mandates_settled_in_profit = profile.mandates_settled_in_profit.saturating_add(1);
     }
 
     let m = &mut ctx.accounts.mandate;
     m.state = MandateState::Settled;
     m.last_equity = final_equity;
+    m.last_free_collateral = m
+        .last_free_collateral
+        .checked_sub(i64::try_from(free).map_err(|_| NoxError::MathOverflow)?)
+        .ok_or(NoxError::MathOverflow)?;
 
     emit!(MandateSettled {
         mandate: mandate_key,

@@ -260,6 +260,17 @@ pub struct StartEvaluation<'info> {
     )]
     pub trader_profile: Box<Account<'info, TraderProfile>>,
 
+    /// The trader's evaluation at `seq - 1`, which must be over. Absent only for `seq == 0`.
+    ///
+    /// Evaluations used to run in parallel. Passing one gates nothing on chain but is read as a
+    /// signal, and a trader could stake two at once — long in one, short in the other — and keep
+    /// whichever passed: a `StagePassed` bought for one forfeited stake (internal review M-2).
+    /// Requiring the previous one to have ended makes them strictly sequential, and requiring it
+    /// to *exist* means `seq` cannot skip. Identified by its own `trader` and `seq` fields: an
+    /// `Evaluation` is only ever created at its PDA, with those fields set from the signer and
+    /// the argument, so they cannot describe any other account.
+    pub previous_evaluation: Option<Box<Account<'info, Evaluation>>>,
+
     #[account(
         init,
         payer = trader,
@@ -293,6 +304,21 @@ pub struct StartEvaluation<'info> {
 
 pub fn start_evaluation(ctx: Context<StartEvaluation>, seq: u8, account_size: u64) -> Result<()> {
     require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
+    if let Some(before) = seq.checked_sub(1) {
+        let prev = ctx
+            .accounts
+            .previous_evaluation
+            .as_ref()
+            .ok_or(NoxError::PreviousEvaluationActive)?;
+        require!(
+            prev.trader == ctx.accounts.trader.key() && prev.seq == before,
+            NoxError::PreviousEvaluationActive
+        );
+        require!(
+            prev.state != EvaluationState::Active,
+            NoxError::PreviousEvaluationActive
+        );
+    }
     require!(
         (EVAL_MIN_ACCOUNT..=EVAL_MAX_ACCOUNT).contains(&account_size),
         NoxError::InvalidAccountSize

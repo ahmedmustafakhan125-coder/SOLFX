@@ -175,8 +175,9 @@ fn setup_funded(rules: MandateRules, principal: u64, deposit: u64) -> Nox {
         }
         .data(),
     };
+    // The trader co-signs: a mandate spends their capacity, so it needs their consent (R-8).
     let inv = investor.insecure_clone();
-    env.send(ix, &[&inv]).unwrap();
+    env.send(ix, &[&inv, &trader]).unwrap();
 
     let mut nox = Nox {
         env,
@@ -411,9 +412,8 @@ impl Nox {
         let mut metas = noxfunds::accounts::ObserveMandateEquity {
             trader_profile: profile_pda(&self.trader.pubkey()),
             observer: observer.pubkey(),
-            config: config_pda(),
             mandate: self.mandate,
-            mandate_signer: self.signer,
+            mandate_vault: support::vault_pda(&self.mandate),
             user_account,
         }
         .to_account_metas(None);
@@ -571,27 +571,32 @@ impl Nox {
         self.env.send(ix, &[&keeper]).expect("the stop fires");
     }
 
-    fn reconcile(&mut self, nonce: u8) -> TestResult {
+    /// Reconcile, supplying every open slot's position in slot order — what the instruction
+    /// requires, so nothing can be omitted and nothing passed in another's place.
+    fn reconcile(&mut self) -> TestResult {
         let caller = solana_keypair::Keypair::new();
         self.env
             .svm
             .airdrop(&caller.pubkey(), 1_000_000_000)
             .unwrap();
-        let position = Env::position_pda(&Env::user_pda(&self.signer), 0, nonce);
+        let user_account = Env::user_pda(&self.signer);
+        let mut metas = noxfunds::accounts::ReconcilePosition {
+            caller: caller.pubkey(),
+            mandate: self.mandate,
+            user_account,
+            trader_profile: profile_pda(&self.trader.pubkey()),
+        }
+        .to_account_metas(None);
+        for slot in self.mandate().slots.iter().filter(|s| s.open) {
+            metas.push(AccountMeta::new_readonly(
+                Env::position_pda(&user_account, slot.market_index, slot.nonce),
+                false,
+            ));
+        }
         let ix = Instruction {
             program_id: noxfunds::ID,
-            accounts: noxfunds::accounts::ReconcilePosition {
-                caller: caller.pubkey(),
-                mandate: self.mandate,
-                position,
-                solfx_core_program: solfx_core::ID,
-            }
-            .to_account_metas(None),
-            data: noxfunds::instruction::ReconcilePosition {
-                market_index: 0,
-                nonce,
-            }
-            .data(),
+            accounts: metas,
+            data: noxfunds::instruction::ReconcilePosition {}.data(),
         };
         self.env.send(ix, &[&caller])
     }
@@ -616,6 +621,7 @@ impl Nox {
                 user_account,
                 market: Env::market_pda(0),
                 position: Env::position_pda(&user_account, 0, nonce),
+                trader_profile: profile_pda(&self.trader.pubkey()),
                 collateral_vault: self.env.collateral_vault,
                 lp_pool: self.env.lp_pool,
                 lp_vault: self.env.lp_vault,
@@ -650,6 +656,7 @@ impl Nox {
                 mandate: self.mandate,
                 mandate_signer: self.signer,
                 trigger_order: Env::trigger_pda(&position, order_id),
+                position,
                 solfx_core_program: solfx_core::ID,
             }
             .to_account_metas(None),
@@ -761,7 +768,7 @@ fn a_stopped_out_mandate_can_be_reconciled_and_then_settles() {
     );
 
     // One permissionless call unsticks it.
-    nox.reconcile(0).expect("anyone may reconcile");
+    nox.reconcile().expect("anyone may reconcile");
     assert_eq!(nox.mandate().open_positions, 0);
     assert_eq!(nox.mandate().open_notional, 0, "and the book is clean");
 
@@ -778,7 +785,7 @@ fn a_live_position_cannot_be_reconciled_away() {
     let stop = SPOT - (SPOT * 30) / 10_000;
     nox.open(0, ONE_LOT / 100, stop).expect("open");
 
-    let err = nox.reconcile(0).expect_err("the position is still there");
+    let err = nox.reconcile().expect_err("the position is still there");
     assert!(format!("{err:?}").contains("PositionStillOpen"), "{err:?}");
     assert_eq!(nox.mandate().open_positions, 1);
     nox.env.assert_invariants();
@@ -798,7 +805,7 @@ fn reopening_an_unreconciled_nonce_is_refused() {
         .expect_err("nonce 0's slot is still held by the stopped-out position");
     assert!(format!("{err:?}").contains("SlotNotReconciled"), "{err:?}");
 
-    nox.reconcile(0).expect("reconcile");
+    nox.reconcile().expect("reconcile");
     nox.open(0, ONE_LOT / 100, stop)
         .expect("and the nonce is usable again");
     nox.env.assert_invariants();
@@ -876,4 +883,473 @@ fn the_crank_refuses_a_duplicated_position() {
     nox.observe(&[0, 1])
         .expect("each open position exactly once");
     nox.env.assert_invariants();
+}
+
+// --- internal review, 2026-09-23: what must be true, and now is ------------------------
+//
+// Each test below states a guarantee the design claims and that the program did not keep until
+// this review. They were written first, failed on the code as it stood — that failure was the
+// finding — and are now the regression tests for the fixes. None presupposes *how* the fix works.
+
+impl Nox {
+    fn cancel_order(&mut self, nonce: u8, order_id: u8) -> TestResult {
+        let position = Env::position_pda(&Env::user_pda(&self.signer), 0, nonce);
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::FundedCancelStop {
+                trader: self.trader.pubkey(),
+                config: config_pda(),
+                mandate: self.mandate,
+                mandate_signer: self.signer,
+                trigger_order: Env::trigger_pda(&position, order_id),
+                position,
+                solfx_core_program: solfx_core::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::FundedCancelStop {
+                market_index: 0,
+                nonce,
+                order_id,
+            }
+            .data(),
+        };
+        let trader = self.trader.insecure_clone();
+        self.env.send(ix, &[&trader])
+    }
+
+    /// Close the position at `position_nonce`, but tell NOXFUNDS it was `claimed_nonce`.
+    fn close_claiming(&mut self, position_nonce: u8, claimed_nonce: u8) -> TestResult {
+        let p = self.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+        let user_account = Env::user_pda(&self.signer);
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::FundedClosePosition {
+                trader_profile: profile_pda(&self.trader.pubkey()),
+                trader: self.trader.pubkey(),
+                config: config_pda(),
+                mandate: self.mandate,
+                mandate_signer: self.signer,
+                protocol: self.env.protocol,
+                user_account,
+                market: Env::market_pda(0),
+                position: Env::position_pda(&user_account, 0, position_nonce),
+                collateral_vault: self.env.collateral_vault,
+                lp_pool: self.env.lp_pool,
+                lp_vault: self.env.lp_vault,
+                insurance_fund: self.env.insurance_fund,
+                insurance_vault: self.env.insurance_vault,
+                fee_vault: self.env.fee_vault,
+                price_update: p,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
+                token_program: spl_token::ID,
+                solfx_core_program: solfx_core::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::FundedClosePosition {
+                market_index: 0,
+                nonce: claimed_nonce,
+                price_limit: 1,
+            }
+            .data(),
+        };
+        let trader = self.trader.insecure_clone();
+        self.env.send(ix, &[&trader])
+    }
+
+    fn profile(&self) -> noxfunds::state::TraderProfile {
+        self.env.read(&profile_pda(&self.trader.pubkey()))
+    }
+}
+
+/// R-4. **Every funded trade carries a stop** — not only at the moment it opens.
+///
+/// `funded_cancel_stop` checks nothing about the position, and `solfx-core` lets an authority
+/// cancel its own order at any time. So the trader opens with a compliant stop, the risk rule
+/// is judged against it, and then the stop is removed.
+#[test]
+fn the_mandatory_stop_cannot_be_cancelled_while_its_position_is_open() {
+    let mut nox = roomy_mandate();
+    let stop = SPOT - (SPOT * 30) / 10_000;
+    nox.open(0, ONE_LOT / 100, stop)
+        .expect("open with a compliant stop");
+    let position = Env::position_pda(&Env::user_pda(&nox.signer), 0, 0);
+    assert!(nox.env.trigger_exists(&position, 0));
+
+    let r = nox.cancel_order(0, 0);
+    assert!(
+        r.is_err(),
+        "the stop on a live position was cancelled — the position is now unprotected"
+    );
+    assert!(nox.env.trigger_exists(&position, 0), "and the stop is gone");
+}
+
+/// R-5. **A close releases the slot of the position it closed.**
+///
+/// The CPI closes whatever position account is passed; NOXFUNDS then unbooks whichever
+/// `(market_index, nonce)` the trader *named*. Close A while naming B, reconcile A, and B is
+/// open on SolFX with no slot — invisible to the drawdown crank, the book limits and wind-down.
+#[test]
+fn a_close_cannot_release_the_slot_of_a_different_position() {
+    // Two positions at $500 margin each need more than the roomy mandate's $1,000 deposit.
+    let mut nox = setup_funded(
+        MandateRules {
+            max_drawdown_bps: 1_000,
+            max_daily_loss_bps: 1_000,
+            ..base_rules()
+        },
+        2_000 * ONE_USDC,
+        2_000 * ONE_USDC,
+    );
+    let stop = SPOT - (SPOT * 30) / 10_000;
+    nox.open(0, ONE_LOT / 100, stop).expect("open A");
+    nox.open(1, ONE_LOT / 100, stop).expect("open B");
+
+    let r = nox.close_claiming(0, 1);
+    if r.is_ok() {
+        // Finish the attack so the damage is measured, not described.
+        nox.reconcile()
+            .expect("A's account is gone, so its slot reconciles");
+        let user_account = Env::user_pda(&nox.signer);
+        let b_live = nox
+            .env
+            .svm
+            .get_account(&Env::position_pda(&user_account, 0, 1))
+            .is_some_and(|a| !a.data.is_empty());
+        panic!(
+            "closed A while naming B: NOXFUNDS now counts {} open, while B still exists on \
+             SolFX = {b_live}",
+            nox.mandate().open_positions
+        );
+    }
+}
+
+/// R-3. **Losses reach the track record.**
+///
+/// A stop fires through `solfx-core` directly, so the only NOXFUNDS instruction that ever sees
+/// the trade end is `reconcile_position` — which releases the slot and records nothing. The
+/// same is true of `wind_down_position`. Since every funded trade carries a stop, the ordinary
+/// way a losing trade ends is the one way it never reaches the record.
+#[test]
+fn a_stop_out_lands_on_the_record_as_a_loss() {
+    let mut nox = roomy_mandate();
+    let stop = SPOT - (SPOT * 30) / 10_000;
+    nox.open(0, ONE_LOT / 100, stop).expect("open");
+    nox.fire_stop(0, 0);
+    nox.reconcile().expect("reconcile the stopped-out slot");
+
+    let p = nox.profile();
+    assert_eq!(
+        (p.trades, p.losses),
+        (1, 1),
+        "a trade was stopped out at a loss and the record shows trades={} losses={} \
+         gross_loss={}",
+        p.trades,
+        p.losses,
+        p.gross_loss
+    );
+    assert!(p.gross_loss > 0);
+}
+
+/// R-2. **Principal that has not been moved into SolFX is still equity.**
+///
+/// The crank counts SolFX free collateral plus open positions and never looks at the mandate's
+/// own vault. Before the principal is deposited — or with only part of it deposited, which
+/// anyone may do — equity reads near zero, drawdown near 100%, and the mandate is breached by a
+/// stranger. `Breached` is terminal, and the 100% lands on the trader's permanent record.
+#[test]
+fn principal_still_in_the_vault_counts_toward_equity() {
+    // $1,000 principal, one base unit moved into SolFX — the rest is sitting in the vault.
+    let mut nox = setup_funded(base_rules(), 1_000 * ONE_USDC, 1);
+    nox.observe(&[]).expect("a stranger runs the crank");
+
+    let m = nox.mandate();
+    let p = nox.profile();
+    assert_eq!(
+        m.state,
+        MandateState::Active,
+        "a mandate holding all of its principal was breached: equity read {} against a peak of \
+         {}, and the trader's record now shows a {} bps drawdown",
+        m.last_equity,
+        m.peak_equity,
+        p.max_drawdown_bps
+    );
+}
+
+/// R-6. **The daily loss limit an investor sets is enforced.**
+///
+/// `max_daily_loss_bps` is validated when a mandate is created and never read again.
+#[test]
+fn a_mandate_past_its_daily_loss_limit_is_stopped() {
+    let mut nox = setup_funded(
+        MandateRules {
+            max_drawdown_bps: 1_000, // 10%: far from binding
+            max_daily_loss_bps: 100, // 1%: the rule under test
+            max_risk_per_trade_bps: 100,
+            ..base_rules()
+        },
+        1_000 * ONE_USDC,
+        1_000 * ONE_USDC,
+    );
+    let stop = SPOT - (SPOT * 30) / 10_000;
+    nox.open(0, ONE_LOT / 100, stop).expect("open");
+    nox.observe(&[0]).expect("mark at the open");
+    nox.observe_at(adverse(), &[0])
+        .expect("mark after the fall");
+
+    let m = nox.mandate();
+    let lost_bps = (m.peak_equity - m.last_equity) * 10_000 / m.peak_equity;
+    assert_ne!(
+        m.state,
+        MandateState::Active,
+        "down {lost_bps} bps in one session against a 100 bps daily limit, and still Active"
+    );
+}
+
+// --- the record, measured against the money ------------------------------------------------
+//
+// R-3's fix recovers what a stop-out made after the position account is gone. These pin the one
+// property that makes that trustworthy: what the record says a trade made is what the mandate's
+// SolFX balance actually moved by — to the unit, whichever way the trade ended.
+
+impl Nox {
+    fn free_collateral(&self) -> u64 {
+        let ua: solfx_core::state::UserAccount = self.env.read(&Env::user_pda(&self.signer));
+        ua.free_collateral
+    }
+
+    /// Fire any resting order straight into `solfx-core`, as a stranger's keeper would.
+    fn fire_order(&mut self, nonce: u8, order_id: u8, at: PriceSpec) {
+        let keeper = solana_keypair::Keypair::new();
+        self.env
+            .svm
+            .airdrop(&keeper.pubkey(), 100 * 1_000_000_000)
+            .unwrap();
+        let user_account = Env::user_pda(&self.signer);
+        let position = Env::position_pda(&user_account, 0, nonce);
+        let hit = self.env.post_price_now(FEED_EUR_USD, at);
+        let ix = Instruction {
+            program_id: solfx_core::ID,
+            accounts: solfx_core::accounts::ExecuteTriggerOrder {
+                keeper: keeper.pubkey(),
+                protocol: self.env.protocol,
+                user_account,
+                market: Env::market_pda(0),
+                position,
+                trigger_order: Env::trigger_pda(&position, order_id),
+                collateral_vault: self.env.collateral_vault,
+                lp_pool: self.env.lp_pool,
+                lp_vault: self.env.lp_vault,
+                insurance_fund: self.env.insurance_fund,
+                insurance_vault: self.env.insurance_vault,
+                fee_vault: self.env.fee_vault,
+                price_update: hit,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
+                token_program: spl_token::ID,
+            }
+            .to_account_metas(None),
+            data: solfx_core::instruction::ExecuteTriggerOrder {}.data(),
+        };
+        self.env.send(ix, &[&keeper]).expect("the order fires");
+    }
+
+    fn take_profit(&mut self, nonce: u8, order_id: u8, target: i64, size_base: u64) {
+        let p = self.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
+        let user_account = Env::user_pda(&self.signer);
+        let position = Env::position_pda(&user_account, 0, nonce);
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::FundedPlaceTakeProfit {
+                trader: self.trader.pubkey(),
+                config: config_pda(),
+                mandate: self.mandate,
+                mandate_signer: self.signer,
+                protocol: self.env.protocol,
+                user_account,
+                market: Env::market_pda(0),
+                position,
+                trigger_order: Env::trigger_pda(&position, order_id),
+                price_update: p,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
+                system_program: anchor_lang::system_program::ID,
+                solfx_core_program: solfx_core::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::FundedPlaceTakeProfit {
+                order_id,
+                trigger_price: target,
+                size_base,
+            }
+            .data(),
+        };
+        let trader = self.trader.insecure_clone();
+        self.env
+            .send(ix, &[&trader])
+            .expect("place the take-profit");
+    }
+}
+
+/// A $2,000 mandate with room for two positions at once.
+fn two_position_mandate() -> Nox {
+    setup_funded(
+        MandateRules {
+            max_drawdown_bps: 1_000,
+            max_daily_loss_bps: 1_000,
+            ..base_rules()
+        },
+        2_000 * ONE_USDC,
+        2_000 * ONE_USDC,
+    )
+}
+
+/// **A stop-out is recorded at exactly what it cost.** Not an estimate from the stop price: the
+/// change in the mandate's SolFX balance from before the open to after the reconcile, which is
+/// margin returned plus PnL less every fee.
+#[test]
+fn a_stop_out_is_recorded_at_exactly_what_the_balance_moved() {
+    let mut nox = roomy_mandate();
+    let before = nox.free_collateral();
+    let stop = SPOT - (SPOT * 30) / 10_000;
+    nox.open(0, ONE_LOT / 100, stop).expect("open");
+    nox.fire_stop(0, 0);
+    nox.reconcile().expect("reconcile");
+
+    let moved = i128::from(nox.free_collateral()) - i128::from(before);
+    let p = nox.profile();
+    assert!(moved < 0, "a stop-out loses money");
+    assert_eq!(
+        i128::from(p.gross_loss),
+        -moved,
+        "the record says {} was lost; the balance moved by {moved}",
+        p.gross_loss
+    );
+    assert_eq!((p.trades, p.wins, p.losses), (1, 0, 1));
+    assert_eq!(p.untimed_trades, 1, "no opening slot left to time it from");
+    assert_eq!(p.ambiguous_trades, 0, "one close, so nothing to divide");
+    assert_eq!(nox.mandate().realized_pnl, i64::try_from(moved).unwrap());
+    assert_eq!(nox.mandate().booked_margin_fees, 0, "nothing left booked");
+    nox.env.assert_invariants();
+}
+
+/// A forced close lands on the record at its measured result, like a voluntary one.
+#[test]
+fn a_wind_down_is_recorded_at_exactly_what_the_balance_moved() {
+    let mut nox = small_mandate();
+    let before = nox.free_collateral();
+    let stop = SPOT - (SPOT * 30) / 10_000;
+    nox.open(0, ONE_LOT / 100, stop).expect("open");
+    nox.observe(&[0]).expect("peak");
+    nox.observe_at(adverse(), &[0]).expect("breach");
+    assert_eq!(nox.mandate().state, MandateState::Breached);
+    nox.wind_down(0).expect("a stranger closes it");
+
+    let moved = i128::from(nox.free_collateral()) - i128::from(before);
+    let p = nox.profile();
+    let recorded = i128::from(p.gross_profit) - i128::from(p.gross_loss);
+    assert_eq!(recorded, moved, "record {recorded} vs balance {moved}");
+    assert_eq!(p.trades, 1);
+    assert_eq!(
+        p.untimed_trades, 0,
+        "a wind-down still has its opening slot"
+    );
+    nox.env.assert_invariants();
+}
+
+/// **Two positions closing together cannot net a loss away.** A long's take-profit and a short's
+/// stop firing on the same move is the hedged pair that would turn a loss into a smaller win if
+/// the combined result were split. It is not split: no win is credited from an ambiguous batch,
+/// a combined loss is recorded in full, and both trades are counted as ambiguous.
+#[test]
+fn a_hedged_pair_closing_together_is_never_credited_as_a_win() {
+    let mut nox = two_position_mandate();
+    let before = nox.free_collateral();
+
+    // Long with a take-profit 50 bps up; short with its stop 30 bps up. One rise fires both.
+    let long_stop = SPOT - (SPOT * 30) / 10_000;
+    let short_stop = SPOT + (SPOT * 30) / 10_000;
+    nox.open_dir(0, ONE_LOT / 100, long_stop, Direction::Long)
+        .expect("long");
+    nox.open_dir(1, ONE_LOT / 100, short_stop, Direction::Short)
+        .expect("short");
+    nox.take_profit(0, 1, SPOT + (SPOT * 50) / 10_000, ONE_LOT / 100);
+
+    let rally = PriceSpec::at(109_200_000).conf(13_893); // 1.09200, through both
+    nox.fire_order(0, 1, rally); // the long's take-profit: a win
+    nox.fire_order(1, 1, rally); // the short's stop: a loss
+    nox.reconcile().expect("reconcile both at once");
+
+    let moved = i128::from(nox.free_collateral()) - i128::from(before);
+    let p = nox.profile();
+    assert_eq!(p.wins, 0, "an ambiguous batch never credits a win");
+    assert_eq!((p.trades, p.losses), (2, 2));
+    assert_eq!(p.ambiguous_trades, 2, "and it is published as ambiguous");
+    if moved <= 0 {
+        assert_eq!(
+            i128::from(p.gross_loss),
+            -moved,
+            "a combined loss is recorded in full"
+        );
+    } else {
+        assert_eq!(p.gross_profit, 0, "a combined profit is not credited");
+    }
+    // The mandate's money is real whatever the attribution.
+    assert_eq!(i128::from(nox.mandate().realized_pnl), moved);
+    nox.env.assert_invariants();
+}
+
+/// Reconciling one close while another position stays open attributes exactly the one that
+/// closed — the open one's margin is read from its live account, not guessed.
+#[test]
+fn reconciling_one_close_leaves_the_open_position_booked() {
+    let mut nox = two_position_mandate();
+    let stop = SPOT - (SPOT * 30) / 10_000;
+    let wide = SPOT - (SPOT * 150) / 10_000; // below the price that fires the first stop
+    nox.open(0, ONE_LOT / 100, stop).expect("open A");
+    let after_a = nox.free_collateral();
+    nox.open(1, ONE_LOT / 100, wide).expect("open B");
+    let b_cost = after_a - nox.free_collateral();
+
+    nox.fire_stop(0, 0);
+    nox.reconcile().expect("reconcile A only");
+
+    let m = nox.mandate();
+    assert_eq!(m.open_positions, 1, "B is still tracked");
+    assert_eq!(
+        m.booked_margin_fees, b_cost,
+        "exactly B's margin and fee remain booked"
+    );
+    assert_eq!(nox.profile().ambiguous_trades, 0, "one close is exact");
+    nox.observe(&[1])
+        .expect("and the crank can mark what is left");
+    nox.env.assert_invariants();
+}
+
+/// Review L-3. **A pause stops new risk; it does not trap a trader in a losing position.**
+#[test]
+fn a_trader_can_still_close_while_the_protocol_is_paused() {
+    let mut nox = roomy_mandate();
+    let stop = SPOT - (SPOT * 30) / 10_000;
+    nox.open(0, ONE_LOT / 100, stop).expect("open");
+
+    let admin = nox.env.admin.insecure_clone();
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::SetPaused {
+            authority: admin.pubkey(),
+            config: config_pda(),
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::SetPaused { paused: true }.data(),
+    };
+    nox.env.send(ix, &[&admin]).expect("pause");
+
+    let err = nox
+        .open(1, ONE_LOT / 100, stop)
+        .expect_err("no new positions while paused");
+    assert!(err.contains("ProtocolPaused"), "{err}");
+    nox.close_dir(0, Direction::Long)
+        .expect("but the open one can still be closed");
+    assert_eq!(nox.mandate().open_positions, 0);
 }

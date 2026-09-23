@@ -158,7 +158,26 @@ pub struct Mandate {
     /// Bump of the mandate's USDC vault at `["vault", mandate]`, stored so every instruction that
     /// touches the vault re-checks its address without re-deriving it.
     pub vault_bump: u8,
-    pub _reserved: [u8; 63],
+
+    // --- carved from `_reserved` on 2026-09-23; `INIT_SPACE` is unchanged -------------------
+    /// SolFX free collateral as NOXFUNDS last accounted for it.
+    ///
+    /// Moved only by the effect of NOXFUNDS' own instructions — never re-read from the account —
+    /// so `free_collateral - last_free_collateral` is always exactly what positions closed
+    /// *outside* NOXFUNDS (a stop, a take-profit, a liquidation) have credited back. That is how
+    /// `reconcile_position` learns what a stop-out made after the position account is gone.
+    /// Signed because a trader may spend a credit before it is reconciled.
+    pub last_free_collateral: i64,
+    /// Margin plus open fee of every tracked open position: what SolFX debited to open them.
+    pub booked_margin_fees: u64,
+    /// The UTC day `day_start_equity` belongs to, as `unix_timestamp / 86_400`.
+    pub day: i64,
+    /// Equity when `day` began, as last observed — the daily loss limit's baseline.
+    pub day_start_equity: u64,
+    /// Net result of every trade recorded against this mandate. Decides whether it settled in
+    /// profit, because the vault balance can be inflated by anyone sending USDC to it.
+    pub realized_pnl: i64,
+    pub _reserved: [u8; 23],
 }
 
 impl Mandate {
@@ -220,6 +239,37 @@ impl Mandate {
         self.open_positions = self.open_positions.saturating_sub(1);
         self.open_notional = self.open_notional.saturating_sub(notional);
         Ok(notional)
+    }
+
+    /// Account for a position NOXFUNDS closed itself — voluntarily or by wind-down.
+    ///
+    /// `margin` and `open_fee` are what opening it debited, and so what `book` added to
+    /// `booked_margin_fees`; `credit` is what the close returned to free collateral; `realized`
+    /// is the trade's net result. Every figure is NOXFUNDS' own effect, so the invariant that
+    /// `free_collateral - last_free_collateral` equals unreconciled external credits survives.
+    pub fn release_close(
+        &mut self,
+        margin: u64,
+        open_fee: u64,
+        credit: u64,
+        realized: i64,
+    ) -> Result<()> {
+        let booked = margin
+            .checked_add(open_fee)
+            .ok_or(crate::errors::NoxError::MathOverflow)?;
+        self.booked_margin_fees = self
+            .booked_margin_fees
+            .checked_sub(booked)
+            .ok_or(crate::errors::NoxError::MathOverflow)?;
+        self.last_free_collateral = self
+            .last_free_collateral
+            .checked_add(i64::try_from(credit).map_err(|_| crate::errors::NoxError::MathOverflow)?)
+            .ok_or(crate::errors::NoxError::MathOverflow)?;
+        self.realized_pnl = self
+            .realized_pnl
+            .checked_add(realized)
+            .ok_or(crate::errors::NoxError::MathOverflow)?;
+        Ok(())
     }
 
     /// Equity, in USDC, as the drawdown rule measures it.
@@ -363,7 +413,16 @@ pub struct TraderProfile {
 
     pub created_at: i64,
     pub bump: u8,
-    pub _reserved: [u8; 64],
+
+    // --- carved from `_reserved` on 2026-09-23; `INIT_SPACE` is unchanged -------------------
+    /// Trades recorded with no measurable hold: a stop-out seen only after its position account
+    /// was gone. Excluded from the average hold rather than counted as zero-length scalps.
+    pub untimed_trades: u32,
+    /// Trades that closed outside NOXFUNDS together with another, so how the combined result
+    /// divides between them cannot be known. Published, because the record resolves that
+    /// ambiguity against the trader and anyone reading it should be able to see how often.
+    pub ambiguous_trades: u32,
+    pub _reserved: [u8; 56],
 }
 
 impl TraderProfile {
@@ -438,13 +497,17 @@ impl TraderProfile {
         Ok(())
     }
 
-    /// Average hold time in slots. Zero before the first close.
+    /// Average hold time in slots, over the trades whose hold was measured. Zero before one.
+    ///
+    /// A stop-out reconciled after the fact has no opening slot left to measure from; counting
+    /// it as a zero-length hold would make a disciplined trader look like a scalper.
     #[must_use]
     pub fn avg_hold_slots(&self) -> u64 {
-        if self.trades == 0 {
+        let timed = self.trades.saturating_sub(self.untimed_trades);
+        if timed == 0 {
             return 0;
         }
-        solfx_math::fixed::mul_div_floor(self.total_hold_slots, 1, u128::from(self.trades))
+        solfx_math::fixed::mul_div_floor(self.total_hold_slots, 1, u128::from(timed))
             .and_then(solfx_math::fixed::to_u64)
             .unwrap_or(0)
     }
@@ -516,7 +579,9 @@ mod tier_tests {
             mandates_settled_in_profit: 0,
             created_at: 0,
             bump: 0,
-            _reserved: [0; 64],
+            untimed_trades: 0,
+            ambiguous_trades: 0,
+            _reserved: [0; 56],
         }
     }
 

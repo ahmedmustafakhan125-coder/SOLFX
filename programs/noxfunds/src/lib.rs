@@ -39,6 +39,7 @@ pub mod events;
 pub mod instructions;
 pub mod settlement;
 pub mod state;
+pub mod venue;
 
 use instructions::*;
 
@@ -187,14 +188,11 @@ pub mod noxfunds {
         instructions::keeper::wind_down_position(ctx)
     }
 
-    /// Release a slot whose position closed without NOXFUNDS seeing it — a stop-out.
-    /// **Permissionless**, and only if the derived position account is genuinely gone.
-    pub fn reconcile_position(
-        ctx: Context<ReconcilePosition>,
-        market_index: u16,
-        nonce: u8,
-    ) -> Result<()> {
-        instructions::keeper::reconcile_position(ctx, market_index, nonce)
+    /// Account for positions that closed without NOXFUNDS seeing them — a stop, a take-profit, a
+    /// liquidation — release their slots, and record their result on the trader's record.
+    /// **Permissionless.** Takes every open slot's position in `remaining_accounts`, in slot order.
+    pub fn reconcile_position(ctx: Context<ReconcilePosition>) -> Result<()> {
+        instructions::keeper::reconcile_position(ctx)
     }
 
     /// Cancel a resting stop on a stopped mandate. **Permissionless.**

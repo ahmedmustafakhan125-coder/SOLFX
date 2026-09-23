@@ -220,8 +220,9 @@ fn mandate_of(principal: u64) -> Nox {
         }
         .data(),
     };
+    // The trader co-signs: a mandate spends their capacity, so it needs their consent (R-8).
     let inv = investor.insecure_clone();
-    env.send(ix, &[&inv]).unwrap();
+    env.send(ix, &[&inv, &trader]).unwrap();
 
     let mut nox = Nox {
         env,
@@ -346,9 +347,8 @@ impl Nox {
         let mut metas = noxfunds::accounts::ObserveMandateEquity {
             trader_profile: profile_pda(&self.trader.pubkey()),
             observer: observer.pubkey(),
-            config: config_pda(),
             mandate: self.mandate,
-            mandate_signer: self.signer,
+            mandate_vault: support::vault_pda(&self.mandate),
             user_account,
         }
         .to_account_metas(None);
@@ -773,9 +773,10 @@ fn a_second_concurrent_mandate_is_refused_at_bronze() {
         }
         .data(),
     };
+    let trader = nox.trader.insecure_clone();
     let err = nox
         .env
-        .send(ix, &[&investor2])
+        .send(ix, &[&investor2, &trader])
         .expect_err("Bronze holds one mandate at a time");
     assert!(
         format!("{err:?}").contains("TooManyActiveMandates"),
@@ -975,7 +976,7 @@ fn a_traders_slot_cannot_be_taken_without_the_principal() {
     let ix = fund(&griefer.pubkey(), griefer_token, 10_000 * ONE_USDC);
     let err = nox
         .env
-        .send(ix, &[&griefer])
+        .send(ix, &[&griefer, &trader])
         .expect_err("a mandate cannot be funded with money the investor does not have");
     assert!(
         format!("{err:?}").contains("InsufficientPrincipal"),
@@ -995,7 +996,9 @@ fn a_traders_slot_cannot_be_taken_without_the_principal() {
     nox.env
         .write_token_account(real_token, mint, real.pubkey(), support::INVESTOR_START);
     let ix = fund(&real.pubkey(), real_token, 500 * ONE_USDC);
-    nox.env.send(ix, &[&real]).expect("a real investor funds");
+    nox.env
+        .send(ix, &[&real, &trader])
+        .expect("a real investor funds");
 
     let profile: noxfunds::state::TraderProfile = nox.env.read(&profile_pda(&trader.pubkey()));
     assert_eq!(profile.active_mandates, 1);

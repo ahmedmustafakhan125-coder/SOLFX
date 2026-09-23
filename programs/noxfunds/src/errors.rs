@@ -134,6 +134,13 @@ pub enum NoxError {
     MarketNotOpen,
     #[msg("This simulated position does not belong to this evaluation")]
     PositionNotInEvaluation,
+    // --- appended 2026-09-23. Append only: inserting renumbers every variant after it. ------
+    #[msg("The position closed is not the one named in the instruction")]
+    PositionArgsMismatch,
+    #[msg("A stop-loss cannot be removed while its position is open")]
+    StopProtectsOpenPosition,
+    #[msg("Finish or walk away from your previous evaluation first")]
+    PreviousEvaluationActive,
 }
 
 /// Map `solfx-math`'s errors onto this program's. Total and explicit, so adding a variant

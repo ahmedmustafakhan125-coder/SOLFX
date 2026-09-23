@@ -27,6 +27,7 @@ use crate::events::{
     FundedTradeClosed, FundedTradeOpened, StopCancelled, TakeProfitPlaced, TradeRecorded,
 };
 use crate::state::{Mandate, MandateState, NoxConfig, TraderProfile};
+use crate::venue::read_user_account;
 use crate::SolfxCore;
 
 /// Resolve an optional oracle leg to the `AccountInfo` the CPI should carry.
@@ -214,7 +215,16 @@ fn check_rules(
         conversion_rate,
     )
     .map_err(NoxError::from)?;
-    let equity = mandate.peak_equity.max(1);
+    // Against the lower of the high-water mark and the last observed equity. The peak alone
+    // overstates what a mandate in drawdown has left, and would let a trader risk more than the
+    // stated share of the capital actually there (internal review L-1). Adverse to the trader,
+    // like every other measurement on this path.
+    let equity = if mandate.last_equity > 0 {
+        mandate.peak_equity.min(mandate.last_equity)
+    } else {
+        mandate.peak_equity
+    }
+    .max(1);
     let risk_used_bps =
         solfx_math::fixed::mul_div_ceil(u128::from(risk), u128::from(BPS), u128::from(equity))
             .map_err(NoxError::from)?;
@@ -279,6 +289,11 @@ pub fn funded_open_position(
     let bump = ctx.accounts.mandate.signer_bump;
     let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];
 
+    // What opening costs free collateral — margin plus fee — measured rather than assumed, and
+    // booked, so a later close or reconciliation can release exactly this figure.
+    let free_before = read_user_account(&ctx.accounts.user_account)?
+        .ok_or(NoxError::NotTheTrader)?
+        .free_collateral;
     cpi_open(
         &ctx,
         seeds,
@@ -289,10 +304,24 @@ pub fn funded_open_position(
         collateral,
         price_limit,
     )?;
+    let free_after = read_user_account(&ctx.accounts.user_account)?
+        .ok_or(NoxError::NotTheTrader)?
+        .free_collateral;
+    let debit = free_before
+        .checked_sub(free_after)
+        .ok_or(NoxError::MathOverflow)?;
     cpi_place_stop(&ctx, seeds, order_id, stop_loss_price, size_base)?;
 
     let m = &mut ctx.accounts.mandate;
     m.book(market_index, nonce, margins.notional)?;
+    m.booked_margin_fees = m
+        .booked_margin_fees
+        .checked_add(debit)
+        .ok_or(NoxError::MathOverflow)?;
+    m.last_free_collateral = m
+        .last_free_collateral
+        .checked_sub(i64::try_from(debit).map_err(|_| NoxError::MathOverflow)?)
+        .ok_or(NoxError::MathOverflow)?;
 
     emit!(FundedTradeOpened {
         mandate: mandate_key,
@@ -487,7 +516,18 @@ pub fn funded_close_position(
     nonce: u8,
     price_limit: i64,
 ) -> Result<()> {
-    require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
+    // Not gated on the pause flag. A pause stops new risk; refusing a close would trap a trader
+    // in a losing position for as long as the protocol stayed paused (internal review L-3).
+
+    // **The slot released is the slot of the position closed.** The CPI closes whatever position
+    // account was passed and `solfx-core` checks it belongs to this mandate, but it knows nothing
+    // of NOXFUNDS' slots — and `unbook` used to trust the caller's `(market_index, nonce)`. Close A
+    // while naming B, reconcile A, and B was live on SolFX with no slot: invisible to the drawdown
+    // crank, the book limits and wind-down (internal review R-5).
+    require!(
+        ctx.accounts.position.market_index == market_index && ctx.accounts.position.nonce == nonce,
+        NoxError::PositionArgsMismatch
+    );
 
     // The no-scalping rule, and **only on a voluntary close**.
     //
@@ -563,6 +603,13 @@ pub fn funded_close_position(
         .ok_or(NoxError::MathOverflow)?;
     let realized_pnl = i64::try_from(realized_pnl).map_err(|_| NoxError::MathOverflow)?;
 
+    let credit = ctx
+        .accounts
+        .user_account
+        .free_collateral
+        .checked_sub(free_before)
+        .ok_or(NoxError::MathOverflow)?;
+
     let profile = &mut ctx.accounts.trader_profile;
     profile.record_trade(realized_pnl, held)?;
 
@@ -572,6 +619,7 @@ pub fn funded_close_position(
     // number than its open had booked, and the book drifted.
     let m = &mut ctx.accounts.mandate;
     m.unbook(market_index, nonce)?;
+    m.release_close(released_margin, open_fee, credit, realized_pnl)?;
 
     let ts = Clock::get()?.unix_timestamp;
     emit!(TradeRecorded {
@@ -650,12 +698,37 @@ pub struct FundedCancelStop<'info> {
     )]
     pub mandate_signer: SystemAccount<'info>,
 
-    /// CHECK: validated by `solfx-core`, which also checks the authority matches.
+    /// Deserialized so its kind and position can be read: a take-profit may be cancelled at any
+    /// time, a stop-loss only once the position it protects is gone. `solfx-core` owns it, so
+    /// Anchor never writes it back, and its close in the CPI below is not disturbed.
     #[account(mut)]
-    pub trigger_order: UncheckedAccount<'info>,
+    pub trigger_order: Box<Account<'info, solfx_core::state::TriggerOrder>>,
+
+    /// CHECK: the position the order protects, bound by the order's own record of it. Only
+    /// whether it still exists is read.
+    #[account(address = trigger_order.position)]
+    pub position: UncheckedAccount<'info>,
 
     #[account(address = config.solfx_program)]
     pub solfx_core_program: Program<'info, SolfxCore>,
+}
+
+/// Every funded trade carries a stop — **for as long as it is open**, not only at the moment it
+/// opened. `solfx-core` lets an authority cancel its own orders at any time, and this wrapper used
+/// to pass that straight through: open with a compliant stop, have the risk rule judged against
+/// it, cancel it, and hold the position unprotected (internal review R-4).
+///
+/// The stop's rent is still reclaimable, because the check is on the position and not on the
+/// order: once the position is gone, by a close or by the stop itself firing, the stop can go.
+pub(crate) fn require_stop_unprotected(
+    order: &solfx_core::state::TriggerOrder,
+    position: &AccountInfo,
+) -> Result<()> {
+    if order.kind == TriggerKind::StopLoss {
+        let gone = position.data_is_empty() || *position.owner != solfx_core::ID;
+        require!(gone, NoxError::StopProtectsOpenPosition);
+    }
+    Ok(())
 }
 
 pub fn funded_cancel_stop(
@@ -664,6 +737,8 @@ pub fn funded_cancel_stop(
     nonce: u8,
     order_id: u8,
 ) -> Result<()> {
+    require_stop_unprotected(&ctx.accounts.trigger_order, &ctx.accounts.position)?;
+
     let mandate_key = ctx.accounts.mandate.key();
     let bump = ctx.accounts.mandate.signer_bump;
     let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];
@@ -773,8 +848,8 @@ pub fn funded_place_take_profit(
     trigger_price: i64,
     size_base: u64,
 ) -> Result<()> {
-    require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
-
+    // Not gated on the pause flag: a take-profit can only reduce exposure, and a pause exists to
+    // stop new risk, not to stop a trader taking some off (internal review L-3).
     let mandate_key = ctx.accounts.mandate.key();
     let bump = ctx.accounts.mandate.signer_bump;
     let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];

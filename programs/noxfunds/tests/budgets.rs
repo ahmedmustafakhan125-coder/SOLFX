@@ -253,8 +253,9 @@ fn roomy_mandate() -> Nox {
         }
         .data(),
     };
+    // The trader co-signs: a mandate spends their capacity, so it needs their consent (R-8).
     let inv = investor.insecure_clone();
-    env.send(ix, &[&inv]).unwrap();
+    env.send(ix, &[&inv, &trader]).unwrap();
 
     let mut nox = Nox {
         env,
@@ -418,9 +419,8 @@ impl Nox {
         let mut metas = noxfunds::accounts::ObserveMandateEquity {
             trader_profile: profile_pda(&self.trader.pubkey()),
             observer: observer.pubkey(),
-            config: config_pda(),
             mandate: self.mandate,
-            mandate_signer: self.signer,
+            mandate_vault: support::vault_pda(&self.mandate),
             user_account,
         }
         .to_account_metas(None);
@@ -668,9 +668,11 @@ fn a_fully_loaded_crank_fits_in_one_transaction() {
         cu <= CRANK_5_CEILING,
         "a five-position crank consumed {cu} CU, above its {CRANK_5_CEILING} ceiling"
     );
-    // 6 fixed + 3 per position. The market and the price repeat, so only the position address
-    // is new each time — which is why the wire cost per extra position is far below 3 × 32.
-    assert_eq!(accounts, 21);
+    // 5 fixed + 3 per position. Review R-2 added the mandate's vault and dropped `config` and
+    // `mandate_signer`, which only restated what the vault's seeds prove — one account fewer
+    // than before. The market and the price repeat, so only the position address is new each
+    // time — which is why the wire cost per extra position is far below 3 × 32.
+    assert_eq!(accounts, 20);
 
     // The worst case the state can produce. Built at full width and measured; not sent,
     // because nonces 5–7 hold no position and the packet does not care.

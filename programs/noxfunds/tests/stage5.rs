@@ -177,8 +177,9 @@ fn setup_funded(rules: MandateRules, principal: u64, deposit: u64) -> Nox {
         }
         .data(),
     };
+    // The trader co-signs: a mandate spends their capacity, so it needs their consent (R-8).
     let inv = investor.insecure_clone();
-    env.send(ix, &[&inv]).unwrap();
+    env.send(ix, &[&inv, &trader]).unwrap();
 
     let mut nox = Nox {
         env,
@@ -396,9 +397,8 @@ impl Nox {
         let mut metas = noxfunds::accounts::ObserveMandateEquity {
             trader_profile: profile_pda(&self.trader.pubkey()),
             observer: observer.pubkey(),
-            config: config_pda(),
             mandate: self.mandate,
-            mandate_signer: self.signer,
+            mandate_vault: support::vault_pda(&self.mandate),
             user_account,
         }
         .to_account_metas(None);

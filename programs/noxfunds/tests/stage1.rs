@@ -212,8 +212,9 @@ fn setup() -> Nox {
         }
         .data(),
     };
+    // The trader co-signs: a mandate spends their capacity, so it needs their consent (R-8).
     let inv = investor.insecure_clone();
-    env.send(ix, &[&inv]).unwrap();
+    env.send(ix, &[&inv, &trader]).unwrap();
 
     Nox {
         env,
@@ -532,7 +533,7 @@ fn a_daily_loss_looser_than_the_total_drawdown_is_refused() {
     };
     let err = nox
         .env
-        .send(ix, &[&investor])
+        .send(ix, &[&investor, &trader2])
         .expect_err("a daily limit above the total is incoherent");
     assert!(
         format!("{err:?}").contains("InvalidMandateRules"),
@@ -570,7 +571,12 @@ fn the_market_bitmap_does_not_wrap() {
         opened_at: 0,
         bump: 0,
         vault_bump: 0,
-        _reserved: [0; 63],
+        last_free_collateral: 0,
+        booked_margin_fees: 0,
+        day: 0,
+        day_start_equity: 0,
+        realized_pnl: 0,
+        _reserved: [0; 23],
     };
     assert!(m.permits_market(0));
     assert!(!m.permits_market(1));
@@ -757,34 +763,6 @@ fn closing_frees_a_slot_and_the_stop_can_be_cancelled() {
     let position = Env::position_pda(&user_account, 0, 0);
     nox.env.track_position(position);
 
-    // Cancel the stop first: after a voluntary close its rent would otherwise be stranded,
-    // because a `TriggerOrder`'s rent returns to the keeper on a fire and to the authority on
-    // a cancel, and there is no third path.
-    let ix = Instruction {
-        program_id: noxfunds::ID,
-        accounts: noxfunds::accounts::FundedCancelStop {
-            trader: nox.trader.pubkey(),
-            config: config_pda(),
-            mandate: nox.mandate,
-            mandate_signer: nox.signer,
-            trigger_order: Env::trigger_pda(&position, 0),
-            solfx_core_program: solfx_core::ID,
-        }
-        .to_account_metas(None),
-        data: noxfunds::instruction::FundedCancelStop {
-            market_index: 0,
-            nonce: 0,
-            order_id: 0,
-        }
-        .data(),
-    };
-    let trader = nox.trader.insecure_clone();
-    nox.env.send(ix, &[&trader]).expect("cancel the stop");
-    assert!(
-        !nox.env.trigger_exists(&position, 0),
-        "the order is gone and its rent is back with the signer"
-    );
-
     let p = nox.env.post_price_now(FEED_EUR_USD, PriceSpec::default());
     let ix = Instruction {
         program_id: noxfunds::ID,
@@ -820,6 +798,35 @@ fn closing_frees_a_slot_and_the_stop_can_be_cancelled() {
     };
     let trader = nox.trader.insecure_clone();
     nox.env.send(ix, &[&trader]).expect("close");
+
+    // Then reclaim the stop. Its rent returns to the keeper on a fire and to the authority on a
+    // cancel, and there is no third path — so without this it would be stranded. It comes
+    // *after* the close since review R-4: a stop can only be removed once its position is gone.
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::FundedCancelStop {
+            trader: nox.trader.pubkey(),
+            config: config_pda(),
+            mandate: nox.mandate,
+            mandate_signer: nox.signer,
+            trigger_order: Env::trigger_pda(&position, 0),
+            position,
+            solfx_core_program: solfx_core::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::FundedCancelStop {
+            market_index: 0,
+            nonce: 0,
+            order_id: 0,
+        }
+        .data(),
+    };
+    let trader = nox.trader.insecure_clone();
+    nox.env.send(ix, &[&trader]).expect("cancel the stop");
+    assert!(
+        !nox.env.trigger_exists(&position, 0),
+        "the order is gone and its rent is back with the signer"
+    );
 
     let m: noxfunds::state::Mandate = nox.env.read(&nox.mandate);
     assert_eq!(m.open_positions, 0, "the slot is free again");
@@ -941,6 +948,7 @@ fn a_take_profit_can_be_cancelled_and_replaced() {
             mandate: nox.mandate,
             mandate_signer: nox.signer,
             trigger_order: Env::trigger_pda(&position, 1),
+            position,
             solfx_core_program: solfx_core::ID,
         }
         .to_account_metas(None),

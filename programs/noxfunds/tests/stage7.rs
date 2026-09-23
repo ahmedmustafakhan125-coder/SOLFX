@@ -1170,3 +1170,242 @@ fn a_listing_without_a_nickname_is_still_valid() {
     assert_eq!(l.nickname_len, 0);
     assert_eq!(l.nickname, [0u8; 24]);
 }
+
+// --- internal review, 2026-09-23: what must be true, and now is ------------------------
+//
+// Written first, failed on the code as it stood, and now the regression tests for the fixes.
+
+impl Market {
+    /// `accept_offer`, naming whatever SolFX account the trader likes.
+    fn accept_naming(&mut self, seq: u8, solfx_user_account: Pubkey) -> TestResult {
+        let trader = self.trader.insecure_clone();
+        let offer = offer_pda(&self.investor.pubkey(), &trader.pubkey(), seq);
+        let mandate = mandate_pda(&self.investor.pubkey(), &trader.pubkey(), seq);
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::AcceptOffer {
+                trader: trader.pubkey(),
+                config: config_pda(),
+                offer,
+                trader_profile: profile_pda(&trader.pubkey()),
+                mandate,
+                mandate_signer: signer_pda(&mandate),
+                solfx_user_account,
+                usdc_mint: self.env.usdc_mint,
+                offer_vault: offer_vault_pda(&offer),
+                mandate_vault: support::vault_pda(&mandate),
+                token_program: spl_token::ID,
+                system_program: anchor_lang::system_program::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::AcceptOffer {}.data(),
+        };
+        self.env.send(ix, &[&trader])
+    }
+
+    /// The investor ends the mandate, then a stranger runs the payout. Returns what the investor
+    /// received.
+    fn settle(&mut self, seq: u8) -> Result<u64, String> {
+        let mandate = mandate_pda(&self.investor.pubkey(), &self.trader.pubkey(), seq);
+        let signer = signer_pda(&mandate);
+        let investor = self.investor.insecure_clone();
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::RequestSettlement {
+                investor: investor.pubkey(),
+                mandate,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::RequestSettlement {}.data(),
+        };
+        self.env.send(ix, &[&investor])?;
+
+        let mint = self.env.usdc_mint;
+        let (to_investor, to_trader, to_treasury) = (
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        );
+        let admin = self.env.admin.pubkey();
+        let tr = self.trader.pubkey();
+        self.env
+            .write_token_account(to_investor, mint, investor.pubkey(), 0);
+        self.env.write_token_account(to_trader, mint, tr, 0);
+        self.env.write_token_account(to_treasury, mint, admin, 0);
+
+        let settler = solana_keypair::Keypair::new();
+        self.env
+            .svm
+            .airdrop(&settler.pubkey(), 1_000_000_000)
+            .unwrap();
+        let mandate_data: noxfunds::state::Mandate = self.env.read(&mandate);
+        let ix = Instruction {
+            program_id: noxfunds::ID,
+            accounts: noxfunds::accounts::ClaimSettlement {
+                settler: settler.pubkey(),
+                config: config_pda(),
+                mandate,
+                mandate_signer: signer,
+                protocol: self.env.protocol,
+                user_account: mandate_data.solfx_user_account,
+                usdc_mint: mint,
+                collateral_vault: self.env.collateral_vault,
+                mandate_vault: support::vault_pda(&mandate),
+                investor_token: to_investor,
+                trader_token: to_trader,
+                treasury_token: to_treasury,
+                trader_profile: profile_pda(&tr),
+                token_program: spl_token::ID,
+                solfx_core_program: solfx_core::ID,
+            }
+            .to_account_metas(None),
+            data: noxfunds::instruction::ClaimSettlement {}.data(),
+        };
+        self.env.send(ix, &[&settler])?;
+        Ok(self.env.token_balance(&to_investor))
+    }
+}
+
+/// R-1. **A trader cannot strand an investor's principal.**
+///
+/// `accept_offer` records the SolFX account the trader names and checks nothing about it. Every
+/// later instruction is pinned to that address, and `claim_settlement` requires a real SolFX
+/// `UserAccount` there. Name anything else and the escrow empties into a vault that no
+/// instruction can ever pay out of again — for about 0.006 SOL of the trader's rent.
+#[test]
+fn a_trader_cannot_strand_the_principal_by_naming_the_wrong_solfx_account() {
+    let mut m = setup();
+    let now = m.env.now;
+    m.post_offer(0, PRINCIPAL, now + HOUR, "").unwrap();
+
+    let r = m.accept_naming(0, Pubkey::new_unique());
+    if r.is_err() {
+        return; // refused at the door
+    }
+    // Accepted. Then the investor must still be able to get their money back.
+    let paid = m.settle(0).unwrap_or_else(|e| {
+        let vault = mandate_pda(&m.investor.pubkey(), &m.trader.pubkey(), 0);
+        panic!(
+            "the investor cannot recover {} USDC — the vault still holds {} and settlement fails \
+             with:\n{e}",
+            PRINCIPAL / ONE_USDC,
+            m.env.token_balance(&support::vault_pda(&vault)) / ONE_USDC
+        )
+    });
+    assert_eq!(paid, PRINCIPAL);
+}
+
+/// R-7. **A mandate that never reached SolFX can still be settled.**
+///
+/// The honest version of R-1: the address is right, but nobody ever called
+/// `create_solfx_account` — the state the live devnet mandate `C5TjG5vv…` has been in since
+/// 20 September. `claim_settlement` still demands the SolFX account exist.
+#[test]
+fn a_mandate_that_never_traded_settles_straight_back_to_the_investor() {
+    let mut m = setup();
+    let now = m.env.now;
+    m.post_offer(0, PRINCIPAL, now + HOUR, "").unwrap();
+    m.accept(0).expect("an ordinary acceptance");
+
+    let paid = m
+        .settle(0)
+        .unwrap_or_else(|e| panic!("an untouched mandate cannot be settled:\n{e}"));
+    assert_eq!(paid, PRINCIPAL, "every unit back, nothing taken");
+}
+
+/// R-8. **Nobody can occupy a trader's mandate capacity without the trader.**
+///
+/// `fund_mandate` needs no signature from the trader and has no minimum principal, but it counts
+/// against the trader's `active_mandates`. A Bronze trader has one slot. A stranger fills it with
+/// one base unit, and only that stranger — the mandate's investor — can ever end it.
+#[test]
+fn a_stranger_cannot_take_a_traders_only_mandate_slot() {
+    let mut m = setup();
+    let stranger = solana_keypair::Keypair::new();
+    m.env
+        .svm
+        .airdrop(&stranger.pubkey(), 1_000_000_000)
+        .unwrap();
+    let stranger_token = Pubkey::new_unique();
+    let mint = m.env.usdc_mint;
+    m.env
+        .write_token_account(stranger_token, mint, stranger.pubkey(), 1);
+
+    let trader = m.trader.pubkey();
+    let mandate = mandate_pda(&stranger.pubkey(), &trader, 0);
+    let signer = signer_pda(&mandate);
+    let ix = Instruction {
+        program_id: noxfunds::ID,
+        accounts: noxfunds::accounts::FundMandate {
+            investor: stranger.pubkey(),
+            config: config_pda(),
+            trader,
+            trader_profile: profile_pda(&trader),
+            mandate,
+            mandate_signer: signer,
+            solfx_user_account: Env::user_pda(&signer),
+            usdc_mint: mint,
+            investor_token: stranger_token,
+            mandate_vault: support::vault_pda(&mandate),
+            token_program: spl_token::ID,
+            system_program: anchor_lang::system_program::ID,
+        }
+        .to_account_metas(None),
+        data: noxfunds::instruction::FundMandate {
+            seq: 0,
+            principal: 1, // one millionth of a dollar
+            rules: rules(),
+        }
+        .data(),
+    };
+    // The stranger cannot produce the trader's signature, so what they can actually submit is
+    // this instruction with the trader's signer flag cleared.
+    let mut ix = ix;
+    for meta in ix.accounts.iter_mut().filter(|a| a.pubkey == trader) {
+        meta.is_signer = false;
+    }
+    let attempt = m.env.send(ix, &[&stranger]);
+    let squatted = attempt.is_ok();
+    if let Err(e) = &attempt {
+        assert!(
+            e.contains("AccountNotSigner"),
+            "refused, but not because the trader did not sign:\n{e}"
+        );
+    }
+
+    let now = m.env.now;
+    m.post_offer(0, PRINCIPAL, now + HOUR, "").unwrap();
+    let r = m.accept(0);
+    assert!(
+        r.is_ok(),
+        "a real ${} offer was refused because a stranger funded a $0.000001 mandate first \
+         (stranger's funding succeeded: {squatted}):\n{}",
+        PRINCIPAL / ONE_USDC,
+        r.err().unwrap_or_default()
+    );
+}
+
+/// Review M-1. **Topping up the vault does not make a mandate profitable.** Anyone can send USDC to
+/// a token account, so judging "settled in profit" on the vault balance let a trader add a dollar
+/// to a flat mandate and have it count toward Platinum. It is judged on recorded trades now.
+#[test]
+fn a_donation_to_the_vault_is_not_a_profitable_mandate() {
+    let mut m = setup();
+    let now = m.env.now;
+    m.post_offer(0, PRINCIPAL, now + HOUR, "").unwrap();
+    m.accept(0).expect("accept");
+
+    // Someone sends $1 to the vault. No trade ever happens.
+    let mandate = mandate_pda(&m.investor.pubkey(), &m.trader.pubkey(), 0);
+    let vault = support::vault_pda(&mandate);
+    let mint = m.env.usdc_mint;
+    m.env
+        .write_token_account(vault, mint, signer_pda(&mandate), PRINCIPAL + ONE_USDC);
+
+    m.settle(0).expect("settles");
+    let profile: noxfunds::state::TraderProfile = m.env.read(&profile_pda(&m.trader.pubkey()));
+    assert_eq!(
+        profile.mandates_settled_in_profit, 0,
+        "a mandate that never traded is not a profitable one, whatever its vault held"
+    );
+}

@@ -219,7 +219,7 @@ fn setup(shape: Shape) -> Nox {
         }
         .data(),
     };
-    env.send(ix, &[&investor]).unwrap();
+    env.send(ix, &[&investor, &trader]).unwrap();
 
     // Into SolFX: create the mandate's account there and move collateral across.
     env.svm.airdrop(&signer, 1_000_000_000).unwrap();
@@ -373,9 +373,8 @@ impl Nox {
         let mut metas = noxfunds::accounts::ObserveMandateEquity {
             trader_profile: profile_pda(&self.trader.pubkey()),
             observer: observer.pubkey(),
-            config: config_pda(),
             mandate: self.mandate,
-            mandate_signer: self.signer,
+            mandate_vault: support::vault_pda(&self.mandate),
             user_account: Env::user_pda(&self.signer),
         }
         .to_account_metas(None);
@@ -541,9 +540,8 @@ fn crank_bytes(nox: &Nox, groups: &[Vec<Pubkey>], keeper: &solana_keypair::Keypa
     let mut metas = noxfunds::accounts::ObserveMandateEquity {
         trader_profile: profile_pda(&nox.trader.pubkey()),
         observer: keeper.pubkey(),
-        config: config_pda(),
         mandate: nox.mandate,
-        mandate_signer: nox.signer,
+        mandate_vault: support::vault_pda(&nox.mandate),
         user_account: Env::user_pda(&nox.signer),
     }
     .to_account_metas(None);

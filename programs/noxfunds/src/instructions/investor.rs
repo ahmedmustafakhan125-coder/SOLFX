@@ -76,9 +76,14 @@ pub struct FundMandate<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Box<Account<'info, NoxConfig>>,
 
-    /// CHECK: the trader this mandate authorises. Only its address is stored; it signs
-    /// nothing here, which is the point — an investor funds a trader without their cooperation.
-    pub trader: UncheckedAccount<'info>,
+    /// The trader this mandate authorises, **and they sign**.
+    ///
+    /// They used not to, on the theory that an investor should be able to fund a trader without
+    /// their cooperation. But a mandate counts against the trader's `active_mandates`, only its
+    /// investor can end it, and there was no minimum principal — so a stranger could fill a
+    /// Bronze trader's only slot with one base unit and hold it forever (internal review R-8).
+    /// Capacity a trader did not agree to spend is not theirs to have spent for them.
+    pub trader: Signer<'info>,
 
     /// The trader's record. Required, so a mandate can never be opened against a trader with
     /// no tier — and so the tier's size and concurrency limits have something to bind to.
@@ -110,8 +115,13 @@ pub struct FundMandate<'info> {
     )]
     pub mandate_signer: SystemAccount<'info>,
 
-    /// CHECK: the SolFX `UserAccount` this mandate will trade through. Validated by
-    /// `solfx-core` on every CPI; only its address is recorded here.
+    /// CHECK: must be the SolFX `UserAccount` `solfx-core` will create for the mandate signer.
+    /// See `AcceptOffer::solfx_user_account` for why recording it unchecked was a fund lock.
+    #[account(
+        seeds = [solfx_core::constants::USER_SEED, mandate_signer.key().as_ref()],
+        bump,
+        seeds::program = solfx_core::ID,
+    )]
     pub solfx_user_account: UncheckedAccount<'info>,
 
     // --- the principal, which has to actually arrive -----------------------------------------
@@ -333,7 +343,10 @@ pub struct FundSolfxCollateral<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Box<Account<'info, NoxConfig>>,
 
+    /// `mut`: the deposit is recorded in `last_free_collateral`, so a later external close can be
+    /// told apart from money NOXFUNDS itself put in.
     #[account(
+        mut,
         seeds = [MANDATE_SEED, mandate.investor.as_ref(), mandate.trader.as_ref(), &[mandate.seq]],
         bump = mandate.bump,
     )]
@@ -400,5 +413,14 @@ pub fn fund_solfx_collateral(ctx: Context<FundSolfxCollateral>, amount: u64) -> 
             seeds,
         ),
         amount,
-    )
+    )?;
+
+    // A deposit credits free collateral by exactly `amount`. Added rather than re-read, so a
+    // credit from an unreconciled stop-out is never absorbed into NOXFUNDS' own figure.
+    let m = &mut ctx.accounts.mandate;
+    m.last_free_collateral = m
+        .last_free_collateral
+        .checked_add(i64::try_from(amount).map_err(|_| NoxError::MathOverflow)?)
+        .ok_or(NoxError::MathOverflow)?;
+    Ok(())
 }
