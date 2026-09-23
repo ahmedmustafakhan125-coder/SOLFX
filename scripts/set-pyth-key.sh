@@ -20,8 +20,13 @@
 #      A poster that is up and posting nothing is still active; that is the failure mode
 #      this whole project keeps rediscovering.
 #
-# Usage:  ./scripts/set-pyth-key.sh <new-api-key>
-#         ./scripts/set-pyth-key.sh --probe <key>    # check a key, change nothing
+# Usage:  ./scripts/set-pyth-key.sh                 # prompts for the key, hidden
+#         ./scripts/set-pyth-key.sh <new-api-key>   # works, but lands in shell history
+#         ./scripts/set-pyth-key.sh --probe [key]   # check a key, change nothing
+#
+# A working key is necessary and not sufficient. On 2026-09-23 the key was replaced and prices
+# stayed 38 hours stale, because the poster's fee payer held 0.00065 SOL and every transaction
+# was silently dropped. So this also checks the payer, and says which of the two is missing.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,9 +45,36 @@ fi
 
 KEY="${1:-}"
 if [[ -z "$KEY" ]]; then
-  echo "usage: $0 [--probe] <new-pyth-api-key>" >&2
+  # Read without echo, so the key never lands in the terminal or in ~/.bash_history.
+  read -rsp "new Pyth API key (hidden): " KEY
+  echo
+fi
+if [[ -z "$KEY" ]]; then
+  echo "usage: $0 [--probe] [new-pyth-api-key]" >&2
   exit 64
 fi
+
+# The poster's fee payer, by public key, from its own startup banner. Checked before anything
+# is changed: a new key cannot bring prices back if the transactions carrying them cannot pay.
+SOL_FLOOR="${SOLFX_MIN_SOL:-0.5}"
+PAYER="${SOLFX_OPERATOR_PUBKEY:-$(journalctl -u solfx-price-poster.service --no-pager -o cat 2>/dev/null \
+  | grep -oE 'payer +[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -1 | awk '{print $2}')}"
+check_payer() {
+  [[ -n "$PAYER" ]] || { echo "  (could not find the poster's fee payer — skipping the balance check)"; return 0; }
+  local rpc bal
+  rpc="$(grep -E '^SOLFX_RPC_URL=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' || true)"
+  bal="$(solana balance "$PAYER" --url "${rpc:-https://api.devnet.solana.com}" 2>/dev/null | awk '{print $1}')"
+  if [[ -z "$bal" ]]; then
+    echo "  (could not read the fee payer's balance)"
+  elif awk -v b="$bal" -v f="$SOL_FLOOR" 'BEGIN{exit !(b<f)}'; then
+    echo "WARNING: the poster's fee payer $PAYER holds $bal SOL (floor $SOL_FLOOR)." >&2
+    echo "         Its transactions will be dropped silently and prices will stay stale. Fund it:" >&2
+    echo "           solana transfer $PAYER 5 --url devnet" >&2
+    return 1
+  else
+    echo "  fee payer $PAYER holds $bal SOL"
+  fi
+}
 
 # --- 1. probe -------------------------------------------------------------------------------
 echo "probing $HERMES with the supplied key…"
@@ -57,6 +89,7 @@ if [[ "$code" != "200" ]]; then
 fi
 echo "  the key works (HTTP 200, $(wc -c </tmp/pyth-probe.out) bytes of update data)"
 
+check_payer || true
 if $probe_only; then
   echo "--probe given; .env untouched and nothing restarted."
   exit 0
@@ -102,6 +135,8 @@ while (( $(date +%s) < deadline )); do
   sleep 5
 done
 
-echo "The key works but no clean pass landed within 180s. The poster's own log:" >&2
+echo "The key works but no clean pass landed within 180s." >&2
+check_payer >&2 || echo "  ^ that is the likely cause." >&2
+echo "The poster's own log:" >&2
 journalctl -u solfx-price-poster --since "2 minutes ago" --no-pager | tail -8 >&2
 exit 1

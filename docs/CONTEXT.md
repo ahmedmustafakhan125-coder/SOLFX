@@ -484,6 +484,12 @@ Re-measured the same day, all without a key: `hermes.pyth.network` **401**,
 The MCP also lists node providers who serve Hermes — Triton, P2P, extrnode, Liquify — which is
 the avenue worth exploring if the account route ever fails.
 
+> **2026-09-23: a working key is not enough.** The key was replaced and prices stayed 38 hours
+> stale because the poster's fee payer held 0.00065 SOL — every transaction was dropped silently —
+> while the health check reported "all healthy" 544 times. The fee payer, its burn rate (~1.3
+> SOL/day), the three causes of stale prices and how to tell them apart are in
+> [`docs/OPERATIONS.md`](OPERATIONS.md). The script below now checks the fee payer too.
+
 **Recovery is one command:** `./scripts/set-pyth-key.sh <key>`. It probes the key *before*
 touching anything (a bad key that gets written and rolled out destroys the evidence of what
 the old one was), backs up `.env`, restarts the poster, the keeper and the web container — the
