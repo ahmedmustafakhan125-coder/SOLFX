@@ -89,9 +89,10 @@ cargo run -p solfx-keeper --bin nox -- lifecycle --execute
 cargo run -p solfx-keeper --bin nox -- status
 ```
 
-**Not deployed yet:** the evaluation and the marketplace are built and tested but await a program
-upgrade on devnet. **Not built:** a screen for the evaluation, and a page that re-derives every
-statistic from events. See [`docs/NOXFUNDS.md`](docs/NOXFUNDS.md) Part 10 for the full list.
+The evaluation, the marketplace and funded trading are live on devnet with browser screens. The
+keeper runs NOXFUNDS' cranks, and `/nox/verify` re-derives each trader's record from the
+program's events (`npm run verify:traders` in `clients/js` does the same from a terminal). See
+[`docs/NOXFUNDS.md`](docs/NOXFUNDS.md) Part 10 for what is still missing and the limits of each.
 
 ## What is deliberately *not* trusted to the operator
 

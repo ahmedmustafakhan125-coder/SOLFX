@@ -666,10 +666,23 @@ This section exists because a document that only lists what works is marketing.
   the SolFX account and for every resting order, and is refunded when those close. Nothing in
   the program sweeps what is left, and a PDA has no key, so roughly 0.02 SOL per mandate stays
   there after settlement. Small, and stated rather than discovered.
-- **The public verification page.** The claim in Part 8 that every statistic is re-derivable
-  from events is true of the event data; the page that does the re-deriving does not exist.
-- **The off-chain keeper.** The cranks are public instructions, but nothing runs them
-  automatically yet. A mandate is currently marked when someone marks it.
+- **The verification page re-derives the trader's record, not everything.** `/nox/verify` (and
+  `npm run verify:traders` in `clients/js`, against any RPC endpoint) replays every event about a
+  trader and compares all 15 figures on `TraderProfile` with the account; on 2026-09-24 it agreed
+  on 45 of 45 across the three traders on devnet. Three limits. The page reads through this
+  site's RPC proxy; the script is the way to leave the site out. "Settled in profit" cannot be
+  proven from events for a mandate whose positions closed together at a profit, because the
+  program records those at zero and keeps the true total only on the mandate. The page says so
+  when it happens. Evaluation statistics and mandate state are not covered.
+- **The keeper's marks are samples.** `solfx-keeper` runs the NOXFUNDS cranks (see
+  [`OPERATIONS.md`](OPERATIONS.md)): it reconciles positions closed outside NOXFUNDS, winds down
+  stopped mandates, fires evaluation stops, and marks a mandate when its equity, estimated with
+  SolFX's own risk function, has moved 25 bps of its peak or five minutes have passed. So a
+  breach is caught within about 25 bps of the limit at a 30-second cadence, not at the exact
+  moment it happens. Evaluations are marked every five minutes, because their pricing is private
+  to the program and cannot be estimated from outside; the stop, fired as soon as it is met, is
+  what bounds a simulated loss between marks. It is run by the operator and paid by nobody, like
+  SolFX's own cranks, and it does not settle.
 
 **Not done:**
 

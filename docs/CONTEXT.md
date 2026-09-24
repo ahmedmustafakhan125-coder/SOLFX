@@ -1,6 +1,10 @@
 # SolFX — Complete Context and Build Status
 
-**Last updated:** 2026-09-13
+**Last updated:** 2026-09-13 — the body below. Since then: NOXFUNDS is live on devnet with an
+evaluation, a marketplace and funded trading in the browser; the keeper runs its cranks; and
+`/nox/verify` re-derives each trader's record from events. Current state of NOXFUNDS is
+[`NOXFUNDS.md`](NOXFUNDS.md) Part 10; running the box, including replacing the Pyth key, is
+[`OPERATIONS.md`](OPERATIONS.md).
 **Status:** Phases 1–7 complete. **Phase 8 (frontend + SDK) substantially built.** Phase 9 in
 progress.
 
