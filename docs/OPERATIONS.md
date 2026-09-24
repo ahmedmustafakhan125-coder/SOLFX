@@ -20,18 +20,66 @@ and top it up weekly.** The faucet refuses this server's IP, so fund it from you
 
 ## Replacing the Pyth API key
 
+Three services read the key, and each reads it **only when it starts**. Editing `.env` changes
+nothing until all three restart:
+
+| Service | What it uses the key for | If it misses the restart |
+|---|---|---|
+| `solfx-price-poster` | fetching every price it posts | prices go stale, markets halt |
+| `solfx-keeper` | the price watchdog (compares the chain against Hermes) | the watchdog goes blind, quietly |
+| `solfx-web` (container) | the browser's `/hermes` price proxy | the site's live prices stop when the old key dies |
+
+**The one command:**
+
 ```bash
 cd /root/SOLFX/SOLFX
 ./scripts/set-pyth-key.sh            # prompts for the key, hidden
 ```
 
 In order, it: checks the new key against Hermes before touching anything, checks the fee payer
-has SOL, backs up `.env`, writes the key, restarts the poster, the keeper and the web tier (each
-reads `.env` only when it starts — editing the file alone changes nothing), then waits for a pass
-that actually posts. If none lands it says whether the fee payer is the reason.
+has SOL, backs up `.env`, writes the key, restarts all three, then waits for a pass that actually
+posts. If none lands it says whether the fee payer is the reason.
 
-Markets halted by the stale prices reopen by themselves: the keeper's session crank moves them
+**If you edited `.env` by hand instead**, restart all three yourself:
+
+```bash
+systemctl restart solfx-price-poster solfx-keeper
+cd /docker/solfx && docker compose up -d      # the container re-reads env_file only on "up"
+```
+
+**Then check:**
+
+```bash
+./scripts/vps-health.sh
+```
+
+It says `running on an old Pyth key: <services>` if any of the three is still on the previous
+key. That check exists because on 2026-09-23 the key was edited in and only the poster restarted:
+the keeper and the site ran on the old key for a day while every other check said healthy. It
+compares the keys inside the script and never prints them.
+
+Markets halted by stale prices reopen by themselves: the keeper's session crank moves them
 `Halted` → `GapWindow` → `Active`, about six minutes after prices resume.
+
+## The NOXFUNDS crank
+
+The keeper also runs NOXFUNDS' permissionless cranks (service `nox`, every 30 s; `--nox-secs` or
+`SOLFX_NOX_SECS` to change it). In `journalctl -u solfx-keeper` it logs as `noxfunds` with an
+`action`:
+
+| action | when |
+|---|---|
+| `reconcile_position` | a funded position closed outside NOXFUNDS (its stop or take-profit fired, or it was liquidated) |
+| `observe_mandate_equity` | an active mandate holding positions moved 25 bps of its peak since the last mark, or 5 minutes passed |
+| `wind_down_position` | a breached or winding-down mandate still holds a position |
+| `wind_down_cancel_stop` | a stopped mandate's stop outlived its position |
+| `eval_trigger_stop` | an evaluation's simulated stop was reached |
+| `eval_observe_equity` | an evaluation holds simulated positions and 5 minutes passed |
+| `recompute_tier` | a trader's record earns a different tier from the one it shows |
+
+It does not settle mandates: `claim_settlement` is one click for anyone, and running it from here
+would pay three parties at a moment none of them chose. It pays fees from the same wallet as the
+poster.
 
 ## When prices go stale — reading the poster's log
 

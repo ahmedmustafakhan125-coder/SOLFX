@@ -39,6 +39,40 @@ if ! docker ps --filter name=^/solfx-web$ --filter status=running --format '{{.N
   note "solfx-web container is not running"
 fi
 
+# A key edited into .env reaches a service only when that service restarts: systemd reads
+# EnvironmentFile at start, and the container reads env_file on `docker compose up`. On 2026-09-23
+# the key was replaced and only the poster restarted, so the keeper and the web tier's price proxy
+# ran on the old key for a day while every other check here said healthy. Compared in-process and
+# never printed: only the names of the services that disagree leave this block.
+stale_key="$(python3 - <<'PY' 2>/dev/null
+import json, os, subprocess
+want = os.environ.get("PYTH_API_KEY", "")
+if not want:
+    raise SystemExit
+stale = []
+for unit in ("solfx-price-poster", "solfx-keeper"):
+    pid = subprocess.run(["systemctl", "show", "-p", "MainPID", "--value", unit],
+                         capture_output=True, text=True).stdout.strip()
+    try:
+        raw = open(f"/proc/{pid}/environ", "rb").read().split(b"\0")
+    except OSError:
+        continue  # not running (reported above), or not readable by this user
+    env = dict(x.split(b"=", 1) for x in raw if b"=" in x)
+    if env.get(b"PYTH_API_KEY", b"").decode() != want:
+        stale.append(unit)
+out = subprocess.run(["docker", "inspect", "solfx-web", "--format", "{{json .Config.Env}}"],
+                     capture_output=True, text=True).stdout
+if out.strip():
+    env = dict(x.split("=", 1) for x in json.loads(out) if "=" in x)
+    if env.get("PYTH_API_KEY", "") != want:
+        stale.append("solfx-web")
+print(" ".join(stale))
+PY
+)"
+if [[ -n "$stale_key" ]]; then
+  note "running on an old Pyth key: $stale_key (.env changed, they were not restarted) — run ./scripts/set-pyth-key.sh, or restart them as docs/OPERATIONS.md says"
+fi
+
 # A pass takes ~25s and the interval is 2s, so five minutes without a pass that *posted
 # something* means the poster has stopped making progress even if the process is still up.
 #

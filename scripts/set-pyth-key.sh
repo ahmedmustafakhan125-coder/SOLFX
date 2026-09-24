@@ -37,6 +37,11 @@ COMPOSE_DIR="/docker/solfx"
 PROBE_FEED="e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
 HERMES="${SOLFX_HERMES_URL:-https://pyth.dourolabs.app/hermes}"
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  sed -n '3,29p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+fi
+
 probe_only=false
 if [[ "${1:-}" == "--probe" ]]; then
   probe_only=true
@@ -49,8 +54,10 @@ if [[ -z "$KEY" ]]; then
   read -rsp "new Pyth API key (hidden): " KEY
   echo
 fi
-if [[ -z "$KEY" ]]; then
-  echo "usage: $0 [--probe] [new-pyth-api-key]" >&2
+if [[ -z "$KEY" || "$KEY" == -* ]]; then
+  # An option is never a key. `--help` used to be sent to Hermes as one (2026-09-24): refused,
+  # harmlessly, but the script should have said what it takes instead.
+  echo "usage: $0 [--probe] [new-pyth-api-key]   (run with no key to be prompted, hidden)" >&2
   exit 64
 fi
 
