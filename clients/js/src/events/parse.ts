@@ -148,16 +148,14 @@ function decodeOne(payload: Uint8Array): SolfxEvent | undefined {
 }
 
 /**
- * Decode every SolFX event in a transaction's `logMessages`, in emission order.
+ * Every `Program data:` payload one program emitted in a transaction's `logMessages`, in
+ * emission order, following the invoke stack as described at the top of this file.
  *
- * Unknown `Program data:` lines are skipped rather than throwing: a client built against an
- * older IDL must still read the events it does understand.
+ * Exported so another program's events (NOXFUNDS') are attributed by the same walk rather than
+ * a second copy of it that drifts.
  */
-export function parseEvents(
-  logs: readonly string[],
-  programAddress: string = SOLFX_CORE_PROGRAM_ADDRESS,
-): SolfxEvent[] {
-  const found: SolfxEvent[] = [];
+export function programDataPayloads(logs: readonly string[], programAddress: string): Uint8Array[] {
+  const found: Uint8Array[] = [];
   const stack: string[] = [];
 
   for (const line of logs) {
@@ -174,12 +172,27 @@ export function parseEvents(
     if (!line.startsWith(PROGRAM_DATA)) continue;
     if (stack[stack.length - 1] !== programAddress) continue;
 
-    let bytes: Uint8Array;
     try {
-      bytes = fromBase64(line.slice(PROGRAM_DATA.length));
+      found.push(fromBase64(line.slice(PROGRAM_DATA.length)));
     } catch {
       continue; // not base64; not ours to interpret
     }
+  }
+  return found;
+}
+
+/**
+ * Decode every SolFX event in a transaction's `logMessages`, in emission order.
+ *
+ * Unknown `Program data:` lines are skipped rather than throwing: a client built against an
+ * older IDL must still read the events it does understand.
+ */
+export function parseEvents(
+  logs: readonly string[],
+  programAddress: string = SOLFX_CORE_PROGRAM_ADDRESS,
+): SolfxEvent[] {
+  const found: SolfxEvent[] = [];
+  for (const bytes of programDataPayloads(logs, programAddress)) {
     const event = decodeOne(bytes);
     if (event) found.push(event);
   }

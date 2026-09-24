@@ -17,6 +17,7 @@ const ROUTES = [
   { to: "/nox/market", label: "Marketplace" },
   { to: "/nox/investor", label: "Investor" },
   { to: "/nox/trader", label: "Trader" },
+  { to: "/nox/verify", label: "Verify" },
   { to: "/", label: "SolFX" },
   { to: "/about", label: "About" },
 ] as const;

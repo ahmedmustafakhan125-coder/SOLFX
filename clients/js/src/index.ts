@@ -34,3 +34,7 @@ export * as referral from "./referral/index.js";
 export * as nox from "./generated-noxfunds/index.js";
 // The addresses the IDL cannot describe. See nox/pdas.ts.
 export * as noxPdas from "./nox/pdas.js";
+// Its events, which Codama does not render. See nox/events.ts.
+export * as noxEvents from "./nox/events.js";
+// Re-deriving a trader's record from those events. See nox/verify.ts.
+export * as noxVerify from "./nox/verify.js";
