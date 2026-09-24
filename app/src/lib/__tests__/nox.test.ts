@@ -18,6 +18,9 @@ import {
   parseUsdc,
   ruleRefusal,
   previewSplit,
+  MANDATE_SIGNER_FLOOR,
+  MANDATE_SIGNER_LAMPORTS,
+  signerTopUp,
 } from "@/lib/nox";
 
 describe("parseUsdc — the number that gets escrowed", () => {
@@ -446,5 +449,44 @@ describe("evalProgress names every reason claim_stage_pass would refuse", () => 
     const p = evalProgress({ ...passing, stage: 2 } as nox.Evaluation);
     expect(p.targetBps).toBe(500);
     expect(p.targetEquity).toBe(SIZE + (SIZE * 500n) / 10_000n);
+  });
+});
+
+describe("signerTopUp asks once, not after every rent payment", () => {
+  // Devnet, 2026-09-24: a 187-byte UserAccount cost 0.0016002 SOL.
+  const RENT = 1_600_200n;
+
+  it("a fresh mandate is funded to the target plus the account's rent", () => {
+    expect(signerTopUp(0n, true, RENT)).toBe(MANDATE_SIGNER_LAMPORTS + RENT);
+  });
+
+  it("the balance left after creating the account does not ask again", () => {
+    // The bug: 0.02 sent, 0.0016 spent on rent, 0.0184 left, and the panel asked for 0.0016.
+    const afterCreate = MANDATE_SIGNER_LAMPORTS + RENT - RENT;
+    expect(signerTopUp(afterCreate, false, 0n)).toBe(0n);
+    expect(signerTopUp(MANDATE_SIGNER_LAMPORTS - RENT, false, 0n)).toBe(0n);
+  });
+
+  it("an open trade with a stop and a take-profit does not hide the ticket", () => {
+    expect(signerTopUp(MANDATE_SIGNER_LAMPORTS - 4_871_000n, false, 0n)).toBe(
+      0n
+    );
+  });
+
+  it("below the floor, it tops back up to the target", () => {
+    expect(signerTopUp(MANDATE_SIGNER_FLOOR, false, 0n)).toBe(0n);
+    expect(signerTopUp(MANDATE_SIGNER_FLOOR - 1n, false, 0n)).toBe(
+      MANDATE_SIGNER_LAMPORTS - MANDATE_SIGNER_FLOOR + 1n
+    );
+  });
+
+  it("a partly funded signer with no account still covers the rent", () => {
+    const have = MANDATE_SIGNER_FLOOR;
+    expect(signerTopUp(have, true, RENT)).toBe(
+      MANDATE_SIGNER_LAMPORTS + RENT - have
+    );
+    expect(have + signerTopUp(have, true, RENT) - RENT).toBe(
+      MANDATE_SIGNER_LAMPORTS
+    );
   });
 });

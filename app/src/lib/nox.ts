@@ -28,6 +28,7 @@ import {
   findProtocolPda,
   findTriggerOrderPda,
   findUserAccountPda,
+  getUserAccountSize,
   nox,
   noxPdas,
 } from "@solfx/client";
@@ -1254,14 +1255,44 @@ export type MandateReadiness = {
 };
 
 /**
- * The mandate signer pays the `UserAccount`'s rent and each trigger order's, and is refunded
- * when they close — so it needs a working balance, not a one-off fee. `nox lifecycle` tops it
- * up to the same figure for the same reason.
+ * The mandate signer pays the `UserAccount`'s rent and each position's and trigger order's, and
+ * is refunded when they close — so it needs a working balance, not a one-off fee. `nox
+ * lifecycle` tops it up to the same figure for the same reason.
  *
  * It is not recoverable: nothing in the program sweeps the signer, and a PDA has no key. That
- * is 0.02 SOL per mandate, said out loud rather than buried.
+ * is 0.02 SOL per mandate plus the account's rent, said out loud rather than buried.
  */
 export const MANDATE_SIGNER_LAMPORTS = 20_000_000n;
+
+/**
+ * Below this the signer is topped back up to `MANDATE_SIGNER_LAMPORTS`; above it, it is left
+ * alone. One trade with a stop and a take-profit holds out 0.004871 SOL (measured on devnet,
+ * 2026-09-24: open with stop −0.003383, take-profit −0.001488), and the signer must also keep
+ * its own rent-exempt minimum or the runtime refuses the transaction. 0.01 SOL covers that
+ * twice over.
+ *
+ * Requiring the full target every time is what asked for "Prepare it" twice: the first top-up
+ * went to 0.02 SOL, creating the SolFX account then spent 0.0016 of it on rent, and the check
+ * saw 0.0184 and asked again.
+ */
+export const MANDATE_SIGNER_FLOOR = 10_000_000n;
+
+/**
+ * Lamports to send the mandate signer, or `0n`.
+ *
+ * When the SolFX account does not exist yet its rent comes out of the same transfer, so it is
+ * added to both the floor and the target — otherwise the account's creation would itself leave
+ * the signer short.
+ */
+export function signerTopUp(
+  have: bigint,
+  needsSolfxAccount: boolean,
+  userAccountRent: bigint
+): bigint {
+  const extra = needsSolfxAccount ? userAccountRent : 0n;
+  if (have >= MANDATE_SIGNER_FLOOR + extra) return 0n;
+  return MANDATE_SIGNER_LAMPORTS + extra - have;
+}
 
 export async function readMandateReadiness(
   rpc: Rpc<SolanaRpcApi>,
@@ -1277,9 +1308,17 @@ export async function readMandateReadiness(
     })
     .send();
   const have = value[0]?.lamports ?? 0n;
-  const needsLamports =
-    have >= MANDATE_SIGNER_LAMPORTS ? 0n : MANDATE_SIGNER_LAMPORTS - have;
   const needsSolfxAccount = !value[1];
+  // Asked of the cluster rather than computed: devnet's rent per byte has moved (about 5,080
+  // lamports today against the long-standing 6,960), and a stale constant would under-fund.
+  const userAccountRent = needsSolfxAccount
+    ? await rpc
+        .getMinimumBalanceForRentExemption(BigInt(getUserAccountSize()), {
+          commitment: READ_COMMITMENT,
+        })
+        .send()
+    : 0n;
+  const needsLamports = signerTopUp(have, needsSolfxAccount, userAccountRent);
   return {
     needsLamports,
     needsSolfxAccount,
