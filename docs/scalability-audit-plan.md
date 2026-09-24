@@ -159,7 +159,7 @@ standing rule: **you run deploys, I never do.**
 **Recommendation on language: write it in Rust, not TypeScript.** The brief suggests
 `scripts/loadgen.ts`. There is no TS project here, so that means building one from scratch
 *and* reimplementing every instruction's Borsh encoding, account ordering and PDA derivation in
-a second language. `.claude/rules/solana.md` §10 warns about exactly this — a reimplementation
+a second language. the project's Solana rules §10 warns about exactly this — a reimplementation
 drifts silently and fails on chain rather than in CI, and the four operator binaries share
 `contracts.rs` and `pyth::price_account` via `#[path]` specifically to avoid it.
 

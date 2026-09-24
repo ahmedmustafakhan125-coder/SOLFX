@@ -1,7 +1,7 @@
-# Phase 9 — the brief for a local Claude Code session
+# Phase 9 — the brief for the local machine
 
-Copy everything below the line into Claude Code **on your own machine**. It is written to be
-self-contained: it states what the VPS could not do and why, so the local session does not
+Everything below the line is the work to do **on the local machine**. It is written to be
+self-contained: it states what the VPS could not do and why, so the local work does not
 re-derive it.
 
 **Why this cannot run on the VPS:** ~2 GB free RAM (a `cargo build` OOM-killed itself there),
@@ -12,7 +12,7 @@ observation window.
 
 ## Context you need before starting
 
-Read `CLAUDE.md`, then `docs/CONTEXT.md`, then `CLAUDE-SESSION.md`. They outrank anything
+Read the project notes, then `docs/CONTEXT.md`, then the session log. They outrank anything
 below. In particular: **do not modify `programs/solfx-core/src/` or `programs/solfx-referral/`**,
 never run `anchor deploy` / `anchor upgrade` / `solana program deploy`, never run `cargo` while
 a validator is running, and consult the **solana-mcp before** any decision touching Solana,
@@ -204,7 +204,7 @@ more that do not exist yet:
 - **EM devaluation** — IDR 1998 or INR 2013. The point is whether EM leverage survives a
   managed-float break.
 
-These live under `programs/solfx-core/tests/`. **`CLAUDE.md` says work goes in `crates/`,
+These live under `programs/solfx-core/tests/`. **The project rules say work goes in `crates/`,
 `scripts/` or `docs/`** — adding tests under `programs/` is a deliberate exception, so confirm
 it before writing, and do not touch anything under `src/`.
 

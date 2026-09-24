@@ -1,8 +1,8 @@
 # Task 4 — finish `anchor coverage` on the local machine
 
-Copy everything below the line into Claude Code on the WSL box. It is written to be
+Everything below the line is the work to do on the WSL box. It is written to be
 self-contained: it states the constraints, the known failure, the diagnosis, and what
-"done" means, so the session does not have to rediscover any of it.
+"done" means, so none of it has to be rediscovered.
 
 ---
 
@@ -11,7 +11,7 @@ self-contained: it states the constraints, the known failure, the diagnosis, and
 Produce SBF source coverage for `programs/solfx-core/src/instructions/` and record it.
 This is the last open half of Phase 9 Task 4.
 
-Working directory is `.`. Read `docs/CONTEXT.md` and `CLAUDE.md` first; they
+Working directory is `.`. Read `docs/CONTEXT.md` and the project notes first; they
 outrank anything here.
 
 ## Where things stand
@@ -44,7 +44,7 @@ No path, no backtrace. It fails at trace collection / LCOV writing, not at build
 
 ### The two facts that most likely explain it
 
-Both are already documented in `.claude/rules/solfx.md`:
+Both are already documented in the project rules:
 
 1. **`./target` is a symlink** to `~/.cargo-target/solfx`, because `/mnt/e` is a
    9p mount and small-file I/O across it is ~200x slower. But
@@ -125,7 +125,7 @@ deliverable is the measurement and the gap analysis.
   directions: the process name exceeds pgrep's 15-character limit, and `pgrep -f` matches
   its own shell).
 - **Do not modify anything under `programs/`** beyond the `litesvm` dev-dependency line
-  that is already there. `.claude/settings.json` denies it mechanically. If coverage
+  that is already there. The local settings deny it mechanically. If coverage
   genuinely requires a program change, say so and stop.
 - **Never run `anchor deploy`, `anchor upgrade` or `solana program deploy`.**
 - Consult the `solana-mcp` before answering anything version-specific about Anchor,

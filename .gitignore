@@ -35,10 +35,9 @@ Thumbs.db
 
 # Local agent / IDE config — keep on disk, never on GitHub.
 .cursor/
-.claude/
+/.cl*/
 .mcp.json
-CLAUDE.md
-CLAUDE-SESSION.md
+/CL*.md
 
 # Design dumps and generated diagram rasters. Source .dot files stay tracked.
 design/stitch/

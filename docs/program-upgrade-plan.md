@@ -36,7 +36,7 @@ take-profit on a long fires when the price *rises* past it — so it was already
 instant the position existed.
 
 Every layer behaved correctly. The account model let two different logical objects share one
-identity, which `.claude/rules/solana.md` § 3 already names as a bug rather than a collision
+identity, which the project's Solana rules § 3 already names as a bug rather than a collision
 to handle later.
 
 ### The fix
@@ -169,7 +169,7 @@ pub entry_price: i64,     // so the move is computable from this event alone
 pub realized_pnl: i64,    // USDC, signed
 ```
 
-**Additive only.** `.claude/rules/solana.md` § 8: adding a field is fine, changing or
+**Additive only.** the project's Solana rules § 8: adding a field is fine, changing or
 removing one is a breaking change for Phase 8.
 
 Pips stay off chain. `price_delta_to_pips` already exists in `solfx-math` and pip size is a
@@ -187,7 +187,7 @@ into consensus state.
 4. **§ 2 spike** — measure `execute_entry_order`'s frame and packet. Decision point.
 5. Implement whichever of 3 and 4 fit; redesign whichever does not.
 
-## Definition of done, per `CLAUDE.md`
+## Definition of done, per the project rules
 
 - `program_autofixer` to a clean pass on every file touched
 - every account: owner, instance, signer, mutability
@@ -205,5 +205,5 @@ extensibility claim in § 12.5 rests on that. Upgrading is not free: the deploye
 SHA-256 changes, `docs/CONTEXT.md`'s "byte-identical to devnet" line stops being true until
 re-verified, and the 97.14 % coverage figure has to be re-measured. Budget for all three.
 
-**Claude never runs `anchor deploy` or `anchor upgrade`.** The commands get printed; the user
-deploys.
+**Nothing automated runs `anchor deploy` or `anchor upgrade`.** The commands get printed; the
+owner deploys.

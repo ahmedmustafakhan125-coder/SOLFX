@@ -224,7 +224,7 @@ Two things still unproven, and both must be before it ships:
    reach of an **address lookup table**: five of the seven accounts are identical across all
    six posts (`encoded_vaa`, `config`, `treasury`, `system_program`, program id), and an ALT
    replaces each 32-byte key with a 1-byte index — about 155 B saved, enough for two posts and
-   possibly three. `.claude/rules/solana.md` § 6 already names ALTs as the escape hatch for
+   possibly three. the project's Solana rules § 6 already names ALTs as the escape hatch for
    exactly this. **This is arithmetic with stated assumptions, not a measurement**; at a 1 %
    margin it must be confirmed by building the transaction and reading `serialize().len()`
    before anyone plans around it.
@@ -402,8 +402,8 @@ saving does not decay as markets are added — a pass is `3 + n + 1` sends, not 
 ### What listing them proved — the map, again
 
 **Within minutes both new markets were `Halted`, with 37-second-fresh prices on chain.** So were
-BTC/USD and every other market. This is not a new bug; it is [`solana.md` §5's address
-trap](../.claude/rules/solana.md) for the third time:
+BTC/USD and every other market. This is not a new bug; it is the Solana rules' §5 address
+trap for the third time:
 
 - This machine's poster writes **this machine's** price accounts, and they are fresh.
 - The VPS keeper resolves feeds through **the VPS's** `price-accounts.json`, which has six
@@ -494,7 +494,7 @@ wrong accounts.
 **Consequence for Task 6.** It requires a live position carried throughout and a browser trade,
 and on a Sunday the only market that could provide either is BTC/USD — which is `Halted`.
 Listing ETH/USD and SOL/USD now would also add two markets nothing publishes, reproducing the
-"three markets can never price" condition already recorded in `CLAUDE-SESSION.md`. **The
+"three markets can never price" condition already recorded in the session log. **The
 poster has to be working first**, which makes Task 0 a prerequisite for Task 6 rather than a
 parallel task.
 

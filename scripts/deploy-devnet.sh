@@ -7,7 +7,7 @@
 # Two programs share this because the verification below is the hard part, and a second copy
 # of it is a second place for the bytecode comparison to be subtly wrong.
 #
-# Claude never runs `solana program deploy` — this script does not either. It works out what
+# Nothing automated runs `solana program deploy` — this script does not either. It works out what
 # the cluster needs, prints the exact command for you to run, and then *verifies* the result.
 # The verification is the point. The C-1 fix sat undeployed for a day because "deploy it" and
 # "check it landed" were two manual steps and only the first got done.

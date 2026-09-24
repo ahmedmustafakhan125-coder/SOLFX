@@ -55,7 +55,7 @@ position always costs the same figure every time. And **the ceiling has to cover
 which is why it sits at 150,000 rather than snugly above one lucky measurement — roughly 22
 spare bump iterations.
 
-It is also a live demonstration of why `.claude/rules/solana.md` §3 says to store bumps. Every
+It is also a live demonstration of why the project's Solana rules §3 says to store bumps. Every
 seed constraint NOXFUNDS owns uses `bump = account.bump` and costs a flat ~1,500 once.
 
 ### `funded_open_position` is the expensive one, by construction

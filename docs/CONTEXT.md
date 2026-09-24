@@ -106,9 +106,9 @@ What changed, and what did not:
   `"config"` seed; the programme's seed is `"referral_config"`. The conclusion held at the right
   address (`9s7xiSzi…`), and `authority`'s tests now pin every derived address to devnet.
 
-> **Session log:** [`CLAUDE-SESSION.md`](../CLAUDE-SESSION.md) at the repo root records what
-> changed on 2026-09-09 and when, including the things that are true but not yet fixed. Read it
-> if you are picking this up cold; this document is what *is*, that one is what *changed*.
+> **Session log:** a local session log (kept off GitHub) records what changed on 2026-09-09 and
+> when, including the things that are true but not yet fixed. This document is what *is*, that
+> one is what *changed*.
 
 > **Deadline: 11 Sep 2026 — the Pyth API key trial expires.** Every Hermes endpoint now
 > requires a key (measured, see *Pyth access*), so there is no free endpoint to fall back to.

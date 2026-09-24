@@ -687,7 +687,7 @@ This section exists because a document that only lists what works is marketing.
 **Not done:**
 
 - **No security audit. Zero, by anyone independent.** Not a formal audit. The internal review
-  in Part 11 was done by the model that helped write the code, which is not the same thing.
+  in Part 11 was done by the team that wrote the code, which is not the same thing.
 - **No fuzzing.** SolFX's own fuzzing is a later-phase exit criterion; NOXFUNDS has none.
 - **Never deployed to mainnet, and no mainnet date.** Devnet only, with test USDC.
 - **Not economically tested at size.** The largest mandate ever run is $200.
@@ -706,7 +706,7 @@ NOXFUNDS is not audited, not safe, and not production-ready.
 
 ## 11. Internal review, 23 September 2026
 
-A line-by-line reading of the program by the model that helped write it. **It is not a security
+A line-by-line reading of the program by the team that wrote it. **It is not a security
 audit** and should not be described as one: the reviewer is not independent, and no fuzzing or
 formal verification was involved. What it adds is that every serious finding was first written as
 a test of what *should* be true and **run against the deployed code, where it failed** — the failure

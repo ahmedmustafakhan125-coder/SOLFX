@@ -39,7 +39,7 @@ const signerFor = (address: Address) =>
   ({ address, signTransactions: async () => [] }) as never;
 
 /**
- * The rule from `.claude/rules/solana.md` § 10, applied to a hand-written client:
+ * The rule from the project's Solana rules § 10, applied to a hand-written client:
  * hardcoded discriminators need a test that re-derives them, so a renamed instruction fails
  * the suite instead of a devnet transaction.
  *
