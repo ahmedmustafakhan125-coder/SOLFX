@@ -30,6 +30,7 @@ mod book;
 mod chain;
 mod config;
 mod danger;
+mod nox_crank;
 // Compiled into the keeper *and* `#[path]`-included by each operator binary. No single
 // consumer uses every item — the poster resolves feeds but never reads a price account, the
 // keeper does the reverse — so "never used" is a property of which binary is compiling, not
@@ -156,6 +157,9 @@ async fn main() -> Result<()> {
     }
     if cfg.wants(Service::Watchdog) {
         tasks.spawn(services::run_watchdog(Arc::clone(&shared)));
+    }
+    if cfg.wants(Service::Nox) {
+        tasks.spawn(nox_crank::run_nox(Arc::clone(&shared)));
     }
 
     // Ctrl-C wins the race and the process exits. There is no in-flight state to drain:

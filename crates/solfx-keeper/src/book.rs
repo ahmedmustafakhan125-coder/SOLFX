@@ -144,6 +144,10 @@ pub struct Book {
     pub refreshed_at: std::time::Instant,
     /// Feed id → price account, for feeds this cluster does not host at the derived address.
     price_account_overrides: HashMap<[u8; 32], Pubkey>,
+    /// Price accounts already reported missing. Warned once when an account goes missing, not
+    /// on every fast refresh: one delisted-in-all-but-name market's absent account logged 218
+    /// warnings in nine minutes on devnet, which buries the warnings that are news.
+    missing_prices: std::collections::HashSet<Pubkey>,
 }
 
 impl Book {
@@ -153,6 +157,7 @@ impl Book {
     pub fn with_price_accounts(overrides: HashMap<[u8; 32], Pubkey>) -> Self {
         Self {
             price_account_overrides: overrides,
+            missing_prices: std::collections::HashSet::new(),
             markets: HashMap::new(),
             feeds: HashMap::new(),
             positions: HashMap::new(),
@@ -245,9 +250,14 @@ impl Book {
         let datas = chain.multiple(&keys).await?;
         for (key, data) in keys.iter().zip(datas) {
             let Some(data) = data else {
-                tracing::warn!(%key, "price account missing on chain");
+                if self.missing_prices.insert(*key) {
+                    tracing::warn!(%key, "price account missing on chain");
+                }
                 continue;
             };
+            if self.missing_prices.remove(key) {
+                tracing::info!(%key, "price account is back on chain");
+            }
             match pyth::parse_update(&data) {
                 Ok(update) => {
                     self.prices.insert(*key, update);
@@ -308,6 +318,19 @@ impl Book {
         let secondary = feeds.secondary.and_then(|k| self.prices.get(&k));
         let quote = feeds.quote_conversion.and_then(|k| self.prices.get(&k));
         solfx_core::oracle::load_validated_price(market, primary, secondary, quote, &self.clock)
+            .ok()
+    }
+
+    /// Price a market the way `crank_market_price` reads it: staleness enforced, confidence and
+    /// deviation not — the crank exists to *record* a wide or deviating price, so gating it on
+    /// the trading gate would skip it exactly when it matters.
+    pub fn price_for_observe(&self, market_index: u16) -> Option<MarketPrice> {
+        let market = self.markets.get(&market_index)?;
+        let feeds = self.feeds.get(&market_index)?;
+        let primary = self.prices.get(&feeds.primary)?;
+        let secondary = feeds.secondary.and_then(|k| self.prices.get(&k));
+        let quote = feeds.quote_conversion.and_then(|k| self.prices.get(&k));
+        solfx_core::oracle::observe_market_price(market, primary, secondary, quote, &self.clock)
             .ok()
     }
 

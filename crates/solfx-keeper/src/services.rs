@@ -41,7 +41,7 @@ pub struct Shared {
 /// happily keep deciding from it. Going quiet is the correct behaviour: the protocol is
 /// permissionless, so someone else's keeper is still running, whereas transactions built from
 /// a ten-minute-old book are wrong in a way that costs real money.
-fn book_is_fresh(shared: &Shared, book: &Book) -> bool {
+pub(crate) fn book_is_fresh(shared: &Shared, book: &Book) -> bool {
     let age = book.age();
     if age.as_secs() > shared.cfg.max_book_age_secs {
         tracing::error!(
@@ -362,20 +362,30 @@ pub async fn run_cranks(shared: Arc<Shared>) {
             };
             crank(&shared, session, "crank_market_session", index).await;
 
-            let price = Instruction {
-                program_id: solfx_core::ID,
-                accounts: solfx_core::accounts::CrankMarketPrice {
-                    keeper: me,
-                    protocol: v.protocol,
-                    market,
-                    price_update: feeds.primary,
-                    secondary_price_update: feeds.secondary,
-                    quote_conversion_price_update: feeds.quote_conversion,
-                }
-                .to_account_metas(None),
-                data: solfx_core::instruction::CrankMarketPrice {}.data(),
+            // A market whose price the crank cannot even read is refused with `OracleStale` every
+            // time. Four listed markets have no feed posted on devnet, and asking anyway cost four
+            // failed simulations a minute and a log full of them. Judged by the crank's own read
+            // (`observe_market_price`), so a wide or deviating price is still cranked.
+            let priceable = {
+                let book = shared.book.read().await;
+                book.price_for_observe(index).is_some()
             };
-            crank(&shared, price, "crank_market_price", index).await;
+            if priceable {
+                let price = Instruction {
+                    program_id: solfx_core::ID,
+                    accounts: solfx_core::accounts::CrankMarketPrice {
+                        keeper: me,
+                        protocol: v.protocol,
+                        market,
+                        price_update: feeds.primary,
+                        secondary_price_update: feeds.secondary,
+                        quote_conversion_price_update: feeds.quote_conversion,
+                    }
+                    .to_account_metas(None),
+                    data: solfx_core::instruction::CrankMarketPrice {}.data(),
+                };
+                crank(&shared, price, "crank_market_price", index).await;
+            }
 
             let funding = Instruction {
                 program_id: solfx_core::ID,
@@ -498,7 +508,12 @@ pub async fn run_watchdog(shared: Arc<Shared>) {
             }
         };
 
-        let tolerance = i64::try_from(shared.cfg.max_book_age_secs).unwrap_or(i64::MAX);
+        // The protocol's own gate, not the keeper's book tolerance. This used to be
+        // `max_book_age_secs` (45), so a price 46 seconds old logged "the protocol will refuse to
+        // trade this market" at error level while the program, whose limit is 60, accepted it.
+        // Measured on devnet on 2026-09-24: the poster's normal cycle peaks at 44–48 seconds, so
+        // the false alarm fired on BTC/USD every few passes and taught the log to be ignored.
+        let tolerance = i64::from(solfx_core::constants::MAX_ALLOWED_STALENESS_SECONDS);
         for (id, on_chain_ts, on_chain_price, on_chain_expo, market_index) in legs {
             let feed = crate::pyth::feed_hex(&id);
             let Some(off_chain) = latest.get(&feed) else {

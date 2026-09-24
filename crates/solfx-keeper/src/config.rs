@@ -20,7 +20,7 @@ pub const DEFAULT_HERMES: &str = crate::pyth::DEFAULT_HERMES_URL;
 #[command(name = "solfx-keeper", about = "SolFX off-chain keepers")]
 pub struct Config {
     /// Which keepers to run. Several may be given; they share one RPC client and one book.
-    #[arg(long, value_enum, default_values_t = [Service::Liquidator, Service::Triggers, Service::Cranks, Service::Watchdog], env = "SOLFX_SERVICES")]
+    #[arg(long, value_enum, default_values_t = [Service::Liquidator, Service::Triggers, Service::Cranks, Service::Watchdog, Service::Nox], env = "SOLFX_SERVICES")]
     pub service: Vec<Service>,
 
     #[arg(long, default_value = "http://127.0.0.1:8899", env = "SOLFX_RPC_URL")]
@@ -64,6 +64,15 @@ pub struct Config {
     /// Funding and session cranks are hourly and daily jobs; polling them fast is waste.
     #[arg(long, default_value_t = 60, env = "SOLFX_CRANK_SECS")]
     pub crank_secs: u64,
+
+    /// How often to mark NOXFUNDS mandates and evaluations, reconcile their closed positions and
+    /// wind down stopped mandates.
+    ///
+    /// This is breach-detection latency, so it is shorter than the funding crank's. It costs
+    /// only while something is open: a flat mandate is never marked, because nothing a flat
+    /// mandate holds can move.
+    #[arg(long, default_value_t = 30, env = "SOLFX_NOX_SECS")]
+    pub nox_secs: u64,
 
     /// Micro-lamports per compute unit. A liquidation competes for blockspace during exactly
     /// the congestion spike that caused it, so bidding zero means arriving after the move.
@@ -133,6 +142,8 @@ pub enum Service {
     /// Compares on-chain price accounts against Hermes and complains when they diverge.
     /// Read-only: it sends no transactions.
     Watchdog,
+    /// NOXFUNDS: marks mandates and evaluations, reconciles and winds down. See `nox_crank`.
+    Nox,
 }
 
 impl Config {
@@ -150,6 +161,10 @@ impl Config {
 
     pub fn crank_interval(&self) -> Duration {
         Duration::from_secs(self.crank_secs.max(5))
+    }
+
+    pub fn nox_interval(&self) -> Duration {
+        Duration::from_secs(self.nox_secs.max(5))
     }
 
     /// `processed` deliberately.
