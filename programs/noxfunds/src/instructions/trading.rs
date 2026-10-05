@@ -119,10 +119,10 @@ pub struct FundedOpenPosition<'info> {
 
 /// What a passing trade passed *by*. Emitted, so an investor can see a trader running at 99%
 /// of every limit rather than only that nothing failed.
-struct Margins {
-    notional: u64,
-    notional_used_bps: u64,
-    risk_used_bps: u64,
+pub(crate) struct Margins {
+    pub(crate) notional: u64,
+    pub(crate) notional_used_bps: u64,
+    pub(crate) risk_used_bps: u64,
 }
 
 /// Check every rule this trade can be judged against before it exists.
@@ -130,7 +130,7 @@ struct Margins {
 /// Ordered so the cheapest and most specific refusals come first: a trader who picked a
 /// forbidden market should read `MarketNotPermitted`, not a stop-distance complaint.
 #[allow(clippy::too_many_arguments)]
-fn check_rules(
+pub(crate) fn check_rules(
     mandate: &Mandate,
     market: &Market,
     price: &solfx_core::oracle::MarketPrice,
@@ -820,11 +820,12 @@ pub struct FundedPlaceTakeProfit<'info> {
     /// CHECK: `solfx-core` checks its seeds and that the position belongs to it.
     pub market: UncheckedAccount<'info>,
 
-    /// CHECK: `solfx-core` checks the position's seeds and that it belongs to `user_account`.
-    /// Read-only: `place_trigger_order` reads the position's size, direction and opening slot
-    /// and writes none of them. An unnecessary write lock would serialise this against a close
-    /// on the same position for no reason.
-    pub position: UncheckedAccount<'info>,
+    /// Deserialized for its opening slot, which the minimum-hold gate reads. `Account<Position>`
+    /// checks `solfx-core` owns it; `solfx-core` checks its seeds and that it belongs to
+    /// `user_account`. Read-only: `place_trigger_order` reads the position's size, direction and
+    /// opening slot and writes none of them. An unnecessary write lock would serialise this
+    /// against a close on the same position for no reason.
+    pub position: Box<Account<'info, solfx_core::state::Position>>,
 
     /// CHECK: initialized by `solfx-core` at `[TRIGGER_SEED, position, order_id]`, paid for by
     /// the mandate signer. An `order_id` already in use fails there as "account already in use",
@@ -850,6 +851,20 @@ pub fn funded_place_take_profit(
 ) -> Result<()> {
     // Not gated on the pause flag: a take-profit can only reduce exposure, and a pause exists to
     // stop new risk, not to stop a trader taking some off (internal review L-3).
+
+    // **Gated on the minimum hold.** A take-profit fires inside `solfx-core`, which never consults
+    // the mandate, so a target placed one tick from the price at open was a way to take a profit
+    // before `min_hold_slots` — the scalping the rule exists to stop. An initial stop gives no
+    // such exit, because it only ever releases a loss. Found 2026-10-03 by reading this against
+    // `execute_trigger_order`; every devnet mandate had `min_hold_slots = 0`, so none was affected.
+    let held = Clock::get()?
+        .slot
+        .saturating_sub(ctx.accounts.position.opened_at_slot);
+    require!(
+        held >= ctx.accounts.mandate.min_hold_slots,
+        NoxError::MinimumHoldNotMet
+    );
+
     let mandate_key = ctx.accounts.mandate.key();
     let bump = ctx.accounts.mandate.signer_bump;
     let seeds: &[&[&[u8]]] = &[&[MANDATE_SIGNER_SEED, mandate_key.as_ref(), &[bump]]];

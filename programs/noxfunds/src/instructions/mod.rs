@@ -1,17 +1,27 @@
 pub mod admin;
+pub mod eval_orders;
 pub mod evaluation;
+pub mod funded_orders;
+pub mod housekeeping;
 pub mod investor;
 pub mod keeper;
+pub mod margin;
 pub mod marketplace;
+pub mod partial_close;
 pub mod profile;
 pub mod settlement;
 pub mod trading;
 
 pub use admin::*;
+pub use eval_orders::*;
 pub use evaluation::*;
+pub use funded_orders::*;
+pub use housekeeping::*;
 pub use investor::*;
 pub use keeper::*;
+pub use margin::*;
 pub use marketplace::*;
+pub use partial_close::*;
 pub use profile::*;
 pub use settlement::*;
 pub use trading::*;

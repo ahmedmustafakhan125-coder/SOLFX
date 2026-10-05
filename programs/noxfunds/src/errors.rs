@@ -141,6 +141,39 @@ pub enum NoxError {
     StopProtectsOpenPosition,
     #[msg("Finish or walk away from your previous evaluation first")]
     PreviousEvaluationActive,
+    // --- appended 2026-10-03. Append only: inserting renumbers every variant after it. ------
+    #[msg("That trigger price is already met at the current price")]
+    TriggerAlreadyMet,
+    #[msg("A take-profit must sit on the profitable side")]
+    TakeProfitOnWrongSide,
+    #[msg("The oracle price has not reached this take-profit")]
+    TakeProfitNotTriggered,
+    #[msg("A stop may only move toward the price, never away from it")]
+    StopNotTighter,
+    #[msg("The oracle price has not reached this entry order's trigger")]
+    EntryNotTriggered,
+    #[msg("This entry order has expired")]
+    EntryOrderExpired,
+    #[msg("Too many entry orders are already resting")]
+    TooManyPendingOrders,
+    #[msg("Cancel your resting entry orders before claiming the stage")]
+    EntryOrdersPending,
+    #[msg("Only the trader may cancel a live, unexpired order")]
+    NotYourOrderToCancel,
+    #[msg("An expiry must be in the future, or zero for none")]
+    InvalidExpiry,
+    #[msg("An entry order's price bound must not let it fill worse than its kind allows")]
+    InvalidPriceLimit,
+    #[msg("That order is not this position's stop-loss")]
+    NotTheStopLoss,
+    #[msg("That entry order does not belong to this mandate")]
+    OrderNotOnMandate,
+    #[msg("Only a settled mandate's signer can be swept")]
+    MandateNotSettled,
+    #[msg("That key cannot be the default address")]
+    InvalidKey,
+    #[msg("Signer is not the proposed admin")]
+    NotThePendingAdmin,
 }
 
 /// Map `solfx-math`'s errors onto this program's. Total and explicit, so adding a variant

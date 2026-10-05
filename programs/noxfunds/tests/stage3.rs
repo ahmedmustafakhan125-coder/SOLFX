@@ -233,6 +233,8 @@ impl Eval {
                 virtual_position: vpos_pda(&evaluation, 0, nonce),
                 market: Env::market_pda(0),
                 price_update: price,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
                 system_program: anchor_lang::system_program::ID,
             }
             .to_account_metas(None),
@@ -270,6 +272,8 @@ impl Eval {
                 virtual_position: vpos_pda(&evaluation, 0, nonce),
                 market: Env::market_pda(0),
                 price_update: price,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
             }
             .to_account_metas(None),
             data: noxfunds::instruction::EvalClosePosition {}.data(),
@@ -293,6 +297,8 @@ impl Eval {
                 virtual_position: vpos_pda(&evaluation, 0, nonce),
                 market: Env::market_pda(0),
                 price_update: price,
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
             }
             .to_account_metas(None),
             data: noxfunds::instruction::EvalTriggerStop {}.data(),
@@ -344,6 +350,7 @@ impl Eval {
                 usdc_mint: self.env.usdc_mint,
                 trader_token: self.trader_token,
                 stake_vault: eval_vault_pda(&evaluation),
+                trader_profile: profile_pda(&self.trader.pubkey()),
                 token_program: spl_token::ID,
             }
             .to_account_metas(None),
@@ -860,10 +867,12 @@ fn every_evaluation_instruction_stays_within_its_budget() {
 const ABANDON_CEILING: u64 = 7_000; //      5,399
 const FORFEIT_CEILING: u64 = 16_500; //    12,730
 const OBSERVE_CEILING: u64 = 18_000; //    13,678 (one position)
-const CLAIM_CEILING: u64 = 18_500; //      13,990 (phase 1, no transfer)
+                                     // Re-measured 2026-10-03 after `claim_stage_pass` began taking the trader profile, to record a
+                                     // Phase 2 pass on it: one more seeded account to verify, deserialise and write back.
+const CLAIM_CEILING: u64 = 25_000; //      19,159 (phase 1, no transfer)
 const CLOSE_CEILING: u64 = 20_000; //      15,100
 const TRIGGER_CEILING: u64 = 20_000; //    15,415
-const REFUND_CEILING: u64 = 21_000; //     16,105 (phase 2, stake refunded)
+const REFUND_CEILING: u64 = 28_000; //     21,661 (phase 2, stake refunded, profile credited)
 const OPEN_CEILING: u64 = 39_000; //       20,949 + 18,000
 const START_CEILING: u64 = 61_000; //      24,705 + 36,000
 

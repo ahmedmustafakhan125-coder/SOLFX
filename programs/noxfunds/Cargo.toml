@@ -53,3 +53,5 @@ solana-transaction = "4"
 solana-message = { version = "3", features = ["bincode"] }
 solana-compute-budget-interface = "3"
 spl-token = { version = "9", features = ["no-entrypoint"] }
+# Property tests for the order predicates — the same version `solfx-math` already pins.
+proptest = "1.8"

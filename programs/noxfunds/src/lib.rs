@@ -372,4 +372,138 @@ pub mod noxfunds {
     pub fn abandon_evaluation(ctx: Context<AbandonEvaluation>) -> Result<()> {
         instructions::evaluation::abandon_evaluation(ctx)
     }
+
+    // --- evaluation orders --------------------------------------------------------------------
+
+    /// Set, move, or clear (`0`) a simulated take-profit.
+    pub fn eval_set_take_profit(ctx: Context<EvalSetTakeProfit>, trigger_price: i64) -> Result<()> {
+        instructions::eval_orders::eval_set_take_profit(ctx, trigger_price)
+    }
+
+    /// Fire a simulated take-profit the oracle has reached, after the minimum hold.
+    /// **Permissionless.**
+    pub fn eval_trigger_take_profit(ctx: Context<EvalTriggerTakeProfit>) -> Result<()> {
+        instructions::eval_orders::eval_trigger_take_profit(ctx)
+    }
+
+    /// Tighten a simulated stop, after the minimum hold.
+    pub fn eval_move_stop(ctx: Context<EvalMoveStop>, new_stop: i64) -> Result<()> {
+        instructions::eval_orders::eval_move_stop(ctx, new_stop)
+    }
+
+    /// Rest a limit or stop entry on an evaluation.
+    pub fn eval_place_entry_order(
+        ctx: Context<EvalPlaceEntryOrder>,
+        order_id: u8,
+        params: EntryOrderParams,
+    ) -> Result<()> {
+        instructions::eval_orders::eval_place_entry_order(ctx, order_id, params)
+    }
+
+    /// Fill an entry order the oracle has triggered, under every rule of an open.
+    /// **Permissionless.**
+    pub fn eval_fill_entry_order(ctx: Context<EvalFillEntryOrder>) -> Result<()> {
+        instructions::eval_orders::eval_fill_entry_order(ctx)
+    }
+
+    /// Cancel an entry order: the trader at any time, anyone once it can no longer fill.
+    pub fn eval_cancel_entry_order(ctx: Context<EvalCancelEntryOrder>) -> Result<()> {
+        instructions::eval_orders::eval_cancel_entry_order(ctx)
+    }
+
+    // --- funded orders ------------------------------------------------------------------------
+
+    /// Tighten a funded stop after the minimum hold: the new stop placed, then the old cancelled.
+    pub fn funded_move_stop(
+        ctx: Context<FundedMoveStop>,
+        new_order_id: u8,
+        new_stop: i64,
+    ) -> Result<()> {
+        instructions::funded_orders::funded_move_stop(ctx, new_order_id, new_stop)
+    }
+
+    /// Rest a limit or stop entry on a funded mandate.
+    pub fn funded_place_entry_order(
+        ctx: Context<FundedPlaceEntryOrder>,
+        order_id: u8,
+        params: MandateEntryParams,
+    ) -> Result<()> {
+        instructions::funded_orders::funded_place_entry_order(ctx, order_id, params)
+    }
+
+    /// Fill a funded entry order the oracle has triggered, under every rule of the mandate.
+    /// **Permissionless.**
+    pub fn funded_fill_entry_order(ctx: Context<FundedFillEntryOrder>) -> Result<()> {
+        instructions::funded_orders::funded_fill_entry_order(ctx)
+    }
+
+    /// Cancel a funded entry order: the trader at any time, anyone once it can no longer fill.
+    pub fn funded_cancel_entry_order(ctx: Context<FundedCancelEntryOrder>) -> Result<()> {
+        instructions::funded_orders::funded_cancel_entry_order(ctx)
+    }
+
+    /// Close part of a funded position. Its result moves the record's gross figures; the trade
+    /// is counted once, when it finally closes.
+    pub fn funded_reduce_position(
+        ctx: Context<FundedReducePosition>,
+        market_index: u16,
+        nonce: u8,
+        size_delta: u64,
+        price_limit: i64,
+    ) -> Result<()> {
+        instructions::partial_close::funded_reduce_position(
+            ctx,
+            market_index,
+            nonce,
+            size_delta,
+            price_limit,
+        )
+    }
+
+    /// Move free collateral into a funded position's margin. Lowers its risk; allowed while paused.
+    pub fn funded_add_margin(
+        ctx: Context<FundedAdjustMargin>,
+        market_index: u16,
+        nonce: u8,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::margin::funded_add_margin(ctx, market_index, nonce, amount)
+    }
+
+    /// Move margin out of a funded position, within `solfx-core`'s initial-margin rule.
+    pub fn funded_remove_margin(
+        ctx: Context<FundedAdjustMargin>,
+        market_index: u16,
+        nonce: u8,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::margin::funded_remove_margin(ctx, market_index, nonce, amount)
+    }
+
+    // --- housekeeping -------------------------------------------------------------------------
+
+    /// Return a settled mandate signer's leftover SOL to the trader. **Permissionless.**
+    pub fn sweep_mandate_signer(ctx: Context<SweepMandateSigner>) -> Result<()> {
+        instructions::housekeeping::sweep_mandate_signer(ctx)
+    }
+
+    /// Replace the guardian. Admin only.
+    pub fn set_guardian(ctx: Context<AdminConfig>, guardian: Pubkey) -> Result<()> {
+        instructions::housekeeping::set_guardian(ctx, guardian)
+    }
+
+    /// Replace the treasury. Admin only.
+    pub fn set_treasury(ctx: Context<AdminConfig>, treasury: Pubkey) -> Result<()> {
+        instructions::housekeeping::set_treasury(ctx, treasury)
+    }
+
+    /// Propose a new admin. Nothing changes until they accept.
+    pub fn propose_admin(ctx: Context<AdminConfig>, new_admin: Pubkey) -> Result<()> {
+        instructions::housekeeping::propose_admin(ctx, new_admin)
+    }
+
+    /// Accept a proposed admin handover, signed by the successor.
+    pub fn accept_admin(ctx: Context<AcceptAdmin>) -> Result<()> {
+        instructions::housekeeping::accept_admin(ctx)
+    }
 }

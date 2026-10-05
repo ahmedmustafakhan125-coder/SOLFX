@@ -28,10 +28,11 @@
 //!   6% drawdown rule ends an evaluation long before a liquidation price could be reached.
 //! - **Fees are the entry tier's.** A real account earns a volume discount; simulated volume
 //!   earns none, so every evaluation pays what a new account pays.
-//! - **Single-leg markets only.** The equity crank must be able to mark every open position or
-//!   the drawdown rule is blind to it, and it reads one price per position — the same limit the
-//!   funded mandate's crank has. Opening on a market that needs a second leg fails at
-//!   `load_validated_price`, before anything is recorded.
+//! - **Every market shape, since 2026-10-03.** A synthetic market (two legs) and one not quoted
+//!   in USD (a conversion leg) are priced by the same `load_validated_price` a real fill calls,
+//!   with the extra legs passed as optional accounts. The equity crank takes each position's
+//!   legs in the number its market's own configuration demands — so a position cannot be marked
+//!   with a leg missing, and none can be supplied that the market does not use.
 //!
 //! # No token moves in the simulation
 //!
@@ -56,7 +57,7 @@ use crate::constants::{
 use crate::errors::NoxError;
 use crate::events::{
     EvaluationEquityObserved, EvaluationFailed, EvaluationStarted, EvaluationTradeClosed,
-    EvaluationTradeOpened, StagePassed, StakeForfeited, StakeRefunded,
+    EvaluationTradeOpened, StagePassed, StakeForfeited, StakeRefunded, TraderVerified,
 };
 use crate::state::{
     EvalRule, Evaluation, EvaluationState, NoxConfig, TraderProfile, VirtualPosition,
@@ -64,7 +65,7 @@ use crate::state::{
 
 const SECS_PER_DAY: i64 = 86_400;
 
-fn utc_day(ts: i64) -> i64 {
+pub(crate) fn utc_day(ts: i64) -> i64 {
     ts.div_euclid(SECS_PER_DAY)
 }
 
@@ -108,6 +109,25 @@ fn judge(e: &mut Evaluation, key: Pubkey, equity: u64, now: i64) {
 }
 
 // --- pricing, through SolFX's own functions ----------------------------------------------
+
+/// The market's price from its own legs, through every gate a real fill applies. The optional
+/// legs are passed through exactly as `funded_open_position` passes them, and
+/// `load_validated_price` refuses a market given fewer legs than its configuration needs.
+pub(crate) fn load_legs(
+    market: &Market,
+    primary: &PriceUpdateV2,
+    secondary: &Option<Box<Account<'_, PriceUpdateV2>>>,
+    quote_conversion: &Option<Box<Account<'_, PriceUpdateV2>>>,
+    clock: &Clock,
+) -> Result<MarketPrice> {
+    load_validated_price(
+        market,
+        primary,
+        secondary.as_deref().map(|a| &**a),
+        quote_conversion.as_deref().map(|a| &**a),
+        clock,
+    )
+}
 
 /// What closing a position right now would realise, computed exactly as `close_position`
 /// computes it: the adverse-side execution price, PnL converted to USDC, the close fee at the
@@ -166,7 +186,7 @@ pub(crate) fn realise(
 }
 
 /// Fold a closed trade into the evaluation's record and balance.
-fn book_close(
+pub(crate) fn book_close(
     e: &mut Evaluation,
     key: Pubkey,
     pos: &VirtualPosition,
@@ -425,6 +445,11 @@ pub struct EvalOpenPosition<'info> {
     /// Pyth's price update. `load_validated_price` checks it is the market's own feed and
     /// applies every staleness and confidence gate a real fill applies.
     pub price_update: Box<Account<'info, PriceUpdateV2>>,
+    /// The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
+    /// refuses a synthetic market without it, and checks it is the market's own feed.
+    pub secondary_price_update: Option<Box<Account<'info, PriceUpdateV2>>>,
+    /// The conversion leg of a market not quoted in USD, checked the same way.
+    pub quote_conversion_price_update: Option<Box<Account<'info, PriceUpdateV2>>>,
 
     pub system_program: Program<'info, System>,
 }
@@ -439,10 +464,41 @@ pub fn eval_open_position(
 ) -> Result<()> {
     require!(!ctx.accounts.config.paused, NoxError::ProtocolPaused);
     let clock = Clock::get()?;
-    let now = clock.unix_timestamp;
+    precheck_open(&ctx.accounts.evaluation, &ctx.accounts.market, size_base)?;
+    let price = load_legs(
+        &ctx.accounts.market,
+        &ctx.accounts.price_update,
+        &ctx.accounts.secondary_price_update,
+        &ctx.accounts.quote_conversion_price_update,
+        &clock,
+    )?;
+    let e_key = ctx.accounts.evaluation.key();
+    let p_key = ctx.accounts.virtual_position.key();
+    open_virtual(
+        &mut ctx.accounts.evaluation,
+        e_key,
+        &mut ctx.accounts.virtual_position,
+        p_key,
+        &ctx.accounts.market,
+        &price,
+        Opening {
+            market_index,
+            nonce,
+            bump: ctx.bumps.virtual_position,
+            direction,
+            size_base,
+            stop_loss_price,
+            take_profit_price: 0,
+        },
+        clock.unix_timestamp,
+    )
+}
 
-    let market = &ctx.accounts.market;
-    let e = &ctx.accounts.evaluation;
+/// The refusals an open makes before it reads a price, in the order it has always made them.
+///
+/// Shared by a market open and an entry order's fill, so an order that triggers is refused for
+/// exactly the reasons a market order would be.
+pub(crate) fn precheck_open(e: &Evaluation, market: &Market, size_base: u64) -> Result<()> {
     require!(
         e.state == EvaluationState::Active,
         NoxError::EvaluationNotActive
@@ -457,24 +513,60 @@ pub fn eval_open_position(
         size_base >= market.min_position_size && size_base <= market.max_position_size,
         NoxError::PositionSizeOutOfBounds
     );
+    Ok(())
+}
 
-    let price = load_validated_price(market, &ctx.accounts.price_update, None, None, &clock)?;
+/// What a simulated position is opened with.
+pub(crate) struct Opening {
+    pub market_index: u16,
+    pub nonce: u8,
+    pub bump: u8,
+    pub direction: Direction,
+    pub size_base: u64,
+    pub stop_loss_price: i64,
+    /// Zero for none.
+    pub take_profit_price: i64,
+}
 
+/// Price, judge and book a simulated open. Everything after the oracle read.
+///
+/// One function for every way a simulated position comes into being — a market open and an
+/// entry order's fill — so the two cannot drift apart: the stop, the target, the fill, the fee,
+/// leverage, risk at the stop and both loss limits are checked by the same lines either way.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn open_virtual(
+    e: &mut Evaluation,
+    e_key: Pubkey,
+    p: &mut VirtualPosition,
+    p_key: Pubkey,
+    market: &Market,
+    price: &MarketPrice,
+    o: Opening,
+    now: i64,
+) -> Result<()> {
     // --- the stop: mandatory, and on the losing side of the market -------------------------
-    require!(stop_loss_price > 0, NoxError::StopLossRequired);
+    require!(o.stop_loss_price > 0, NoxError::StopLossRequired);
     let spot = price.spot.price;
-    let correct_side = match direction {
-        Direction::Long => stop_loss_price < spot,
-        Direction::Short => stop_loss_price > spot,
+    let correct_side = match o.direction {
+        Direction::Long => o.stop_loss_price < spot,
+        Direction::Short => o.stop_loss_price > spot,
     };
     require!(correct_side, NoxError::StopOnWrongSide);
+    // --- the target, if any: on the side that has not happened yet -------------------------
+    if o.take_profit_price != 0 {
+        require!(
+            o.take_profit_price > 0
+                && TriggerKind::TakeProfit.is_placeable(o.direction, o.take_profit_price, spot),
+            NoxError::TakeProfitOnWrongSide
+        );
+    }
 
     // --- the fill, exactly as `open_position` computes it ----------------------------------
-    let side = Side::resolve(direction.into(), TradeAction::Open);
-    let entry_price = execution_price_for(market, &price, size_base, side)?;
+    let side = Side::resolve(o.direction.into(), TradeAction::Open);
+    let entry_price = execution_price_for(market, price, o.size_base, side)?;
     let rate = price.quote_conversion_rate.unwrap_or(0);
     let notional = pnl::convert_cost_to_collateral(
-        pnl::notional_in_quote(size_base, entry_price).map_err(NoxError::from)?,
+        pnl::notional_in_quote(o.size_base, entry_price).map_err(NoxError::from)?,
         market.quote_conversion(),
         rate,
     )
@@ -505,27 +597,13 @@ pub fn eval_open_position(
 
     // Risk at the stop: `size × |spot − stop|` in USDC, as bps of the balance, rounded up — the
     // same measure the funded path uses, so an evaluation trains the rule a mandate enforces.
-    let distance = spot.abs_diff(stop_loss_price);
-    let risk = pnl::notional_in_collateral(
-        size_base,
-        i64::try_from(distance).map_err(|_| NoxError::MathOverflow)?,
-        market.quote_conversion(),
-        rate,
-    )
-    .map_err(NoxError::from)?;
-    let risk_used_bps = fixed::to_u64(
-        fixed::mul_div_ceil(u128::from(risk), u128::from(BPS), u128::from(balance))
-            .map_err(NoxError::from)?,
-    )
-    .map_err(NoxError::from)?;
+    let risk_used_bps = risk_bps(market, rate, o.size_base, spot, o.stop_loss_price, balance)?;
     require!(
         risk_used_bps <= u64::from(EVAL_MAX_RISK_BPS),
         NoxError::RiskPerTradeExceeded
     );
 
     // --- book it ---------------------------------------------------------------------------
-    let e_key = ctx.accounts.evaluation.key();
-    let e = &mut ctx.accounts.evaluation;
     roll_day(e, now, balance);
     require!(
         e.daily_loss_bps(balance) <= u64::from(EVAL_MAX_DAILY_LOSS_BPS),
@@ -542,35 +620,63 @@ pub fn eval_open_position(
     }
     e.open_positions = e.open_positions.saturating_add(1);
 
-    let cum_borrow_entry = ctx.accounts.market.cum_borrow_index;
-    let p = &mut ctx.accounts.virtual_position;
     p.evaluation = e_key;
-    p.market_index = market_index;
-    p.nonce = nonce;
-    p.direction = direction;
-    p.size_base = size_base;
+    p.market_index = o.market_index;
+    p.nonce = o.nonce;
+    p.direction = o.direction;
+    p.size_base = o.size_base;
     p.entry_price = entry_price;
     p.entry_notional = notional;
-    p.stop_price = stop_loss_price;
+    p.stop_price = o.stop_loss_price;
     p.open_fee = fee;
-    p.cum_borrow_entry = cum_borrow_entry;
+    p.cum_borrow_entry = market.cum_borrow_index;
     p.opened_at = now;
-    p.bump = ctx.bumps.virtual_position;
+    p.bump = o.bump;
+    p.take_profit_price = o.take_profit_price;
 
     emit!(EvaluationTradeOpened {
         evaluation: e_key,
-        position: p.key(),
-        market_index,
-        direction: direction as u8,
-        size_base,
+        position: p_key,
+        market_index: o.market_index,
+        direction: o.direction as u8,
+        size_base: o.size_base,
         entry_price,
         notional,
         fee,
-        stop_price: stop_loss_price,
+        stop_price: o.stop_loss_price,
         risk_used_bps,
         ts: now,
     });
     Ok(())
+}
+
+/// Risk at the stop as bps of `balance`: `size × |price − stop|` in USDC, rounded up twice —
+/// once by `notional_in_quote`, once here — because it is a limit the trade must stay under.
+pub(crate) fn risk_bps(
+    market: &Market,
+    rate: i64,
+    size_base: u64,
+    price: i64,
+    stop: i64,
+    balance: u64,
+) -> Result<u64> {
+    let distance = price.abs_diff(stop);
+    let risk = pnl::notional_in_collateral(
+        size_base,
+        i64::try_from(distance).map_err(|_| NoxError::MathOverflow)?,
+        market.quote_conversion(),
+        rate,
+    )
+    .map_err(NoxError::from)?;
+    Ok(fixed::to_u64(
+        fixed::mul_div_ceil(
+            u128::from(risk),
+            u128::from(BPS),
+            u128::from(balance.max(1)),
+        )
+        .map_err(NoxError::from)?,
+    )
+    .map_err(NoxError::from)?)
 }
 
 // --- close, voluntarily -------------------------------------------------------------------
@@ -609,6 +715,11 @@ pub struct EvalClosePosition<'info> {
     pub market: Box<Account<'info, Market>>,
 
     pub price_update: Box<Account<'info, PriceUpdateV2>>,
+    /// The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
+    /// refuses a synthetic market without it, and checks it is the market's own feed.
+    pub secondary_price_update: Option<Box<Account<'info, PriceUpdateV2>>>,
+    /// The conversion leg of a market not quoted in USD, checked the same way.
+    pub quote_conversion_price_update: Option<Box<Account<'info, PriceUpdateV2>>>,
 }
 
 /// Close a simulated position by choice. Subject to the ten-minute minimum hold.
@@ -628,11 +739,11 @@ pub fn eval_close_position(ctx: Context<EvalClosePosition>) -> Result<()> {
         NoxError::MinimumHoldNotMet
     );
 
-    let price = load_validated_price(
+    let price = load_legs(
         &ctx.accounts.market,
         &ctx.accounts.price_update,
-        None,
-        None,
+        &ctx.accounts.secondary_price_update,
+        &ctx.accounts.quote_conversion_price_update,
         &clock,
     )?;
     let r = realise(pos, &ctx.accounts.market, &price)?;
@@ -690,6 +801,11 @@ pub struct EvalTriggerStop<'info> {
     pub market: Box<Account<'info, Market>>,
 
     pub price_update: Box<Account<'info, PriceUpdateV2>>,
+    /// The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
+    /// refuses a synthetic market without it, and checks it is the market's own feed.
+    pub secondary_price_update: Option<Box<Account<'info, PriceUpdateV2>>>,
+    /// The conversion leg of a market not quoted in USD, checked the same way.
+    pub quote_conversion_price_update: Option<Box<Account<'info, PriceUpdateV2>>>,
 }
 
 /// Fire a simulated stop. **Permissionless**, and judged exactly as SolFX judges a real stop:
@@ -704,11 +820,11 @@ pub fn eval_trigger_stop(ctx: Context<EvalTriggerStop>) -> Result<()> {
         ctx.accounts.market.status.allows_close(),
         NoxError::MarketNotOpen
     );
-    let price = load_validated_price(
+    let price = load_legs(
         &ctx.accounts.market,
         &ctx.accounts.price_update,
-        None,
-        None,
+        &ctx.accounts.secondary_price_update,
+        &ctx.accounts.quote_conversion_price_update,
         &clock,
     )?;
     let pos = &ctx.accounts.virtual_position;
@@ -757,18 +873,36 @@ pub fn eval_observe_equity(ctx: Context<EvalObserveEquity>) -> Result<()> {
     let rem = ctx.remaining_accounts;
     let key = ctx.accounts.evaluation.key();
 
-    require!(rem.len().is_multiple_of(3), NoxError::IncompleteObservation);
     let mut seen = [Pubkey::default(); EVAL_MAX_OPEN as usize];
     let mut count: usize = 0;
     let mut equity = i128::from(ctx.accounts.evaluation.balance);
 
-    for triple in rem.chunks_exact(3) {
-        let [pos_info, market_info, price_info] = triple else {
-            return Err(NoxError::IncompleteObservation.into());
+    // One group per open position: (position, market, primary leg), then the secondary leg if
+    // the market is synthetic and the conversion leg if it is not quoted in USD — in the number
+    // the market's own configuration demands, read from the market, never from the caller.
+    let mut at: usize = 0;
+    while at < rem.len() {
+        let next = |i: usize| rem.get(i).ok_or(NoxError::IncompleteObservation);
+        let pos: Account<VirtualPosition> = Account::try_from(next(at)?)?;
+        let market: Account<Market> =
+            Account::try_from(next(at.checked_add(1).ok_or(NoxError::MathOverflow)?)?)?;
+        let primary: Account<PriceUpdateV2> =
+            Account::try_from(next(at.checked_add(2).ok_or(NoxError::MathOverflow)?)?)?;
+        at = at.checked_add(3).ok_or(NoxError::MathOverflow)?;
+        let secondary: Option<Account<PriceUpdateV2>> = if market.is_synthetic() {
+            let a = Account::try_from(next(at)?)?;
+            at = at.checked_add(1).ok_or(NoxError::MathOverflow)?;
+            Some(a)
+        } else {
+            None
         };
-        let pos: Account<VirtualPosition> = Account::try_from(pos_info)?;
-        let market: Account<Market> = Account::try_from(market_info)?;
-        let price_update: Account<PriceUpdateV2> = Account::try_from(price_info)?;
+        let conversion: Option<Account<PriceUpdateV2>> = if market.needs_quote_conversion() {
+            let a = Account::try_from(next(at)?)?;
+            at = at.checked_add(1).ok_or(NoxError::MathOverflow)?;
+            Some(a)
+        } else {
+            None
+        };
 
         require!(pos.evaluation == key, NoxError::PositionNotInEvaluation);
         require!(
@@ -783,7 +917,13 @@ pub fn eval_observe_equity(ctx: Context<EvalObserveEquity>) -> Result<()> {
         *slot = pos.key();
         count = count.checked_add(1).ok_or(NoxError::MathOverflow)?;
 
-        let price = load_validated_price(&market, &price_update, None, None, &clock)?;
+        let price = load_validated_price(
+            &market,
+            &primary,
+            secondary.as_deref(),
+            conversion.as_deref(),
+            &clock,
+        )?;
         let r = realise(&pos, &market, &price)?;
         equity = equity
             .checked_add(i128::from(r.net))
@@ -848,6 +988,16 @@ pub struct ClaimStagePass<'info> {
     )]
     pub stake_vault: Box<Account<'info, TokenAccount>>,
 
+    /// Where a Phase 2 pass is recorded. Bound to the signer by its seed, so a pass can only
+    /// ever be credited to the trader who earned it.
+    #[account(
+        mut,
+        seeds = [TRADER_SEED, trader.key().as_ref()],
+        bump = trader_profile.bump,
+        constraint = trader_profile.authority == trader.key() @ NoxError::ProfileMismatch,
+    )]
+    pub trader_profile: Box<Account<'info, TraderProfile>>,
+
     pub token_program: Program<'info, Token>,
 }
 
@@ -866,6 +1016,8 @@ pub fn claim_stage_pass(ctx: Context<ClaimStagePass>) -> Result<()> {
         NoxError::EvaluationNotActive
     );
     require!(e.open_positions == 0, NoxError::PositionsStillOpen);
+    // An order resting from this stage would otherwise fill into the next one.
+    require!(e.pending_orders == 0, NoxError::EntryOrdersPending);
 
     let equity = Evaluation::floor_equity(i128::from(e.balance));
     // Loss limits first: a stage cannot be passed by an account that is past either of them.
@@ -943,6 +1095,16 @@ pub fn claim_stage_pass(ctx: Context<ClaimStagePass>) -> Result<()> {
     }
 
     ctx.accounts.evaluation.state = EvaluationState::Passed;
+    let profile = &mut ctx.accounts.trader_profile;
+    profile.evaluations_passed = profile.evaluations_passed.saturating_add(1);
+    profile.last_passed_at = now;
+    emit!(TraderVerified {
+        trader,
+        evaluation: key,
+        account_size: ctx.accounts.evaluation.account_size,
+        evaluations_passed: profile.evaluations_passed,
+        ts: now,
+    });
     let amount = ctx.accounts.stake_vault.amount;
     move_stake(
         &ctx.accounts.evaluation,

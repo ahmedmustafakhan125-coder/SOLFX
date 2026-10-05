@@ -129,3 +129,12 @@ pub const EVAL_CONSISTENCY_BPS: u16 = 5_000;
 /// Open simulated positions at once. Bounded so the equity crank can always mark every one of
 /// them in a single transaction — an unmarkable position is one the drawdown rule cannot see.
 pub const EVAL_MAX_OPEN: u8 = 5;
+
+/// `EvalEntryOrder` — `["eorder", evaluation, order_id]`.
+pub const EVAL_ORDER_SEED: &[u8] = b"eorder";
+/// Entry orders resting on one evaluation at once. The same bound as open positions, so a full
+/// book of orders can always fill into a book of positions the crank can still mark.
+pub const EVAL_MAX_PENDING: u8 = 5;
+
+/// `MandateEntryOrder` — `["morder", mandate, order_id]`.
+pub const MANDATE_ORDER_SEED: &[u8] = b"morder";

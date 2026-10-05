@@ -418,3 +418,188 @@ pub struct StakeForfeited {
     pub amount: u64,
     pub ts: i64,
 }
+
+// --- evaluation orders (2026-10-03) ------------------------------------------------------------
+
+/// A take-profit set, moved, or cleared (`trigger_price == 0`) on a simulated position.
+#[event]
+pub struct EvalTakeProfitSet {
+    pub evaluation: Pubkey,
+    pub position: Pubkey,
+    pub trigger_price: i64,
+    pub ts: i64,
+}
+
+/// A simulated take-profit fired. The close itself is the `EvaluationTradeClosed` beside it,
+/// with `stop_out = false`: a target is a chosen exit and counts toward the hold rules.
+#[event]
+pub struct EvalTakeProfitFired {
+    pub evaluation: Pubkey,
+    pub position: Pubkey,
+    pub trigger_price: i64,
+    pub oracle_price: i64,
+    pub keeper: Pubkey,
+    pub ts: i64,
+}
+
+#[event]
+pub struct EvalStopMoved {
+    pub evaluation: Pubkey,
+    pub position: Pubkey,
+    pub old_stop: i64,
+    pub new_stop: i64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct EvalEntryOrderPlaced {
+    pub evaluation: Pubkey,
+    pub order: Pubkey,
+    pub order_id: u8,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub direction: u8,
+    /// 0 = limit, 1 = stop.
+    pub kind: u8,
+    pub trigger_price: i64,
+    pub size_base: u64,
+    pub stop_loss_price: i64,
+    pub take_profit_price: i64,
+    pub expires_at: i64,
+    pub ts: i64,
+}
+
+/// The fill itself is the `EvaluationTradeOpened` beside it; this names the order behind it.
+#[event]
+pub struct EvalEntryOrderFilled {
+    pub evaluation: Pubkey,
+    pub order: Pubkey,
+    pub position: Pubkey,
+    pub oracle_price: i64,
+    pub keeper: Pubkey,
+    pub ts: i64,
+}
+
+#[event]
+pub struct EvalEntryOrderCancelled {
+    pub evaluation: Pubkey,
+    pub order: Pubkey,
+    pub by: Pubkey,
+    /// Cancelled once it could no longer fill — expired, or the evaluation had ended.
+    pub expired: bool,
+    pub ts: i64,
+}
+
+/// Both phases passed. The verified mark, as the program states it.
+#[event]
+pub struct TraderVerified {
+    pub trader: Pubkey,
+    pub evaluation: Pubkey,
+    pub account_size: u64,
+    pub evaluations_passed: u32,
+    pub ts: i64,
+}
+
+// --- funded orders (2026-10-03) -----------------------------------------------------------------
+
+/// A funded stop replaced by a tighter one, in one instruction: the new one placed first.
+#[event]
+pub struct FundedStopMoved {
+    pub mandate: Pubkey,
+    pub position: Pubkey,
+    pub old_order_id: u8,
+    pub new_order_id: u8,
+    pub old_stop: i64,
+    pub new_stop: i64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct MandateEntryOrderPlaced {
+    pub mandate: Pubkey,
+    pub order: Pubkey,
+    pub order_id: u8,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub direction: u8,
+    /// 0 = limit, 1 = stop.
+    pub kind: u8,
+    pub trigger_price: i64,
+    pub price_limit: i64,
+    pub size_base: u64,
+    pub collateral: u64,
+    pub stop_loss_price: i64,
+    pub expires_at: i64,
+    pub ts: i64,
+}
+
+/// The open itself is the `FundedTradeOpened` beside it; this names the order behind it.
+#[event]
+pub struct MandateEntryOrderFilled {
+    pub mandate: Pubkey,
+    pub order: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub oracle_price: i64,
+    pub keeper: Pubkey,
+    pub ts: i64,
+}
+
+#[event]
+pub struct MandateEntryOrderCancelled {
+    pub mandate: Pubkey,
+    pub order: Pubkey,
+    pub by: Pubkey,
+    pub expired: bool,
+    pub ts: i64,
+}
+
+/// Part of a funded position closed by its trader. Not a `TradeRecorded`: the result moves the
+/// gross figures but the trade is counted once, when it finally closes.
+#[event]
+pub struct PartialCloseRecorded {
+    pub profile: Pubkey,
+    pub mandate: Pubkey,
+    pub trader: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    pub size_closed: u64,
+    pub realized_pnl: i64,
+    pub notional_released: u64,
+    pub gross_profit: u64,
+    pub gross_loss: u64,
+    pub ts: i64,
+}
+
+// --- housekeeping (2026-10-03) ------------------------------------------------------------------
+
+/// A settled mandate's leftover SOL returned to its trader.
+#[event]
+pub struct MandateSignerSwept {
+    pub mandate: Pubkey,
+    pub trader: Pubkey,
+    pub lamports: u64,
+    pub caller: Pubkey,
+    pub ts: i64,
+}
+
+/// A protocol key changed. `key`: 0 guardian, 1 treasury, 2 admin proposed, 3 admin accepted.
+#[event]
+pub struct ConfigKeyChanged {
+    pub key: u8,
+    pub old: Pubkey,
+    pub new: Pubkey,
+    pub ts: i64,
+}
+
+/// Margin moved between a funded position and the mandate's free collateral. Equity unchanged.
+#[event]
+pub struct FundedMarginMoved {
+    pub mandate: Pubkey,
+    pub market_index: u16,
+    pub nonce: u8,
+    /// True when margin went into the position, false when it came out.
+    pub added: bool,
+    pub amount: u64,
+    pub ts: i64,
+}

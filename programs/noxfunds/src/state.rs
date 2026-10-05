@@ -24,7 +24,10 @@ pub struct NoxConfig {
     pub protocol_fee_bps: u16,
     pub paused: bool,
     pub bump: u8,
-    pub _reserved: [u8; 64],
+    /// An admin proposed by the current one and not yet accepted. Default when none. Carved from
+    /// `_reserved` on 2026-10-03, so the existing config reads it as "no proposal".
+    pub pending_admin: Pubkey,
+    pub _reserved: [u8; 32],
 }
 
 /// How many positions one mandate can track at once. `MandateRules::validate` caps
@@ -241,6 +244,35 @@ impl Mandate {
         Ok(notional)
     }
 
+    /// Release the share of a position's booked notional that a partial close took off.
+    ///
+    /// Pro rata to the size closed, **rounded down**: a little more stays booked than strictly
+    /// left, which can only make the book limits stricter, never looser. The slot stays open.
+    /// Returns the notional released.
+    pub fn release_partial(
+        &mut self,
+        market_index: u16,
+        nonce: u8,
+        size_closed: u64,
+        size_before: u64,
+    ) -> Result<u64> {
+        let slot = self
+            .slots
+            .iter_mut()
+            .find(|s| s.open && s.market_index == market_index && s.nonce == nonce)
+            .ok_or(crate::errors::NoxError::PositionNotTracked)?;
+        let released = solfx_math::fixed::mul_div_floor(
+            u128::from(slot.notional),
+            u128::from(size_closed),
+            u128::from(size_before.max(1)),
+        )
+        .and_then(solfx_math::fixed::to_u64)
+        .map_err(crate::errors::NoxError::from)?;
+        slot.notional = slot.notional.saturating_sub(released);
+        self.open_notional = self.open_notional.saturating_sub(released);
+        Ok(released)
+    }
+
     /// Account for a position NOXFUNDS closed itself — voluntarily or by wind-down.
     ///
     /// `margin` and `open_fee` are what opening it debited, and so what `book` added to
@@ -422,7 +454,16 @@ pub struct TraderProfile {
     /// divides between them cannot be known. Published, because the record resolves that
     /// ambiguity against the trader and anyone reading it should be able to see how often.
     pub ambiguous_trades: u32,
-    pub _reserved: [u8; 56],
+
+    // --- carved from `_reserved` on 2026-10-03; `INIT_SPACE` is unchanged -------------------
+    /// Evaluations this trader has passed, both phases. Incremented by `claim_stage_pass` on
+    /// the Phase 2 pass and by nothing else, so it is the program's own statement that the
+    /// rules were cleared. Read as zero on every profile created before it existed, which is
+    /// correct: no evaluation had passed on devnet when it was added.
+    pub evaluations_passed: u32,
+    /// When the latest of those passes happened. Zero if never.
+    pub last_passed_at: i64,
+    pub _reserved: [u8; 44],
 }
 
 impl TraderProfile {
@@ -493,6 +534,29 @@ impl TraderProfile {
                 .checked_add(loss)
                 .ok_or(crate::errors::NoxError::MathOverflow)?;
             self.largest_loss = self.largest_loss.max(loss);
+        }
+        Ok(())
+    }
+
+    /// Fold a partial close into the record: its result counts toward gross profit or gross loss,
+    /// but **not** as a trade.
+    ///
+    /// Counting it would let a trader split one winner into ten closes and ten wins, inflating
+    /// the trade count and win rate tiers are decided on. The money is real, so it is in the
+    /// gross figures and the profit factor; the trade is counted once, when it finally closes.
+    pub fn record_partial(&mut self, realized_pnl: i64) -> Result<()> {
+        if realized_pnl > 0 {
+            let win =
+                u64::try_from(realized_pnl).map_err(|_| crate::errors::NoxError::MathOverflow)?;
+            self.gross_profit = self
+                .gross_profit
+                .checked_add(win)
+                .ok_or(crate::errors::NoxError::MathOverflow)?;
+        } else {
+            self.gross_loss = self
+                .gross_loss
+                .checked_add(realized_pnl.unsigned_abs())
+                .ok_or(crate::errors::NoxError::MathOverflow)?;
         }
         Ok(())
     }
@@ -581,7 +645,9 @@ mod tier_tests {
             bump: 0,
             untimed_trades: 0,
             ambiguous_trades: 0,
-            _reserved: [0; 56],
+            evaluations_passed: 0,
+            last_passed_at: 0,
+            _reserved: [0; 44],
         }
     }
 
@@ -689,6 +755,22 @@ mod tier_tests {
         p.gross_profit = 10;
         // 10/3 = 3.333…×; floored to 33_333 bps, never rounded up to the trader's benefit.
         assert_eq!(p.profit_factor_bps(), 33_333);
+    }
+
+    /// A partial close moves the money and not the counts — so ten partial wins are worth
+    /// exactly one trade's worth of record, whatever the profit.
+    #[test]
+    fn a_partial_close_moves_the_gross_figures_and_never_the_counts() {
+        let mut p = blank();
+        for _ in 0..10 {
+            p.record_partial(50).unwrap();
+        }
+        p.record_partial(-30).unwrap();
+        assert_eq!((p.trades, p.wins, p.losses), (0, 0, 0));
+        assert_eq!(p.gross_profit, 500);
+        assert_eq!(p.gross_loss, 30);
+        assert_eq!(p.largest_win, 0, "a partial is not a trade's result");
+        assert_eq!(p.win_rate_bps(), 0);
     }
 
     #[test]
@@ -1078,7 +1160,12 @@ pub struct Evaluation {
     pub started_at: i64,
     pub bump: u8,
     pub vault_bump: u8,
-    pub _reserved: [u8; 64],
+    /// Entry orders resting against this evaluation. Carved from `_reserved` on 2026-10-03, so
+    /// it reads as zero on evaluations created before it — correct, since none could exist.
+    /// `claim_stage_pass` refuses while any rest, so an order placed in Phase 1 cannot fill
+    /// into Phase 2.
+    pub pending_orders: u8,
+    pub _reserved: [u8; 63],
 }
 
 impl Evaluation {
@@ -1142,4 +1229,105 @@ pub struct VirtualPosition {
     pub cum_borrow_entry: u128,
     pub opened_at: i64,
     pub bump: u8,
+    /// The take-profit, or zero for none. Added 2026-10-03, which grew the account: safe only
+    /// because no `VirtualPosition` existed on devnet at the upgrade (each is closed when its
+    /// position closes). `_reserved` follows so the next field does not need the same care.
+    pub take_profit_price: i64,
+    pub _reserved: [u8; 32],
+}
+
+/// How an entry order is triggered, judged on the oracle price like every trigger in SolFX.
+///
+/// | | Long (a buy) | Short (a sell) |
+/// |---|---|---|
+/// | `Limit` | at or **below** the trigger | at or **above** the trigger |
+/// | `Stop` | at or **above** the trigger | at or **below** the trigger |
+///
+/// Written out rather than folded into a sign trick, for the reason `TriggerKind::is_met`
+/// gives: a limit wired backwards buys the breakout it was meant to fade and reads as bad luck.
+#[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EntryKind {
+    Limit,
+    Stop,
+}
+
+impl EntryKind {
+    /// Inclusive, as SolFX's triggers are: a limit at 80,000 fills at 80,000.
+    #[must_use]
+    pub fn is_met(self, direction: solfx_core::state::Direction, trigger: i64, price: i64) -> bool {
+        use solfx_core::state::Direction::{Long, Short};
+        match (self, direction) {
+            (Self::Limit, Long) | (Self::Stop, Short) => price <= trigger,
+            (Self::Limit, Short) | (Self::Stop, Long) => price >= trigger,
+        }
+    }
+}
+
+/// A resting entry on an evaluation, at `["eorder", evaluation, order_id]`.
+///
+/// # Why it is an account and not a keeper's memory
+///
+/// The same reason SolFX's stops are: an order held off-chain is a promise from whoever runs
+/// the bot. On chain, **anyone** can fill it once its condition is met, the condition is public,
+/// and every rule of an open is checked again at the fill by the same function a market order
+/// goes through — so an entry that would break a rule when it triggers simply does not fill.
+///
+/// # Who pays for what
+///
+/// The trader pays this account's rent. Whoever fills it pays the new position's rent and
+/// receives this account's, which is at least as large (`_reserved` pads it, and a test holds
+/// the inequality), so filling an order never costs the filler. The trader gets the position's
+/// rent back when it closes, as with any position.
+#[account]
+#[derive(InitSpace)]
+pub struct EvalEntryOrder {
+    pub evaluation: Pubkey,
+    pub trader: Pubkey,
+    pub order_id: u8,
+    pub market_index: u16,
+    /// The `VirtualPosition` nonce it opens at. Chosen at placement so the address is known.
+    pub nonce: u8,
+    pub direction: solfx_core::state::Direction,
+    pub kind: EntryKind,
+    pub trigger_price: i64,
+    pub size_base: u64,
+    pub stop_loss_price: i64,
+    /// Zero for none.
+    pub take_profit_price: i64,
+    /// Unix time after which it cannot fill and anyone may cancel it. Zero: until cancelled.
+    pub expires_at: i64,
+    pub created_at: i64,
+    pub bump: u8,
+    pub _reserved: [u8; 32],
+}
+
+/// A resting entry on a funded mandate, at `["morder", mandate, order_id]`.
+///
+/// Holds no money and reserves no capacity: it is a request, judged by every rule of the mandate
+/// at the moment it fills. The trader pays its rent and gets it back however it ends — filled,
+/// cancelled, or cleared by anyone once it can no longer fill.
+#[account]
+#[derive(InitSpace)]
+pub struct MandateEntryOrder {
+    pub mandate: Pubkey,
+    pub trader: Pubkey,
+    pub order_id: u8,
+    pub market_index: u16,
+    /// The SolFX position nonce it opens at.
+    pub nonce: u8,
+    /// The trigger order id its stop takes.
+    pub stop_order_id: u8,
+    pub direction: solfx_core::state::Direction,
+    pub kind: EntryKind,
+    pub trigger_price: i64,
+    /// Handed to `open_position` as its slippage bound.
+    pub price_limit: i64,
+    pub size_base: u64,
+    pub collateral: u64,
+    pub stop_loss_price: i64,
+    /// Zero: good until cancelled.
+    pub expires_at: i64,
+    pub created_at: i64,
+    pub bump: u8,
+    pub _reserved: [u8; 32],
 }
