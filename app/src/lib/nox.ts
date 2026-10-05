@@ -46,6 +46,7 @@ import type {
 } from "@solana/kit";
 
 import { READ_COMMITMENT } from "@/lib/commitment";
+import { costToUsd, type Conversion } from "@/lib/noxdesk";
 
 export type Row<T> = { readonly address: Address; readonly data: T };
 
@@ -60,6 +61,9 @@ export type Marketplace = {
   /** Evaluations, and the simulated positions inside them. */
   readonly evaluations: readonly Row<nox.Evaluation>[];
   readonly virtualPositions: readonly Row<nox.VirtualPosition>[];
+  /** Resting entry orders, on evaluations and on funded mandates. */
+  readonly evalOrders: readonly Row<nox.EvalEntryOrder>[];
+  readonly mandateOrders: readonly Row<nox.MandateEntryOrder>[];
   /** What each mandate's vault holds now, keyed by mandate address. */
   readonly vaults: ReadonlyMap<Address, bigint>;
   /** Cluster time when this was read, for judging offer expiry. */
@@ -110,6 +114,8 @@ export async function readMarketplace(
   const mandates: Row<nox.Mandate>[] = [];
   const evaluations: Row<nox.Evaluation>[] = [];
   const virtualPositions: Row<nox.VirtualPosition>[] = [];
+  const evalOrders: Row<nox.EvalEntryOrder>[] = [];
+  const mandateOrders: Row<nox.MandateEntryOrder>[] = [];
 
   for (const { pubkey, account } of accounts) {
     const bytes = base64ToBytes(account.data[0]);
@@ -155,6 +161,16 @@ export async function readMarketplace(
           address: pubkey,
           data: nox.getVirtualPositionDecoder().decode(bytes),
         });
+      } else if (hasPrefix(bytes, nox.EVAL_ENTRY_ORDER_DISCRIMINATOR)) {
+        evalOrders.push({
+          address: pubkey,
+          data: nox.getEvalEntryOrderDecoder().decode(bytes),
+        });
+      } else if (hasPrefix(bytes, nox.MANDATE_ENTRY_ORDER_DISCRIMINATOR)) {
+        mandateOrders.push({
+          address: pubkey,
+          data: nox.getMandateEntryOrderDecoder().decode(bytes),
+        });
       }
     } catch {
       // Skipped rather than fatal. See above.
@@ -171,6 +187,8 @@ export async function readMarketplace(
     mandates,
     evaluations,
     virtualPositions,
+    evalOrders,
+    mandateOrders,
     vaults: await readVaults(rpc, mandates),
     now,
     slot: BigInt(slot),
@@ -831,7 +849,8 @@ export async function evalOpenIx(args: {
   evaluation: Address;
   marketIndex: number;
   market: Address;
-  priceUpdate: Address;
+  /** Every leg the market is priced from; the program refuses a missing or a spare one. */
+  legs: SolfxLegs;
   nonce: number;
   direction: nox.DirectionArgs;
   sizeBase: bigint;
@@ -846,7 +865,9 @@ export async function evalOpenIx(args: {
       args.nonce
     ),
     market: args.market,
-    priceUpdate: args.priceUpdate,
+    priceUpdate: args.legs.priceUpdate,
+    secondaryPriceUpdate: args.legs.secondaryPriceUpdate,
+    quoteConversionPriceUpdate: args.legs.quoteConversionPriceUpdate,
     marketIndex: args.marketIndex,
     nonce: args.nonce,
     direction: args.direction,
@@ -860,32 +881,34 @@ export function evalCloseIx(args: {
   evaluation: Address;
   virtualPosition: Address;
   market: Address;
-  priceUpdate: Address;
+  legs: SolfxLegs;
 }): Instruction {
   return nox.getEvalClosePositionInstruction({
     trader: args.signer,
     evaluation: args.evaluation,
     virtualPosition: args.virtualPosition,
     market: args.market,
-    priceUpdate: args.priceUpdate,
+    priceUpdate: args.legs.priceUpdate,
+    secondaryPriceUpdate: args.legs.secondaryPriceUpdate,
+    quoteConversionPriceUpdate: args.legs.quoteConversionPriceUpdate,
   });
 }
 
 /**
  * Mark every open simulated position and judge the loss limits. **Permissionless.**
  *
- * One `(position, market, price)` triple per open position, in `remaining_accounts` — the same
- * shape the funded crank takes. Evaluations only allow single-leg markets, so a triple is always
- * the whole group here.
+ * One group per open position in `remaining_accounts`: the position, its market, and the
+ * market's legs in the order the program reads them — primary, then the secondary of a synthetic,
+ * then the conversion leg of a market not quoted in USD. The program checks each group's shape
+ * against the market's own configuration.
  */
 export function evalObserveIx(
   signer: TransactionSigner,
   evaluation: Address,
-  legs: readonly {
+  legs: readonly ({
     position: Address;
     market: Address;
-    priceUpdate: Address;
-  }[]
+  } & SolfxLegs)[]
 ): Instruction {
   const ix = nox.getEvalObserveEquityInstruction({
     observer: signer,
@@ -895,11 +918,17 @@ export function evalObserveIx(
     ...ix,
     accounts: [
       ...(ix.accounts ?? []),
-      ...legs.flatMap((l) => [
-        { address: l.position, role: 0 as const },
-        { address: l.market, role: 0 as const },
-        { address: l.priceUpdate, role: 0 as const },
-      ]),
+      ...legs.flatMap((l) =>
+        [
+          l.position,
+          l.market,
+          l.priceUpdate,
+          l.secondaryPriceUpdate,
+          l.quoteConversionPriceUpdate,
+        ]
+          .filter((a): a is Address => a !== undefined)
+          .map((address) => ({ address, role: 0 as const }))
+      ),
     ],
   };
 }
@@ -960,6 +989,8 @@ export function ruleRefusal(args: {
   stopPrice: bigint;
   /** Already-open positions on this mandate. */
   openPositions: number;
+  /** How the market's quote currency becomes USDC; omitted for a USD-quoted market. */
+  conversion?: Conversion;
 }): string | null {
   const m = args.mandate;
   if (m.state !== 0) return "this mandate is no longer active";
@@ -985,14 +1016,20 @@ export function ruleRefusal(args: {
   // Ceiling, because `notional_in_quote` ceils. Flooring here would call a trade one unit
   // over the ceiling compliant and promise a fill the program refuses — the exact failure a
   // mirror is supposed to prevent. Sizing floors; measuring against a limit ceils.
-  const notional = ceilDiv(args.sizeBase * args.price, NOTIONAL_DIVISOR);
+  const notional = costToUsd(
+    ceilDiv(args.sizeBase * args.price, NOTIONAL_DIVISOR),
+    args.conversion
+  );
   if (notional > m.maxTradeNotional)
     return `$${fmtUnits(notional)} exceeds the $${fmtUnits(m.maxTradeNotional)} per-trade ceiling`;
   if (m.openNotional + notional > m.maxTotalNotional)
     return `$${fmtUnits(m.openNotional + notional)} open would exceed the $${fmtUnits(m.maxTotalNotional)} book limit`;
 
   // Risk at the stop, the rule no centralized firm can enforce before the fill.
-  const risk = ceilDiv(args.sizeBase * distance, NOTIONAL_DIVISOR);
+  const risk = costToUsd(
+    ceilDiv(args.sizeBase * distance, NOTIONAL_DIVISOR),
+    args.conversion
+  );
   // The lower of the high-water mark and the last observed equity, as `check_rules` measures it
   // since review L-1 — the peak alone overstates what a mandate in drawdown has left.
   const basis =
@@ -1035,14 +1072,14 @@ export function fundedPriceLimit(
   return direction === nox.Direction.Long ? price + delta : price - delta;
 }
 
-type SolfxLegs = {
+export type SolfxLegs = {
   readonly priceUpdate: Address;
   readonly secondaryPriceUpdate?: Address;
   readonly quoteConversionPriceUpdate?: Address;
 };
 
 /** Every SolFX account a funded trade touches, derived once from the mandate. */
-async function solfxAccounts(
+export async function solfxAccounts(
   mandate: Address,
   marketIndex: number,
   nonce: number

@@ -1,20 +1,55 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
-import { Direction, nox, QuoteConversionKind } from "@solfx/client";
+import { Direction, nox, noxPdas, TriggerKind } from "@solfx/client";
 
+import { MarketPanel } from "@/components/MarketPanel";
 import { NoxShell } from "@/components/NoxShell";
+import { PriceChart } from "@/components/PriceChart";
 import { useMarketplace } from "@/hooks/useMarketplace";
 import { useRpc, useSolfx } from "@/hooks/useSolfx";
 import { useSend } from "@/hooks/useSend";
 import { useSigner } from "@/hooks/useSigner";
 import { fmtPrice, fmtUsd, priceplaces } from "@/lib/format";
 import type { LoadedMarket } from "@/lib/markets";
+import { loadPositions, type OpenPosition } from "@/lib/positions";
+import { readTriggers, type RestingTrigger } from "@/lib/triggers";
 import {
-  loadPositions,
-  repricePositions,
-  type OpenPosition,
-} from "@/lib/positions";
-import type { LivePrice } from "@/lib/prices";
+  defaultPriceLimit,
+  entryBracketRefusal,
+  EntryKind,
+  evalCancelEntryOrderIx,
+  evalMoveStopIx,
+  evalPlaceEntryOrderIx,
+  evalSetTakeProfitIx,
+  fundedCancelEntryOrderIx,
+  fundedMarginIx,
+  fundedMoveStopIx,
+  fundedPlaceEntryOrderIx,
+  fundedReduceIx,
+  holdLeftSecs,
+  isTighter,
+  nextFreeId,
+  sweepMandateSignerIx,
+} from "@/lib/noxorders";
+import {
+  bpsFromStop,
+  chartLevels,
+  type Conversion,
+  type DeskPosition,
+  estimateEvaluation,
+  estimatePnl,
+  type MarketQuote,
+  NO_CONVERSION,
+  quotesFor,
+  evalTicketRefusal,
+  isVerified,
+  parsePrice,
+  passedEvaluations,
+  riskAtStop,
+  riskBps,
+  sizeFor,
+  stopFromBps,
+} from "@/lib/noxdesk";
 import {
   acceptOfferIx,
   closeRequestIx,
@@ -51,7 +86,6 @@ import {
   FUNDED_TRIGGER_CU,
   type Row,
   nextSeq,
-  NOTIONAL_DIVISOR,
   ruleRefusal,
   nicknameOf,
   noteText,
@@ -142,16 +176,49 @@ function Empty({ children }: { children: React.ReactNode }) {
 function Who({ address, m }: { address: string; m?: Marketplace }) {
   const name = m ? nicknameOf(m, address as Address) : "";
   return (
-    <a
-      href={explorer(address)}
-      target="_blank"
-      rel="noreferrer"
-      className="hover:underline"
-      title={address}
+    <span className="inline-flex items-baseline gap-1">
+      <a
+        href={explorer(address)}
+        target="_blank"
+        rel="noreferrer"
+        className="hover:underline"
+        title={address}
+      >
+        {name ? <span className="font-bold text-ink">{name} </span> : null}
+        <span className="tnum text-brand-soft">{short(address)}</span>
+      </a>
+      {m && isVerified(m, address as Address) ? <VerifiedMark /> : null}
+    </span>
+  );
+}
+
+/**
+ * The tick beside a trader who has passed both phases of an evaluation.
+ *
+ * It is the program's statement, read from the `Evaluation` account `claim_stage_pass` set to
+ * `Passed`, which nothing else can write. It says the trader cleared the rules once, under
+ * simulation; it says nothing about how they have traded since, which is what the record is for.
+ */
+function VerifiedMark({ withText = false }: { withText?: boolean }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-long"
+      title="Passed Phase 1 and Phase 2 of a NOXFUNDS evaluation. Read from the evaluation account, which only the program can write."
     >
-      {name ? <span className="font-bold text-ink">{name} </span> : null}
-      <span className="tnum text-brand-soft">{short(address)}</span>
-    </a>
+      <span
+        aria-hidden
+        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-long text-[9px] font-bold text-bg"
+      >
+        ✓
+      </span>
+      {withText ? (
+        <span className="text-[10px] uppercase tracking-[0.12em]">
+          Verified
+        </span>
+      ) : (
+        <span className="sr-only">Verified</span>
+      )}
+    </span>
   );
 }
 
@@ -575,15 +642,18 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
   const own = mode === "investor";
   const me = s.me;
   const [sort, setSort] = useState<SortKey>("profit");
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [target, setTarget] = useState<Address | undefined>(undefined);
 
   const traders = useMemo(() => {
     const listings = new Map(m.traderListings.map((l) => [l.data.trader, l]));
-    const rows = [...m.profiles.values()].map((p) => ({
-      trader: p.data.authority,
-      stats: traderStats(p.data),
-      listing: listings.get(p.data.authority),
-    }));
+    const rows = [...m.profiles.values()]
+      .filter((p) => !verifiedOnly || isVerified(m, p.data.authority))
+      .map((p) => ({
+        trader: p.data.authority,
+        stats: traderStats(p.data),
+        listing: listings.get(p.data.authority),
+      }));
     // Nulls last in every ordering: "not computable" is not the same as "worst".
     const key = (r: (typeof rows)[number]): bigint | null => {
       switch (sort) {
@@ -606,7 +676,7 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
       if (kb === null) return -1;
       return kb > ka ? 1 : kb < ka ? -1 : 0;
     });
-  }, [m, sort]);
+  }, [m, sort, verifiedOnly]);
 
   const mine = m.offers.filter((o) => o.data.investor === me);
   const inbox = m.requests.filter((r) => r.data.investor === me);
@@ -630,8 +700,27 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
           count={traders.length}
           hint="Records are the program's, not the trader's, and nobody can edit them"
         >
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] text-ink-dim">
+            <label className="inline-flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={verifiedOnly}
+                onChange={(e) => setVerifiedOnly(e.target.checked)}
+              />
+              Verified only
+            </label>
+            <span>
+              <VerifiedMark /> passed both phases of an evaluation. It says the
+              rules were cleared once, in simulation; the record says how they
+              have traded since.
+            </span>
+          </div>
           {traders.length === 0 ? (
-            <Empty>No trader has a profile on this cluster yet.</Empty>
+            <Empty>
+              {verifiedOnly
+                ? "No trader on this cluster has passed an evaluation yet."
+                : "No trader has a profile on this cluster yet."}
+            </Empty>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-sm">
@@ -675,6 +764,11 @@ function InvestorView({ m, s, signer, act, busy, mode }: ViewProps) {
                       </td>
                       <td className="py-3 text-ink-muted">
                         {TIER_NAME[r.stats.tier]}
+                        {isVerified(m, r.trader) ? (
+                          <div className="mt-1">
+                            <VerifiedMark withText />
+                          </div>
+                        ) : null}
                       </td>
                       <td className="py-3 text-right">{r.stats.trades}</td>
                       <td className="py-3 text-right">
@@ -994,6 +1088,31 @@ function MandatesPanel({
                   act={act}
                   busy={busy}
                 />
+                {data.state === 3 ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <Btn
+                      kind="line"
+                      disabled={busy || !me}
+                      onClick={() =>
+                        void act(async (signer) => [
+                          await sweepMandateSignerIx({
+                            signer,
+                            mandate: address,
+                            trader: data.trader,
+                          }),
+                        ])
+                      }
+                    >
+                      Return the mandate&apos;s leftover SOL
+                    </Btn>
+                    <span className="text-[11px] text-ink-dim">
+                      The mandate&apos;s own signer paid rent for its stops and
+                      its SolFX account. What is left goes to the trader, who
+                      funded it, and to nobody else. Anyone may send this, and
+                      the keeper does it on its own.
+                    </span>
+                  </div>
+                ) : null}
               </li>
             );
           })}
@@ -1118,8 +1237,9 @@ function EvaluationPanel({
   me,
   hasProfile,
   markets,
-  prices,
-  priceAccounts,
+  quotes,
+  marketIndex,
+  onMarket,
   act,
   busy,
 }: {
@@ -1128,47 +1248,74 @@ function EvaluationPanel({
   /** `start_evaluation` takes the trader profile account; there is no evaluation without one. */
   hasProfile: boolean;
   markets: readonly LoadedMarket[];
-  /** Keyed by feed id, as `useSolfx` keys it — not by symbol. */
-  prices: Record<string, LivePrice | undefined>;
-  priceAccounts: Record<string, Address | undefined>;
+  /** Each market's price, conversion and price accounts, by market index. */
+  quotes: Record<number, MarketQuote | undefined>;
+  /** The desk's market, shared with the chart and the funded ticket. */
+  marketIndex: number | null;
+  onMarket: (index: number) => void;
   act: Act;
   busy: boolean;
 }) {
   const [size, setSize] = useState("10000");
-  const [marketIndex, setMarketIndex] = useState<number | null>(null);
+  const [direction, setDirection] = useState<nox.DirectionArgs>(
+    nox.Direction.Long
+  );
   const [notional, setNotional] = useState("1000");
+  const [stopMode, setStopMode] = useState<"bps" | "price">("bps");
   const [stopBps, setStopBps] = useState("100");
+  const [stopPriceText, setStopPriceText] = useState("");
+  // Market, or a resting entry the keeper fills when the oracle reaches it.
+  const [orderType, setOrderType] = useState<"market" | "limit" | "stop">(
+    "market"
+  );
+  const [triggerText, setTriggerText] = useState("");
+  const [tpText, setTpText] = useState("");
+  const [expiryHours, setExpiryHours] = useState("24");
 
   const mine = m.evaluations.filter((e) => e.data.trader === me);
   const live = mine.find((e) => e.data.state === 0) ?? mine[0];
   const usdcMint = m.config?.usdcMint;
 
-  // `eval_open_position` takes one price account and calls `load_validated_price(.., None, None)`,
-  // so a market needing a second leg — a synthetic like XAU/EUR, or a non-USD quote like EUR/JPY —
-  // is refused with `MissingSecondaryPriceUpdate` before anything else is checked. Offering one in
-  // the list would be offering a trade the program cannot take.
-  const tradeable = markets.filter(
-    (x) =>
-      x.tradeable &&
-      x.data.priceSource.__kind === "Direct" &&
-      x.data.quoteConversionKind === QuoteConversionKind.None
-  );
+  // Every shape of market: the program prices a synthetic from both its legs and converts a
+  // market not quoted in USD, given the legs — which `quotes` carries for each market.
+  const tradeable = markets.filter((x) => x.tradeable);
   const chosen = tradeable.find((x) => x.index === marketIndex) ?? tradeable[0];
-  const priceAccount = chosen ? priceAccounts[chosen.feedIdHex] : undefined;
-  const price = chosen ? prices[chosen.feedIdHex] : undefined;
+  const price = chosen ? quotes[chosen.index] : undefined;
+  const conversion = price?.conversion ?? NO_CONVERSION;
 
   const open = live
     ? m.virtualPositions.filter((v) => v.data.evaluation === live.address)
     : [];
+
+  const [priceByIndex, conversionByIndex] = useMemo(() => {
+    const px: Record<number, bigint | undefined> = {};
+    const conv: Record<number, Conversion | undefined> = {};
+    for (const x of markets) {
+      px[x.index] = quotes[x.index]?.price;
+      conv[x.index] = quotes[x.index]?.conversion;
+    }
+    return [px, conv] as const;
+  }, [markets, quotes]);
 
   // The position PDA is seeded `[evaluation, market_index, nonce]`, so nonces are per market and
   // `open.length` is not one: hold BTC at 0 and 1, close 0, and the next open would collide at 1.
   // Closing frees the account (`close = trader`), so the lowest unused nonce on this market is
   // always right.
   const usedNonces = chosen
-    ? open
-        .filter((v) => v.data.marketIndex === chosen.index)
-        .map((v) => v.data.nonce)
+    ? [
+        ...open
+          .filter((v) => v.data.marketIndex === chosen.index)
+          .map((v) => v.data.nonce),
+        // A resting order has its nonce reserved; a market open landing there would make the
+        // order unfillable.
+        ...m.evalOrders
+          .filter(
+            (o) =>
+              o.data.evaluation === live?.address &&
+              o.data.marketIndex === chosen.index
+          )
+          .map((o) => o.data.nonce),
+      ]
     : [];
   let nonce = 0;
   while (usedNonces.includes(nonce)) nonce += 1;
@@ -1200,6 +1347,9 @@ function EvaluationPanel({
         {live ? (
           <p className="mb-4 text-xs text-ink-dim">
             Your last evaluation ended: {EVAL_STATE_NAME[live.data.state]}.
+            {live.data.state === 1
+              ? " You carry the verified mark in the marketplace."
+              : ""}{" "}
             Starting another opens a fresh record at sequence {seq}.
           </p>
         ) : null}
@@ -1253,37 +1403,102 @@ function EvaluationPanel({
 
   // --- an evaluation in progress --------------------------------------------------------------
   const p = evalProgress(live.data);
+  const estimate = estimateEvaluation(
+    live.data,
+    open,
+    priceByIndex,
+    conversionByIndex
+  );
 
   // Sizing is integer the whole way, in the program's own units: notional at QUOTE_PRECISION
   // 1e6, price at PRICE_PRECISION 1e9, size at BASE_PRECISION 1e9, related by
   // `notional = size x price / NOTIONAL_DIVISOR`. A float here would round somewhere the
   // program does not, and the stop would not be the number shown.
-  const px = price?.price ?? 0n;
+  const spotPx = price?.price ?? 0n;
+  const resting = orderType !== "market";
+  const trigger = resting ? (parsePrice(triggerText) ?? 0n) : 0n;
+  // A market order is sized and judged at the oracle; a resting one at its trigger, which is
+  // where the program measures it at placement. Either way the fill is judged again.
+  const px = resting ? trigger : spotPx;
+  const long = direction === nox.Direction.Long;
   const notionalQuote = parseUsdc(notional) ?? 0n;
-  const bps = Number(stopBps);
-  const stopOk = Number.isInteger(bps) && bps > 0 && bps < 10_000;
-  const sizeBase = px > 0n ? (notionalQuote * NOTIONAL_DIVISOR) / px : 0n;
-  // Below entry for a long, so the stop is the losing side. Floor: a lower stop risks
-  // marginally more, which is the side the risk check reads, so it cannot be gamed by rounding.
-  const stop = stopOk ? (px * BigInt(10_000 - bps)) / 10_000n : 0n;
+  const sizeBase = sizeFor(notionalQuote, px, conversion);
+  const stop =
+    stopMode === "bps"
+      ? stopFromBps(direction, px, Number(stopBps))
+      : (parsePrice(stopPriceText) ?? 0n);
+  const takeProfit = tpText.trim() === "" ? 0n : (parsePrice(tpText) ?? -1n);
+  const balance = live.data.balance > 0n ? live.data.balance : 0n;
+  const risk = riskAtStop(sizeBase, px, stop, conversion);
+  const riskUsed = riskBps(risk, balance);
+  const pending = m.evalOrders.filter(
+    (o) => o.data.evaluation === live.address
+  );
+  const ticketRefusal = evalTicketRefusal({
+    direction,
+    price: px,
+    stale: !resting && price?.stale === true,
+    sizeBase,
+    notional: notionalQuote,
+    stop,
+    balance,
+    maxLeverage: chosen?.maxLeverage ?? 0,
+    openPositions: resting ? pending.length : open.length,
+    maxOpen: EVAL.maxOpen,
+    maxRiskBps: EVAL.maxRiskBps,
+    conversion,
+  });
+  const refusal =
+    takeProfit < 0n
+      ? "the target is not a price"
+      : resting
+        ? (entryBracketRefusal({
+            direction,
+            trigger,
+            stop,
+            takeProfit,
+            sizeBase,
+          }) ?? ticketRefusal)
+        : takeProfit !== 0n &&
+            (long ? takeProfit <= spotPx : takeProfit >= spotPx)
+          ? `the target must be ${long ? "above" : "below"} the price`
+          : ticketRefusal;
+  const expiryN = Number(expiryHours);
+  const expiresAt =
+    Number.isInteger(expiryN) && expiryN > 0
+      ? m.now + BigInt(expiryN) * 3_600n
+      : 0n;
+  // The position the order will open must not land on an address in use: neither an open
+  // position nor another resting order on this market.
+  const takenNonces = chosen
+    ? [
+        ...open
+          .filter((v) => v.data.marketIndex === chosen.index)
+          .map((v) => v.data.nonce),
+        ...pending
+          .filter((o) => o.data.marketIndex === chosen.index)
+          .map((o) => o.data.nonce),
+      ]
+    : [];
+  const restingNonce = nextFreeId(takenNonces) ?? 0;
+  const orderId = nextFreeId(pending.map((o) => o.data.orderId));
+  const places = priceplaces(chosen?.symbol ?? "");
+
   // Every open position, with its market and oracle account. The program marks all of them or
   // none: a missing leg is `IncompleteObservation`, so a short list is not sent at all.
   const legs = open.flatMap((v) => {
     const mk = markets.find((x) => x.index === v.data.marketIndex);
-    const pa = mk ? priceAccounts[mk.feedIdHex] : undefined;
-    return mk && pa
-      ? [{ position: v.address, market: mk.address, priceUpdate: pa }]
+    const q = mk ? quotes[mk.index] : undefined;
+    return mk && q
+      ? [{ position: v.address, market: mk.address, ...q.legs }]
       : [];
   });
 
   const canOpen =
     !busy &&
-    sizeBase > 0n &&
-    stop > 0n &&
+    !refusal &&
     !!chosen &&
-    !!priceAccount &&
-    price?.stale === false &&
-    open.length < EVAL.maxOpen;
+    (resting ? orderId !== undefined : !!price);
 
   return (
     <Panel
@@ -1292,6 +1507,16 @@ function EvaluationPanel({
     >
       <div className="grid gap-px border border-line bg-line sm:grid-cols-4">
         <Stat label="Balance" value={`$${fmtUsd(p.equity, 2)}`} />
+        <Stat
+          label="Equity, at the oracle"
+          value={
+            estimate
+              ? `$${fmtUsd(estimate.equity, 2)}`
+              : open.length > 0
+                ? "waiting for prices"
+                : `$${fmtUsd(p.equity, 2)}`
+          }
+        />
         <Stat label="Target" value={`$${fmtUsd(p.targetEquity, 2)}`} />
         <Stat
           label="Profit"
@@ -1307,13 +1532,15 @@ function EvaluationPanel({
         />
         <Stat label="Trades" value={`${p.trades} of ${EVAL.minTrades}`} />
         <Stat label="Trading days" value={`${p.days} of ${EVAL.minDays}`} />
-        <Stat label="Open" value={`${open.length} of ${EVAL.maxOpen}`} />
       </div>
 
       <p className="mt-3 text-xs text-ink-dim">
         {p.blocker
           ? `Still needed: ${p.blocker}.`
-          : "Every requirement met. Claim the stage."}
+          : "Every requirement met. Claim the stage."}{" "}
+        Balance is what the program has booked. Equity marks open positions to
+        the oracle, before the closing spread and fee, so a close realises a
+        little less.
       </p>
 
       {/* --- the ticket ------------------------------------------------------------------- */}
@@ -1323,7 +1550,7 @@ function EvaluationPanel({
             Market
             <select
               value={chosen?.index ?? ""}
-              onChange={(e) => setMarketIndex(Number(e.target.value))}
+              onChange={(e) => onMarket(Number(e.target.value))}
               className="mt-1 block border border-line bg-surface px-3 py-2 text-sm text-ink"
             >
               {tradeable.map((x) => (
@@ -1333,89 +1560,269 @@ function EvaluationPanel({
               ))}
             </select>
           </label>
+          <OrderTypePicker value={orderType} onChange={setOrderType} />
+          <div className="flex gap-1.5">
+            <Btn
+              kind={long ? "solid" : "line"}
+              onClick={() => setDirection(nox.Direction.Long)}
+            >
+              Long
+            </Btn>
+            <Btn
+              kind={long ? "line" : "solid"}
+              onClick={() => setDirection(nox.Direction.Short)}
+            >
+              Short
+            </Btn>
+          </div>
+          {resting ? (
+            <Input
+              label={
+                orderType === "limit"
+                  ? `Limit, ${long ? "buy at or below" : "sell at or above"}`
+                  : `Stop, ${long ? "buy at or above" : "sell at or below"}`
+              }
+              value={triggerText}
+              onChange={setTriggerText}
+              placeholder={spotPx > 0n ? fmtPrice(spotPx, places) : ""}
+            />
+          ) : null}
           <Input
             label="Notional"
             value={notional}
             onChange={setNotional}
             suffix="USDC"
           />
+          <div className="flex items-end gap-1">
+            {stopMode === "bps" ? (
+              <Input
+                label={`Stop, ${long ? "below" : "above"} the ${resting ? "trigger" : "price"}`}
+                value={stopBps}
+                onChange={setStopBps}
+                suffix="bps"
+              />
+            ) : (
+              <Input
+                label="Stop price"
+                value={stopPriceText}
+                onChange={setStopPriceText}
+                placeholder={
+                  px > 0n
+                    ? fmtPrice(stopFromBps(direction, px, 100), places)
+                    : ""
+                }
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                // Carry the current stop across, so switching modes never moves it.
+                if (stopMode === "bps" && stop > 0n)
+                  setStopPriceText(fmtPrice(stop, 9).replace(/,/g, ""));
+                if (stopMode === "price" && stop > 0n && px > 0n)
+                  setStopBps(String(bpsFromStop(px, stop)));
+                setStopMode(stopMode === "bps" ? "price" : "bps");
+              }}
+              className="mb-2 text-[10px] uppercase tracking-[0.12em] text-brand hover:underline"
+            >
+              {stopMode === "bps" ? "as a price" : "as a distance"}
+            </button>
+          </div>
           <Input
-            label="Stop, below entry"
-            value={stopBps}
-            onChange={setStopBps}
-            suffix="bps"
+            label="Target, optional"
+            value={tpText}
+            onChange={setTpText}
+            placeholder="none"
           />
+          {resting ? (
+            <Input
+              label="Expires in"
+              value={expiryHours}
+              onChange={setExpiryHours}
+              suffix="h, 0 never"
+            />
+          ) : null}
           <Btn
             disabled={!canOpen}
             onClick={() =>
-              void act(async (signer) => [
-                await evalOpenIx({
-                  signer,
-                  evaluation: live.address,
-                  marketIndex: chosen!.index,
-                  market: chosen!.address,
-                  priceUpdate: priceAccount!,
-                  nonce,
-                  direction: nox.Direction.Long,
-                  sizeBase,
-                  stopLossPrice: stop,
-                }),
-              ])
+              void act(async (signer) => {
+                if (resting) {
+                  return [
+                    await evalPlaceEntryOrderIx({
+                      signer,
+                      evaluation: live.address,
+                      orderId: orderId!,
+                      market: chosen!.address,
+                      marketIndex: chosen!.index,
+                      nonce: restingNonce,
+                      direction,
+                      kind:
+                        orderType === "limit"
+                          ? EntryKind.Limit
+                          : EntryKind.Stop,
+                      triggerPrice: trigger,
+                      sizeBase,
+                      stopLossPrice: stop,
+                      takeProfitPrice: takeProfit,
+                      expiresAt,
+                    }),
+                  ];
+                }
+                const virtualPosition = await noxPdas.findVirtualPosition(
+                  live.address,
+                  chosen!.index,
+                  nonce
+                );
+                const ixs = [
+                  await evalOpenIx({
+                    signer,
+                    evaluation: live.address,
+                    marketIndex: chosen!.index,
+                    market: chosen!.address,
+                    legs: price!.legs,
+                    nonce,
+                    direction,
+                    sizeBase,
+                    stopLossPrice: stop,
+                  }),
+                ];
+                // The target rides in the same transaction, after the open that creates the
+                // position it attaches to.
+                if (takeProfit > 0n)
+                  ixs.push(
+                    evalSetTakeProfitIx({
+                      signer,
+                      evaluation: live.address,
+                      virtualPosition,
+                      market: chosen!.address,
+                      legs: price!.legs,
+                      triggerPrice: takeProfit,
+                    })
+                  );
+                return ixs;
+              })
             }
           >
-            Open a simulated long
+            {resting
+              ? `Rest a ${orderType} ${long ? "buy" : "sell"}`
+              : `Open a simulated ${long ? "long" : "short"}`}
           </Btn>
         </div>
         <p className="mt-2 text-[11px] text-ink-dim">
-          {px > 0n && chosen
-            ? `${chosen.symbol} at ${fmtPrice(px, priceplaces(chosen.symbol))}${price?.stale ? `, stale by ${price.ageSeconds}s and the program would refuse this` : ""}. The fill is priced by SolFX's own function, so it crosses the spread exactly as a real one would. Nothing is filled on the venue.`
-            : "Waiting for a price."}{" "}
-          A stop is mandatory, and risk at it may not exceed{" "}
-          {EVAL.maxRiskBps / 100}% of the balance.
+          {px > 0n && chosen ? (
+            <>
+              {chosen.symbol} at {fmtPrice(px, places)}
+              {price?.stale ? (
+                <span className="text-short">
+                  , stale by {price.ageSeconds}s
+                </span>
+              ) : null}
+              .{" "}
+              {stop > 0n ? (
+                <>
+                  Stop {fmtPrice(stop, places)} ({bpsFromStop(px, stop)} bps
+                  away) risks ${fmtUsd(risk, 2)}
+                  {riskUsed !== null
+                    ? `, ${Number(riskUsed) / 100}% of the balance`
+                    : ""}
+                  .{" "}
+                </>
+              ) : null}
+              The fill is priced by SolFX&apos;s own function, so it crosses the
+              spread exactly as a real one would.
+            </>
+          ) : (
+            "Waiting for a price."
+          )}
+        </p>
+        <p
+          className={`mt-1 text-[11px] ${refusal ? "text-short" : "text-long"}`}
+        >
+          {refusal
+            ? `The program would refuse this: ${refusal}.`
+            : resting
+              ? "A real on-chain order. A keeper fills it when the oracle reaches the trigger, and the program judges every rule again at that moment; a limit never fills worse than its price."
+              : `Within every rule of Phase ${p.stage}.`}
         </p>
       </div>
+
+      {/* --- resting entry orders ------------------------------------------------------------ */}
+      {pending.length > 0 ? (
+        <div className="mt-4">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+            Resting · {pending.length} of {EVAL.maxOpen}
+          </div>
+          <ul className="mt-1 divide-y divide-line-soft">
+            {pending.map(({ address, data }) => {
+              const mk = markets.find((x) => x.index === data.marketIndex);
+              const pl = priceplaces(mk?.symbol ?? "");
+              const olong = data.direction === nox.Direction.Long;
+              const isLimit = data.kind === EntryKind.Limit;
+              return (
+                <li
+                  key={address}
+                  className="flex flex-wrap items-center gap-3 py-2 text-sm"
+                >
+                  <span className="font-bold">
+                    {mk?.symbol ?? `#${data.marketIndex}`}
+                  </span>
+                  <span
+                    className={`text-[10px] uppercase tracking-[0.14em] ${olong ? "text-long" : "text-short"}`}
+                  >
+                    {isLimit ? "Limit" : "Stop"} {olong ? "buy" : "sell"}
+                  </span>
+                  <span className="tnum text-xs text-ink-muted">
+                    at {fmtPrice(data.triggerPrice, pl)} · stop{" "}
+                    {fmtPrice(data.stopLossPrice, pl)}
+                    {data.takeProfitPrice > 0n
+                      ? ` · target ${fmtPrice(data.takeProfitPrice, pl)}`
+                      : ""}
+                    {data.expiresAt > 0n
+                      ? ` · expires ${new Date(Number(data.expiresAt) * 1000).toUTCString().slice(5, 22)} UTC`
+                      : " · until cancelled"}
+                  </span>
+                  <span className="ml-auto">
+                    <Btn
+                      kind="line"
+                      disabled={busy}
+                      onClick={() =>
+                        void act((signer) => [
+                          evalCancelEntryOrderIx({
+                            signer,
+                            trader: live.data.trader,
+                            evaluation: live.address,
+                            entryOrder: address,
+                          }),
+                        ])
+                      }
+                    >
+                      Cancel · rent back
+                    </Btn>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       {/* --- open simulated positions ------------------------------------------------------ */}
       {open.length > 0 ? (
         <ul className="mt-4 divide-y divide-line-soft">
-          {open.map(({ address, data }) => {
-            const mk = markets.find((x) => x.index === data.marketIndex);
-            const pa = mk ? priceAccounts[mk.feedIdHex] : undefined;
-            const held = Number(m.now - data.openedAt);
-            const holdLeft = EVAL.minHoldSecs - held;
+          {open.map((v) => {
+            const mk = markets.find((x) => x.index === v.data.marketIndex);
             return (
-              <li
-                key={address}
-                className="flex flex-wrap items-center gap-3 py-3 text-sm"
-              >
-                <span className="font-bold">
-                  {mk?.symbol ?? `#${data.marketIndex}`}
-                </span>
-                <span className="tnum text-xs text-ink-muted">
-                  entry{" "}
-                  {fmtPrice(data.entryPrice, priceplaces(mk?.symbol ?? ""))} · $
-                  {fmtUsd(data.entryNotional, 2)} · stop{" "}
-                  {fmtPrice(data.stopPrice, priceplaces(mk?.symbol ?? ""))}
-                </span>
-                <Btn
-                  disabled={busy || holdLeft > 0 || !pa || !mk}
-                  onClick={() =>
-                    void act((signer) => [
-                      evalCloseIx({
-                        signer,
-                        evaluation: live.address,
-                        virtualPosition: address,
-                        market: mk!.address,
-                        priceUpdate: pa!,
-                      }),
-                    ])
-                  }
-                >
-                  {holdLeft > 0
-                    ? `Hold ${Math.ceil(holdLeft / 60)} min`
-                    : "Close"}
-                </Btn>
-              </li>
+              <EvalPositionRow
+                key={v.address}
+                v={v}
+                evaluation={live.address}
+                market={mk}
+                quote={mk ? quotes[mk.index] : undefined}
+                pnl={estimate?.pnl.get(v.address)}
+                now={m.now}
+                act={act}
+                busy={busy}
+              />
             );
           })}
         </ul>
@@ -1429,7 +1836,7 @@ function EvaluationPanel({
           }
         >
           {legs.length === open.length
-            ? "Mark to market"
+            ? "Mark to market on chain"
             : "Mark to market, but a price account is missing"}
         </Btn>
         <Btn
@@ -1456,6 +1863,198 @@ function EvaluationPanel({
   );
 }
 
+/** Market, limit or stop: the three ways into a position. */
+function OrderTypePicker({
+  value,
+  onChange,
+}: {
+  value: "market" | "limit" | "stop";
+  onChange: (v: "market" | "limit" | "stop") => void;
+}) {
+  return (
+    <div className="flex gap-1">
+      {(["market", "limit", "stop"] as const).map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => onChange(t)}
+          className={`border px-2 py-2 text-[11px] uppercase tracking-[0.12em] ${
+            value === t
+              ? "border-brand bg-brand/10 text-brand"
+              : "border-line text-ink-dim hover:text-ink"
+          }`}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One simulated position: what it is, how it is doing, and what can be done to it now.
+ *
+ * Each control is enabled exactly when the program would accept it. A target can be set at any
+ * time; a stop can only be tightened, and only after the ten-minute hold; a close also waits for
+ * the hold. The countdown says how long, rather than leaving a trader to sign a refusal.
+ */
+function EvalPositionRow({
+  v,
+  evaluation,
+  market: mk,
+  quote,
+  pnl,
+  now,
+  act,
+  busy,
+}: {
+  v: Row<nox.VirtualPosition>;
+  evaluation: Address;
+  market: LoadedMarket | undefined;
+  /** The market's price and its legs; the program refuses a leg missing or spare. */
+  quote: MarketQuote | undefined;
+  pnl: bigint | undefined;
+  now: bigint;
+  act: Act;
+  busy: boolean;
+}) {
+  const { address, data } = v;
+  const [tpText, setTpText] = useState("");
+  const [stopText, setStopText] = useState("");
+  const holdLeft = holdLeftSecs(data.openedAt, now);
+  const vlong = data.direction === nox.Direction.Long;
+  const places = priceplaces(mk?.symbol ?? "");
+  const px = quote?.price ?? 0n;
+  const tp = parsePrice(tpText);
+  const newStop = parsePrice(stopText);
+  const tpOk = tp !== null && px > 0n && (vlong ? tp > px : tp < px);
+  const stopOk =
+    newStop !== null &&
+    isTighter(data.direction, data.stopPrice, newStop) &&
+    px > 0n &&
+    (vlong ? newStop < px : newStop > px);
+  const ready = !!mk && !!quote;
+
+  return (
+    <li className="flex flex-wrap items-center gap-3 py-3 text-sm">
+      <span className="font-bold">{mk?.symbol ?? `#${data.marketIndex}`}</span>
+      <span
+        className={`text-[10px] uppercase tracking-[0.14em] ${vlong ? "text-long" : "text-short"}`}
+      >
+        {vlong ? "Long" : "Short"}
+      </span>
+      <span className="tnum text-xs text-ink-muted">
+        entry {fmtPrice(data.entryPrice, places)} · $
+        {fmtUsd(data.entryNotional, 2)} · stop{" "}
+        {fmtPrice(data.stopPrice, places)}
+        {data.takeProfitPrice > 0n
+          ? ` · target ${fmtPrice(data.takeProfitPrice, places)}`
+          : ""}
+      </span>
+      {pnl !== undefined ? (
+        <span
+          className={`tnum text-xs font-bold ${pnl >= 0n ? "text-long" : "text-short"}`}
+          title="Marked to the oracle, before the closing spread, fee and carry"
+        >
+          {pnl >= 0n ? "+" : "−"}${fmtUsd(pnl < 0n ? -pnl : pnl, 2)}
+        </span>
+      ) : null}
+      <span className="ml-auto flex flex-wrap items-end gap-2">
+        <Input
+          label="Target"
+          value={tpText}
+          onChange={setTpText}
+          placeholder={
+            data.takeProfitPrice > 0n
+              ? fmtPrice(data.takeProfitPrice, places)
+              : "price"
+          }
+        />
+        <Btn
+          kind="line"
+          disabled={busy || !ready || !tpOk}
+          onClick={() =>
+            void act((signer) => [
+              evalSetTakeProfitIx({
+                signer,
+                evaluation,
+                virtualPosition: address,
+                market: mk!.address,
+                legs: quote!.legs,
+                triggerPrice: tp!,
+              }),
+            ])
+          }
+        >
+          {data.takeProfitPrice > 0n ? "Move target" : "Set target"}
+        </Btn>
+        {data.takeProfitPrice > 0n ? (
+          <Btn
+            kind="line"
+            disabled={busy || !ready}
+            onClick={() =>
+              void act((signer) => [
+                evalSetTakeProfitIx({
+                  signer,
+                  evaluation,
+                  virtualPosition: address,
+                  market: mk!.address,
+                  legs: quote!.legs,
+                  triggerPrice: 0n,
+                }),
+              ])
+            }
+          >
+            Clear target
+          </Btn>
+        ) : null}
+        <Input
+          label="Tighter stop"
+          value={stopText}
+          onChange={setStopText}
+          placeholder={fmtPrice(data.stopPrice, places)}
+        />
+        <Btn
+          kind="line"
+          disabled={busy || !ready || holdLeft > 0 || !stopOk}
+          onClick={() =>
+            void act((signer) => [
+              evalMoveStopIx({
+                signer,
+                evaluation,
+                virtualPosition: address,
+                market: mk!.address,
+                legs: quote!.legs,
+                newStop: newStop!,
+              }),
+            ])
+          }
+        >
+          {holdLeft > 0
+            ? `Stop moves in ${Math.ceil(holdLeft / 60)} min`
+            : "Move stop"}
+        </Btn>
+        <Btn
+          disabled={busy || holdLeft > 0 || !ready}
+          onClick={() =>
+            void act((signer) => [
+              evalCloseIx({
+                signer,
+                evaluation,
+                virtualPosition: address,
+                market: mk!.address,
+                legs: quote!.legs,
+              }),
+            ])
+          }
+        >
+          {holdLeft > 0 ? `Hold ${Math.ceil(holdLeft / 60)} min` : "Close"}
+        </Btn>
+      </span>
+    </li>
+  );
+}
+
 /**
  * Trading an investor's money, from the browser.
  *
@@ -1469,16 +2068,23 @@ function FundedTradingPanel({
   m,
   me,
   markets,
-  prices,
-  priceAccounts,
+  quotes,
+  marketIndex,
+  onMarket,
+  onBook,
   act,
   busy,
 }: {
   m: Marketplace;
   me: Address | undefined;
   markets: readonly LoadedMarket[];
-  prices: Record<string, LivePrice | undefined>;
-  priceAccounts: Record<string, Address | undefined>;
+  /** Each market's price, conversion and price accounts, by market index. */
+  quotes: Record<number, MarketQuote | undefined>;
+  /** The desk's market, shared with the chart and the evaluation ticket. */
+  marketIndex: number | null;
+  onMarket: (index: number) => void;
+  /** The open positions and their resting orders, for the desk's chart. */
+  onBook: (positions: readonly DeskPosition[]) => void;
   act: Act;
   busy: boolean;
 }) {
@@ -1490,7 +2096,6 @@ function FundedTradingPanel({
     mine.find((x) => x.data.state === 0) ??
     mine[0];
 
-  const [marketIndex, setMarketIndex] = useState<number | null>(null);
   const [direction, setDirection] = useState<nox.DirectionArgs>(
     nox.Direction.Long
   );
@@ -1499,35 +2104,39 @@ function FundedTradingPanel({
   const [slippage, setSlippage] = useState("50");
   const [stopBps, setStopBps] = useState("100");
   const [tpBps, setTpBps] = useState("200");
-
-  // The same restriction the evaluation ticket carries, for the same reason: a market priced
-  // from two or three feeds needs those accounts passed, and this page resolves one per market.
-  // `nox market --execute` handles the rest until the extra legs are wired here.
-  const tradeable = markets.filter(
-    (x) =>
-      x.tradeable &&
-      x.data.priceSource.__kind === "Direct" &&
-      x.data.quoteConversionKind === QuoteConversionKind.None
+  const [orderType, setOrderType] = useState<"market" | "limit" | "stop">(
+    "market"
   );
+  const [triggerText, setTriggerText] = useState("");
+  const [expiryHours, setExpiryHours] = useState("24");
+
+  // Every shape of market: a synthetic or a market not quoted in USD is priced from all of its
+  // legs, which `quotes` carries and the open passes.
+  const tradeable = markets.filter((x) => x.tradeable);
   const permitted = mandate
     ? tradeable.filter(
         (x) => (mandate.data.allowedMarkets & (1n << BigInt(x.index))) !== 0n
       )
     : [];
   const chosen = permitted.find((x) => x.index === marketIndex) ?? permitted[0];
-  const price = chosen ? prices[chosen.feedIdHex] : undefined;
-  const priceAccount = chosen ? priceAccounts[chosen.feedIdHex] : undefined;
+  const price = chosen ? quotes[chosen.index] : undefined;
 
   // The mandate's open positions, read from SolFX against the mandate signer rather than from
   // the mandate's own slot array: the slots say a position exists, the position says at what
   // entry and how it is doing.
   const [open, setOpen] = useState<readonly OpenPosition[]>([]);
+  // Each position's resting orders, read rather than assumed. The stop took `order_id = nonce`
+  // at open, but a target can sit at any free id, and a close has to reclaim whatever is there:
+  // an order left behind holds the mandate signer's rent with nothing able to return it.
+  const [triggers, setTriggers] = useState<
+    ReadonlyMap<Address, readonly RestingTrigger[]>
+  >(new Map());
   const [ready, setReady] = useState<MandateReadiness | undefined>();
   const priceByIndex = useMemo(() => {
     const out: Record<number, bigint | undefined> = {};
-    for (const x of markets) out[x.index] = prices[x.feedIdHex]?.price;
+    for (const x of markets) out[x.index] = quotes[x.index]?.price;
     return out;
-  }, [markets, prices]);
+  }, [markets, quotes]);
   useEffect(() => {
     let cancelled = false;
     if (!mandate || markets.length === 0) {
@@ -1550,14 +2159,21 @@ function FundedTradingPanel({
             m.vaults.get(mandate.address) ?? 0n
           ),
         ]);
+        const orders = await Promise.all(
+          found.map((p) => readTriggers(rpc, p.address))
+        );
         if (!cancelled) {
           setOpen(found);
           setReady(r);
+          setTriggers(
+            new Map(found.map((p, i) => [p.address, orders[i] ?? []]))
+          );
         }
       } catch {
         if (!cancelled) {
           setOpen([]);
           setReady(undefined);
+          setTriggers(new Map());
         }
       }
     })();
@@ -1569,10 +2185,44 @@ function FundedTradingPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rpc, mandate?.address, markets, m.vaults]);
 
+  // Marked at each market's own price and converted to dollars at its rate of the moment — so
+  // a USD/JPY position shows dollars, not yen. Before the closing spread and fee, as everywhere.
   const marked = useMemo(
-    () => repricePositions(open, priceByIndex),
-    [open, priceByIndex]
+    () =>
+      open.map((p) => {
+        const q = quotes[p.marketIndex];
+        if (!q) return p;
+        return {
+          ...p,
+          unrealised: estimatePnl(
+            p.data.direction,
+            p.data.sizeBase,
+            p.data.entryPrice,
+            q.price,
+            q.conversion
+          ),
+        };
+      }),
+    [open, quotes]
   );
+
+  useEffect(() => {
+    onBook(
+      open.map((p) => {
+        const orders = triggers.get(p.address) ?? [];
+        return {
+          marketIndex: p.marketIndex,
+          direction: p.data.direction,
+          entryPrice: p.data.entryPrice,
+          stopPrice: orders.find((o) => o.kind === TriggerKind.StopLoss)
+            ?.triggerPrice,
+          takeProfitPrice: orders.find((o) => o.kind === TriggerKind.TakeProfit)
+            ?.triggerPrice,
+          book: "Funded",
+        };
+      })
+    );
+  }, [open, triggers, onBook]);
 
   if (!me) {
     return (
@@ -1595,10 +2245,22 @@ function FundedTradingPanel({
   const d = mandate.data;
   const usdcMint = m.config?.usdcMint;
   const active = d.state === 0;
-  const px = price?.price ?? 0n;
+  const spotPx = price?.price ?? 0n;
+  const resting = orderType !== "market";
+  const trigger = resting ? (parsePrice(triggerText) ?? 0n) : 0n;
+  // A market order is judged at the oracle; a resting one at its trigger, which is what the
+  // program measures its stop distance from at placement. Every rule runs again at the fill.
+  const px = resting ? trigger : spotPx;
+  const pending = m.mandateOrders.filter(
+    (o) => o.data.mandate === mandate.address
+  );
   const notionalQuote = parseUsdc(notional) ?? 0n;
   const collateralQuote = parseUsdc(collateral) ?? 0n;
-  const sizeBase = px > 0n ? (notionalQuote * NOTIONAL_DIVISOR) / px : 0n;
+  const sizeBase = sizeFor(
+    notionalQuote,
+    px,
+    price?.conversion ?? NO_CONVERSION
+  );
 
   const long = direction === nox.Direction.Long;
   const stopN = Number(stopBps);
@@ -1615,9 +2277,21 @@ function FundedTradingPanel({
   const slipN = Number(slippage);
   const slipOk = Number.isInteger(slipN) && slipN >= 0 && slipN <= 1_000;
 
-  const refusal =
-    px === 0n
-      ? "waiting for a price"
+  const bracket = resting
+    ? entryBracketRefusal({
+        direction,
+        trigger,
+        stop: stopPrice,
+        takeProfit: 0n,
+        sizeBase,
+      })
+    : null;
+  const refusal = bracket
+    ? bracket
+    : px === 0n
+      ? resting
+        ? "enter a trigger price"
+        : "waiting for a price"
       : !slipOk
         ? "slippage must be between 0 and 1000 bps"
         : sizeBase === 0n
@@ -1632,16 +2306,35 @@ function FundedTradingPanel({
                 sizeBase,
                 stopPrice,
                 openPositions: d.openPositions,
+                conversion: price?.conversion,
               });
 
-  const stale = price?.stale === true;
+  const stale = !resting && price?.stale === true;
+  const orderId = nextFreeId(pending.map((o) => o.data.orderId));
   const canOpen =
-    !busy && active && !refusal && !stale && !!chosen && !!priceAccount;
+    !busy &&
+    active &&
+    !refusal &&
+    !stale &&
+    !!chosen &&
+    (resting ? orderId !== undefined : !!price);
+  const expiryN = Number(expiryHours);
+  const expiresAt =
+    Number.isInteger(expiryN) && expiryN > 0
+      ? m.now + BigInt(expiryN) * 3_600n
+      : 0n;
 
   // Nonces are per market: reusing an occupied one fails as "account already in use", which
-  // reads like a protocol error and is not one.
+  // reads like a protocol error and is not one. A resting order has its nonce reserved too.
   const used = chosen
-    ? marked.filter((p) => p.marketIndex === chosen.index).map((p) => p.nonce)
+    ? [
+        ...marked
+          .filter((p) => p.marketIndex === chosen.index)
+          .map((p) => p.nonce),
+        ...pending
+          .filter((o) => o.data.marketIndex === chosen.index)
+          .map((o) => o.data.nonce),
+      ]
     : [];
   let nonce = 0;
   while (used.includes(nonce)) nonce += 1;
@@ -1768,7 +2461,7 @@ function FundedTradingPanel({
                   Market
                   <select
                     value={chosen?.index ?? ""}
-                    onChange={(e) => setMarketIndex(Number(e.target.value))}
+                    onChange={(e) => onMarket(Number(e.target.value))}
                     className="mt-1 block border border-line bg-surface px-3 py-2 text-sm text-ink"
                   >
                     {permitted.map((x) => (
@@ -1778,6 +2471,7 @@ function FundedTradingPanel({
                     ))}
                   </select>
                 </label>
+                <OrderTypePicker value={orderType} onChange={setOrderType} />
                 <div className="flex gap-1.5">
                   <Btn
                     kind={long ? "solid" : "line"}
@@ -1792,6 +2486,22 @@ function FundedTradingPanel({
                     Short
                   </Btn>
                 </div>
+                {resting ? (
+                  <Input
+                    label={
+                      orderType === "limit"
+                        ? `Limit, ${long ? "buy at or below" : "sell at or above"}`
+                        : `Stop, ${long ? "buy at or above" : "sell at or below"}`
+                    }
+                    value={triggerText}
+                    onChange={setTriggerText}
+                    placeholder={
+                      spotPx > 0n
+                        ? fmtPrice(spotPx, priceplaces(chosen?.symbol ?? ""))
+                        : ""
+                    }
+                  />
+                ) : null}
                 <Input
                   label="Notional"
                   value={notional}
@@ -1816,30 +2526,78 @@ function FundedTradingPanel({
                   onChange={setSlippage}
                   suffix="bps"
                 />
-                <Btn
-                  disabled={!canOpen}
-                  onClick={() =>
-                    void act(
-                      async (signer) => [
-                        await fundedOpenIx({
+                {resting ? (
+                  <Input
+                    label="Expires in"
+                    value={expiryHours}
+                    onChange={setExpiryHours}
+                    suffix="h, 0 never"
+                  />
+                ) : null}
+                {resting ? (
+                  <Btn
+                    disabled={!canOpen}
+                    onClick={() =>
+                      void act(async (signer) => [
+                        await fundedPlaceEntryOrderIx({
                           signer,
                           mandate: mandate.address,
+                          orderId: orderId!,
                           marketIndex: chosen!.index,
                           nonce,
+                          // The convention the market open uses: the stop takes the nonce.
+                          stopOrderId: nonce,
                           direction,
+                          kind:
+                            orderType === "limit"
+                              ? EntryKind.Limit
+                              : EntryKind.Stop,
+                          triggerPrice: trigger,
+                          priceLimit: defaultPriceLimit(
+                            orderType === "limit"
+                              ? EntryKind.Limit
+                              : EntryKind.Stop,
+                            direction,
+                            trigger,
+                            slipOk ? slipN : 50
+                          ),
                           sizeBase,
                           collateral: collateralQuote,
-                          priceLimit: fundedPriceLimit(direction, px, slipN),
                           stopLossPrice: stopPrice,
-                          legs: { priceUpdate: priceAccount! },
+                          expiresAt,
                         }),
-                      ],
-                      FUNDED_OPEN_CU
-                    )
-                  }
-                >
-                  Open with its stop
-                </Btn>
+                      ])
+                    }
+                  >
+                    {`Rest a ${orderType} ${long ? "buy" : "sell"}`}
+                  </Btn>
+                ) : null}
+                {!resting ? (
+                  <Btn
+                    disabled={!canOpen}
+                    onClick={() =>
+                      void act(
+                        async (signer) => [
+                          await fundedOpenIx({
+                            signer,
+                            mandate: mandate.address,
+                            marketIndex: chosen!.index,
+                            nonce,
+                            direction,
+                            sizeBase,
+                            collateral: collateralQuote,
+                            priceLimit: fundedPriceLimit(direction, px, slipN),
+                            stopLossPrice: stopPrice,
+                            legs: price!.legs,
+                          }),
+                        ],
+                        FUNDED_OPEN_CU
+                      )
+                    }
+                  >
+                    Open with its stop
+                  </Btn>
+                ) : null}
               </div>
 
               <p className="mt-2 text-[11px] text-ink-dim">
@@ -1870,14 +2628,74 @@ function FundedTradingPanel({
                   : "Within every rule on this mandate."}
               </p>
               <p className="mt-2 text-[11px] text-ink-dim">
-                A resting entry order is not offered because SolFX has none:
-                triggers attach to an open position, so a limit entry would be
-                this browser watching a price and sending when it hits, which
-                stops the moment the tab closes. Stop and take-profit are real
-                on-chain orders a keeper fires.
+                Limit and stop entries are real on-chain orders, not this
+                browser watching a price: a keeper fills one when the oracle
+                reaches it, and the program checks every rule of the mandate
+                again at that moment. A limit never fills worse than its price.
+                The stop is placed in the same transaction as the fill, as on a
+                market open.
               </p>
             </>
           )}
+        </div>
+      ) : null}
+
+      {/* --- resting entry orders ------------------------------------------------------------ */}
+      {pending.length > 0 ? (
+        <div className="mt-5">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
+            Resting · {pending.length}
+          </div>
+          <ul className="mt-1 divide-y divide-line-soft">
+            {pending.map(({ address, data: o }) => {
+              const mk = markets.find((x) => x.index === o.marketIndex);
+              const pl = priceplaces(mk?.symbol ?? "");
+              const olong = o.direction === nox.Direction.Long;
+              return (
+                <li
+                  key={address}
+                  className="flex flex-wrap items-center gap-3 py-2 text-sm"
+                >
+                  <span className="font-bold">
+                    {mk?.symbol ?? `#${o.marketIndex}`}
+                  </span>
+                  <span
+                    className={`text-[10px] uppercase tracking-[0.14em] ${olong ? "text-long" : "text-short"}`}
+                  >
+                    {o.kind === EntryKind.Limit ? "Limit" : "Stop"}{" "}
+                    {olong ? "buy" : "sell"}
+                  </span>
+                  <span className="tnum text-xs text-ink-muted">
+                    at {fmtPrice(o.triggerPrice, pl)}, no worse than{" "}
+                    {fmtPrice(o.priceLimit, pl)} · stop{" "}
+                    {fmtPrice(o.stopLossPrice, pl)} · margin $
+                    {fmtUsd(o.collateral, 2)}
+                    {o.expiresAt > 0n
+                      ? ` · expires ${new Date(Number(o.expiresAt) * 1000).toUTCString().slice(5, 22)} UTC`
+                      : " · until cancelled"}
+                  </span>
+                  <span className="ml-auto">
+                    <Btn
+                      kind="line"
+                      disabled={busy}
+                      onClick={() =>
+                        void act((signer) => [
+                          fundedCancelEntryOrderIx({
+                            signer,
+                            trader: d.trader,
+                            mandate: mandate.address,
+                            entryOrder: address,
+                          }),
+                        ])
+                      }
+                    >
+                      Cancel · rent back
+                    </Btn>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       ) : null}
 
@@ -1894,10 +2712,10 @@ function FundedTradingPanel({
               <FundedRow
                 key={p.address}
                 p={p}
+                orders={triggers.get(p.address) ?? []}
                 mandate={mandate}
                 markets={markets}
-                prices={prices}
-                priceAccounts={priceAccounts}
+                quotes={quotes}
                 slot={m.slot}
                 slippageBps={slipOk ? slipN : 50}
                 tpBps={tpBps}
@@ -1932,7 +2750,7 @@ function noTicketReason(
   if (!named.some((x) => x.tradeable))
     return `${named.map((x) => x.symbol).join(", ")} ${named.length > 1 ? "are" : "is"} closed right now. FX and metals trade Sunday 21:00 to Friday 21:00 UTC; only BTC, ETH and SOL are continuous.`;
   if (!tradeable.some((x) => bit(x.index)))
-    return `${named.map((x) => x.symbol).join(", ")} need a second oracle account to be priced, which this page does not pass yet. Use \`nox market\` for those.`;
+    return `${named.map((x) => x.symbol).join(", ")} cannot be priced yet: a leg it needs has no published price.`;
   return "Nothing to trade on this mandate right now.";
 }
 
@@ -1944,10 +2762,10 @@ function ceilBps(price: bigint, bps: number): bigint {
 
 function FundedRow({
   p,
+  orders,
   mandate,
   markets,
-  prices,
-  priceAccounts,
+  quotes,
   slot,
   slippageBps,
   tpBps,
@@ -1956,10 +2774,11 @@ function FundedRow({
   busy,
 }: {
   p: OpenPosition;
+  /** The position's resting orders, as read from chain. */
+  orders: readonly RestingTrigger[];
   mandate: Row<nox.Mandate>;
   markets: readonly LoadedMarket[];
-  prices: Record<string, LivePrice | undefined>;
-  priceAccounts: Record<string, Address | undefined>;
+  quotes: Record<number, MarketQuote | undefined>;
   slot: bigint;
   slippageBps: number;
   tpBps: string;
@@ -1968,8 +2787,9 @@ function FundedRow({
   busy: boolean;
 }) {
   const mk = markets.find((x) => x.index === p.marketIndex);
-  const live = mk ? prices[mk.feedIdHex] : undefined;
-  const account = mk ? priceAccounts[mk.feedIdHex] : undefined;
+  const live = quotes[p.marketIndex];
+  // Every leg the market is priced from, as the program reads them.
+  const account = live?.legs;
   const px = live?.price ?? 0n;
   const long = p.data.direction === Direction.Long;
   const places = priceplaces(mk?.symbol ?? "");
@@ -1989,8 +2809,31 @@ function FundedRow({
       ? ceilBps(px, 10_000 + bps)
       : (px * BigInt(10_000 - bps)) / 10_000n;
 
-  // The stop took `order_id = nonce` at open, so the target takes the next free one.
-  const tpOrderId = p.nonce + 1;
+  const stopOrder = orders.find((o) => o.kind === TriggerKind.StopLoss);
+  const tpOrder = orders.find((o) => o.kind === TriggerKind.TakeProfit);
+  const [stopText, setStopText] = useState("");
+  const [partPct, setPartPct] = useState("50");
+  const newStop = parsePrice(stopText);
+  const stopOk =
+    !!stopOrder &&
+    newStop !== null &&
+    isTighter(p.data.direction, stopOrder.triggerPrice, newStop) &&
+    px > 0n &&
+    (long ? newStop < px : newStop > px);
+  const pct = Number(partPct);
+  // Floored: never closes more than asked, and must leave something — a whole close is a close.
+  const partSize =
+    Number.isInteger(pct) && pct > 0 && pct < 100
+      ? (p.data.sizeBase * BigInt(pct)) / 100n
+      : 0n;
+  const freeId = nextFreeId(orders.map((o) => o.orderId));
+  const [marginText, setMarginText] = useState("");
+  const marginAmount = parseUsdc(marginText) ?? 0n;
+  // A new target takes the lowest id nothing occupies. Trigger PDAs are per position, so
+  // reusing an occupied id fails "account already in use" — which is also what stops a target
+  // from ever overwriting the stop.
+  let tpOrderId = 0;
+  while (orders.some((o) => o.orderId === tpOrderId)) tpOrderId += 1;
 
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
@@ -2004,6 +2847,8 @@ function FundedRow({
         entry {fmtPrice(p.data.entryPrice, places)} · $
         {fmtUsd(p.data.entryNotional, 2)} · margin $
         {fmtUsd(p.data.collateral, 2)}
+        {stopOrder ? ` · stop ${fmtPrice(stopOrder.triggerPrice, places)}` : ""}
+        {tpOrder ? ` · target ${fmtPrice(tpOrder.triggerPrice, places)}` : ""}
       </span>
       <span
         className={`tnum text-xs font-bold ${p.unrealised >= 0n ? "text-long" : "text-short"}`}
@@ -2015,7 +2860,15 @@ function FundedRow({
       <span className="ml-auto flex flex-wrap items-center gap-2">
         <Input label="Target" value={tpBps} onChange={setTpBps} suffix="bps" />
         <Btn
-          disabled={busy || !tpOk || px === 0n || !account || !mk}
+          disabled={
+            busy ||
+            holdLeft > 0n ||
+            !tpOk ||
+            px === 0n ||
+            !account ||
+            !mk ||
+            !!tpOrder
+          }
           onClick={() =>
             void act(
               async (signer) => [
@@ -2027,7 +2880,7 @@ function FundedRow({
                   orderId: tpOrderId,
                   triggerPrice: target,
                   sizeBase: p.data.sizeBase,
-                  legs: { priceUpdate: account! },
+                  legs: account!,
                 }),
               ],
               FUNDED_TRIGGER_CU
@@ -2040,7 +2893,7 @@ function FundedRow({
         </Btn>
         <Btn
           kind="line"
-          disabled={busy}
+          disabled={busy || !tpOrder}
           onClick={() =>
             void act(
               async (signer) => [
@@ -2049,7 +2902,7 @@ function FundedRow({
                   mandate: mandate.address,
                   marketIndex: p.marketIndex,
                   nonce: p.nonce,
-                  orderId: tpOrderId,
+                  orderId: tpOrder!.orderId,
                 }),
               ],
               FUNDED_TRIGGER_CU
@@ -2057,6 +2910,130 @@ function FundedRow({
           }
         >
           Cancel target
+        </Btn>
+        <Input
+          label="Tighter stop"
+          value={stopText}
+          onChange={setStopText}
+          placeholder={
+            stopOrder ? fmtPrice(stopOrder.triggerPrice, places) : "price"
+          }
+        />
+        <Btn
+          kind="line"
+          disabled={
+            busy || holdLeft > 0n || !stopOk || !account || freeId === undefined
+          }
+          onClick={() =>
+            void act(
+              async (signer) => [
+                await fundedMoveStopIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  oldOrderId: stopOrder!.orderId,
+                  newOrderId: freeId!,
+                  newStop: newStop!,
+                  legs: account!,
+                }),
+              ],
+              FUNDED_TRIGGER_CU * 2
+            )
+          }
+        >
+          {holdLeft > 0n ? `Stop moves in ${holdLeft} slots` : "Move stop"}
+        </Btn>
+        <Input
+          label="Margin"
+          value={marginText}
+          onChange={setMarginText}
+          placeholder={fmtUsd(p.data.collateral, 2)}
+          suffix="USDC"
+        />
+        <Btn
+          kind="line"
+          disabled={busy || marginAmount === 0n || !account}
+          onClick={() =>
+            void act(
+              async (signer) => [
+                await fundedMarginIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  amount: marginAmount,
+                  add: true,
+                  legs: account!,
+                }),
+              ],
+              FUNDED_CLOSE_CU
+            )
+          }
+        >
+          Add margin
+        </Btn>
+        <Btn
+          kind="line"
+          disabled={
+            busy ||
+            marginAmount === 0n ||
+            marginAmount >= p.data.collateral ||
+            !account ||
+            mandate.data.state !== 0
+          }
+          onClick={() =>
+            void act(
+              async (signer) => [
+                await fundedMarginIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  amount: marginAmount,
+                  add: false,
+                  legs: account!,
+                }),
+              ],
+              FUNDED_CLOSE_CU
+            )
+          }
+        >
+          Remove margin
+        </Btn>
+        <Input
+          label="Close part"
+          value={partPct}
+          onChange={setPartPct}
+          suffix="%"
+        />
+        <Btn
+          kind="line"
+          disabled={
+            busy || holdLeft > 0n || partSize === 0n || px === 0n || !account
+          }
+          onClick={() =>
+            void act(
+              async (signer) => [
+                await fundedReduceIx({
+                  signer,
+                  mandate: mandate.address,
+                  marketIndex: p.marketIndex,
+                  nonce: p.nonce,
+                  sizeDelta: partSize,
+                  priceLimit: fundedPriceLimit(
+                    long ? nox.Direction.Short : nox.Direction.Long,
+                    px,
+                    slippageBps
+                  ),
+                  legs: account!,
+                }),
+              ],
+              FUNDED_CLOSE_CU
+            )
+          }
+        >
+          {`Close ${Number.isInteger(pct) && pct > 0 && pct < 100 ? pct : "—"}%`}
         </Btn>
         <Btn
           kind="danger"
@@ -2074,23 +3051,27 @@ function FundedRow({
                     px,
                     slippageBps
                   ),
-                  legs: { priceUpdate: account! },
+                  legs: account!,
                 }),
-                // Then reclaim the stop, in the same transaction. Its rent goes to the keeper when
-                // it fires and to the authority when it is cancelled — there is no third path, so
-                // a close that left it behind would strand 0.002 SOL of the mandate's money.
+                // Then reclaim every resting order, in the same transaction. Their rent goes to
+                // the keeper when they fire and to the authority when cancelled — there is no
+                // third path, so a close that left one behind would strand the mandate's SOL.
                 // After the close, not before: the program refuses to remove a stop while its
                 // position is open (review R-4), and within one transaction the close has already
                 // taken the position account by the time this runs.
-                await fundedCancelOrderIx({
-                  signer,
-                  mandate: mandate.address,
-                  marketIndex: p.marketIndex,
-                  nonce: p.nonce,
-                  orderId: p.nonce,
-                }),
+                ...(await Promise.all(
+                  orders.map((o) =>
+                    fundedCancelOrderIx({
+                      signer,
+                      mandate: mandate.address,
+                      marketIndex: p.marketIndex,
+                      nonce: p.nonce,
+                      orderId: o.orderId,
+                    })
+                  )
+                )),
               ],
-              FUNDED_CLOSE_CU + FUNDED_TRIGGER_CU
+              FUNDED_CLOSE_CU + FUNDED_TRIGGER_CU * Math.max(1, orders.length)
             )
           }
         >
@@ -2438,6 +3419,75 @@ function InvestorListingEditor({
 
 // --- trader --------------------------------------------------------------------------------
 
+/**
+ * The chart, on the same page as the tickets.
+ *
+ * The terminal's own `MarketPanel` and `PriceChart`, not a second implementation: the candles
+ * are Pyth's, the live price is the oracle account the program fills against, and every open
+ * position on this market — simulated or funded — is drawn with its stop and target, so a
+ * trader reads the levels off the chart instead of from a second tab.
+ */
+function TradingDesk({
+  markets,
+  quotes,
+  marketIndex,
+  onMarket,
+  positions,
+}: {
+  markets: readonly LoadedMarket[];
+  quotes: Record<number, MarketQuote | undefined>;
+  marketIndex: number | null;
+  onMarket: (index: number) => void;
+  positions: readonly DeskPosition[];
+}) {
+  // Every listed market; a synthetic's price is composed from its legs.
+  const tradeable = markets;
+  const chosen =
+    tradeable.find((x) => x.index === marketIndex) ??
+    tradeable.find((x) => x.tradeable) ??
+    tradeable[0];
+  if (!chosen) {
+    return (
+      <Panel title="Market">
+        <Empty>Loading markets…</Empty>
+      </Panel>
+    );
+  }
+  const live = quotes[chosen.index]?.live;
+  const levels = chartLevels(chosen.index, positions);
+  return (
+    <section className="panel overflow-hidden">
+      <div className="flex flex-wrap gap-1.5 border-b border-line-soft px-5 py-3">
+        {tradeable.map((x) => (
+          <button
+            key={x.index}
+            type="button"
+            onClick={() => onMarket(x.index)}
+            className={`border px-2.5 py-1 text-[11px] transition-colors ${
+              x.index === chosen.index
+                ? "border-brand bg-brand/10 text-brand"
+                : "border-line text-ink-dim hover:text-ink"
+            }`}
+            title={
+              x.tradeable ? "Open for trading" : `${x.status}: closed for opens`
+            }
+          >
+            {x.symbol}
+            {x.tradeable ? "" : " ·"}
+          </button>
+        ))}
+      </div>
+      <MarketPanel market={chosen} price={live} />
+      <PriceChart symbol={chosen.symbol} live={live} levels={levels} />
+      <p className="border-t border-line-soft px-5 py-2 text-[11px] text-ink-dim">
+        The price is the oracle account the program fills against, re-read every
+        few seconds. Lines mark your open positions on {chosen.symbol}: entry,
+        stop and target, for the evaluation and the mandate alike.
+      </p>
+    </section>
+  );
+}
+
 function TraderView({ m, s, act, busy, mode }: ViewProps) {
   // Live prices and their oracle accounts, for the evaluation ticket. The marketplace read is
   // account state only and carries neither.
@@ -2454,8 +3504,47 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
   const [asking, setAsking] = useState<Address | undefined>(undefined);
   const [reasons, setReasons] = useState<Record<string, string>>({});
 
+  // --- the desk: one market, shared by the chart and both tickets --------------------------
+  const [deskMarket, setDeskMarket] = useState<number | null>(null);
+  // Each market priced once from every leg it names, for the chart and both tickets.
+  const quotes = useMemo(
+    () => quotesFor(s.markets, solfx.prices, solfx.priceAccounts),
+    [s.markets, solfx.prices, solfx.priceAccounts]
+  );
+  const [fundedBook, setFundedBook] = useState<readonly DeskPosition[]>([]);
+  const onFundedBook = useCallback(
+    (b: readonly DeskPosition[]) => setFundedBook(b),
+    []
+  );
+  const liveEval = me
+    ? m.evaluations.find((e) => e.data.trader === me && e.data.state === 0)
+    : undefined;
+  const evalBook: DeskPosition[] = liveEval
+    ? m.virtualPositions
+        .filter((v) => v.data.evaluation === liveEval.address)
+        .map((v) => ({
+          marketIndex: v.data.marketIndex,
+          direction: v.data.direction,
+          entryPrice: v.data.entryPrice,
+          stopPrice: v.data.stopPrice,
+          takeProfitPrice: v.data.takeProfitPrice,
+          book: "Eval",
+        }))
+    : [];
+  const passed = me ? passedEvaluations(m, me) : 0;
+
   return (
     <>
+      {own && me && (
+        <TradingDesk
+          markets={s.markets}
+          quotes={quotes}
+          marketIndex={deskMarket}
+          onMarket={setDeskMarket}
+          positions={[...evalBook, ...fundedBook]}
+        />
+      )}
+
       {own && (
         <Panel
           title="Your record"
@@ -2464,7 +3553,20 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
           {!me ? (
             <Empty>Connect a wallet to see your record.</Empty>
           ) : profile ? (
-            <RecordStrip stats={traderStats(profile.data)} />
+            <>
+              <RecordStrip stats={traderStats(profile.data)} />
+              <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-dim">
+                {passed > 0 ? (
+                  <>
+                    <VerifiedMark withText />
+                    Passed {passed} evaluation{passed > 1 ? "s" : ""}. Investors
+                    see the mark beside your name in the marketplace.
+                  </>
+                ) : (
+                  "Not verified yet. Pass both phases of an evaluation below and the marketplace shows a verified mark beside your name."
+                )}
+              </p>
+            </>
           ) : (
             <div className="flex flex-wrap items-center gap-4">
               <Empty>
@@ -2490,8 +3592,9 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
           me={me}
           hasProfile={!!profile}
           markets={s.markets}
-          prices={solfx.prices}
-          priceAccounts={solfx.priceAccounts}
+          quotes={quotes}
+          marketIndex={deskMarket}
+          onMarket={setDeskMarket}
           act={act}
           busy={busy}
         />
@@ -2630,8 +3733,10 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
           m={m}
           me={me}
           markets={s.markets}
-          prices={solfx.prices}
-          priceAccounts={solfx.priceAccounts}
+          quotes={quotes}
+          marketIndex={deskMarket}
+          onMarket={setDeskMarket}
+          onBook={onFundedBook}
           act={act}
           busy={busy}
         />

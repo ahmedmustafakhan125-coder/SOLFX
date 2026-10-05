@@ -3,7 +3,7 @@ import { useSolanaClient } from "@solana/react-hooks";
 import type { Address, Rpc, SolanaRpcApi } from "@solana/kit";
 import type { PriceAccountMap } from "@solfx/client";
 
-import { loadMarkets, type LoadedMarket } from "@/lib/markets";
+import { legFeeds, loadMarkets, type LoadedMarket } from "@/lib/markets";
 import { loadPriceMap, readPrice, type LivePrice } from "@/lib/prices";
 
 export function useRpc(): Rpc<SolanaRpcApi> {
@@ -53,14 +53,18 @@ export function useSolfx(pollMs = 8_000): State & { refresh: () => void } {
     async (markets: LoadedMarket[]) => {
       const map = mapRef.current;
       if (!map) return {};
+      // Every feed a market is priced from, not only its primary: a synthetic market needs its
+      // second leg and a market not quoted in USD its conversion feed. Read once each, however
+      // many markets share one.
+      const feeds = allFeeds(markets);
       const entries = await Promise.all(
-        markets.map(async (m) => {
-          const account = map.forFeed(m.feedIdHex);
-          if (!account) return [m.feedIdHex, undefined] as const;
+        feeds.map(async (feed) => {
+          const account = map.forFeed(feed);
+          if (!account) return [feed, undefined] as const;
           try {
-            return [m.feedIdHex, await readPrice(rpc, account)] as const;
+            return [feed, await readPrice(rpc, account)] as const;
           } catch {
-            return [m.feedIdHex, undefined] as const;
+            return [feed, undefined] as const;
           }
         })
       );
@@ -87,7 +91,7 @@ export function useSolfx(pollMs = 8_000): State & { refresh: () => void } {
         const prices = await readPrices(markets);
         const map = mapRef.current;
         const priceAccounts = Object.fromEntries(
-          markets.map((m) => [m.feedIdHex, map?.forFeed(m.feedIdHex)])
+          allFeeds(markets).map((f) => [f, map?.forFeed(f)])
         );
         if (!cancelled) {
           setState({
@@ -133,4 +137,16 @@ export function useSolfx(pollMs = 8_000): State & { refresh: () => void } {
   }, [pollMs, readPrices]);
 
   return { ...state, refresh: () => void refresh() };
+}
+
+/** Every feed id any market is priced from, each once. */
+function allFeeds(markets: readonly LoadedMarket[]): string[] {
+  const out = new Set<string>();
+  for (const m of markets) {
+    const l = legFeeds(m.data);
+    out.add(l.primary);
+    if (l.secondary) out.add(l.secondary);
+    if (l.conversion) out.add(l.conversion);
+  }
+  return [...out];
 }

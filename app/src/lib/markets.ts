@@ -58,9 +58,36 @@ function symbolOf(m: Market): string {
 }
 
 export function feedHex(m: Market): string {
-  return Array.from(m.pythFeedId)
+  return hex(m.pythFeedId);
+}
+
+function hex(bytes: ArrayLike<number>): string {
+  return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * The feeds a market is priced from, in the order the program reads them: the primary, the
+ * secondary when the market is synthetic, and the conversion feed when it is not quoted in USD.
+ * Decided by the market's own configuration, as `load_validated_price` decides it — not by
+ * which feed ids happen to be set.
+ */
+export function legFeeds(m: Market): {
+  readonly primary: string;
+  readonly secondary?: string;
+  readonly conversion?: string;
+} {
+  return {
+    primary: hex(m.pythFeedId),
+    ...(m.priceSource.__kind === "Synthetic"
+      ? { secondary: hex(m.secondaryFeedId) }
+      : {}),
+    // `QuoteConversionKind.None` is 0.
+    ...(Number(m.quoteConversionKind) !== 0
+      ? { conversion: hex(m.quoteConversionFeed) }
+      : {}),
+  };
 }
 
 /**
