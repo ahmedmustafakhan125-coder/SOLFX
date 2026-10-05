@@ -92,15 +92,30 @@ poster.
 ## The NOXFUNDS indexer
 
 `services/indexer/indexer.ts` keeps every NOXFUNDS transaction in SQLite and serves each trader's
-record, evaluations, mandates and verified mark at `/api/nox/*`, through `solfx-api`. It is
-**not installed**. To run it:
+record, evaluations, mandates and verified mark at `/api/nox/*`, through the site's own server
+(`services/api/server.mjs`). It is **not installed**.
+
+The site's server runs **inside the `solfx-web` container** (compose project `/docker/solfx`), not
+as the `solfx-api` systemd unit, which has been disabled since 2026-09-07. Inside the container
+`127.0.0.1` is the container itself, so the indexer listens on the `n8n_default` bridge gateway,
+`172.18.0.1` (reachable from containers on that network and from this host, from nowhere else),
+and the container is told where it is. To run it:
 
 ```bash
+# 1. the indexer, on the host
 cp services/indexer/solfx-nox-indexer.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now solfx-nox-indexer
-systemctl restart solfx-api            # picks up the /api/nox/* route
-curl -s localhost:8788/api/nox/health  # lastSyncAt set, lastError null
+curl -s 172.18.0.1:8788/api/nox/health          # lastSyncAt set once the first pass ends
+
+# 2. the container: add under services.web.environment in /docker/solfx/docker-compose.yml
+#      - NOX_INDEXER_URL=http://172.18.0.1:8788
+cd /docker/solfx && docker compose up -d        # recreates solfx-web; a few seconds' gap
+curl -s localhost:8787/api/nox/health           # the same answer, through the site
 ```
+
+If the second `curl` says `the NOXFUNDS indexer is not running`, the container cannot see the
+gateway address — check the network's gateway with
+`docker network inspect n8n_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'`.
 
 It reads the public devnet RPC at one call per 250 ms, deliberately not the keyed endpoint the
 poster depends on. The first backfill took ~25 minutes on 2026-10-03 (515 transactions); it
@@ -131,7 +146,8 @@ From the WSL checkout (`/mnt/e/SOLFX`), after pulling:
 4. On the VPS, after the upgrade lands: rebuild and restart the keeper
    (`cargo build --release -p solfx-keeper && systemctl restart solfx-keeper`), then
    `npm run build` in `app/` — not before, or the site sends instruction layouts the live program
-   does not know.
+   does not know. The step-by-step version, with expected output, is
+   [`NOXFUNDS-DEPLOY.md`](NOXFUNDS-DEPLOY.md).
 
 
 `journalctl -u solfx-price-poster -n 40 -o cat`

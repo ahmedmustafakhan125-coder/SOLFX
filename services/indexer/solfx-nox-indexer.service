@@ -1,9 +1,12 @@
 # The NOXFUNDS indexer: every program transaction, folded into a record per trader, served at
-# /api/nox/* (proxied by solfx-api). Not installed by anything in this repo — copy it to
-# /etc/systemd/system/ and enable it when the upgraded program is live:
+# /api/nox/* by services/api/server.mjs. Not installed by anything in this repo — see
+# "The NOXFUNDS indexer" in docs/OPERATIONS.md for the two steps, this unit and the container's
+# NOX_INDEXER_URL.
 #
-#   cp services/indexer/solfx-nox-indexer.service /etc/systemd/system/
-#   systemctl daemon-reload && systemctl enable --now solfx-nox-indexer
+# It listens on the n8n_default bridge gateway, not loopback: server.mjs runs inside the
+# solfx-web container, where 127.0.0.1 is the container itself. The gateway address is reachable
+# from containers on that network and from this host, and from nowhere else. Docker creates it,
+# so the unit waits for Docker and retries until the address exists.
 #
 # It reads the public devnet RPC by default and paces itself (250 ms between calls), because the
 # keyed endpoint in .env is the price poster's budget — measured 2026-09-08, two clients on it
@@ -11,7 +14,7 @@
 # 2026-10-03; it resumes from its cache if interrupted, so a restart costs nothing already done.
 [Unit]
 Description=NOXFUNDS indexer (trader records, evaluations, the verified mark)
-After=network-online.target
+After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
@@ -19,6 +22,7 @@ Type=simple
 WorkingDirectory=/root/SOLFX/SOLFX
 Environment=NOX_INDEXER_RPC_URL=https://api.devnet.solana.com
 Environment=NOX_INDEXER_PORT=8788
+Environment=NOX_INDEXER_HOST=172.18.0.1
 ExecStart=/root/SOLFX/SOLFX/clients/js/node_modules/.bin/tsx services/indexer/indexer.ts
 Restart=on-failure
 RestartSec=10

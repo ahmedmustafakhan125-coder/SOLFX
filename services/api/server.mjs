@@ -211,7 +211,11 @@ async function proxy(req, res, target) {
   }
 }
 
-/** Where `services/indexer/indexer.ts` listens. Local by default; it binds 127.0.0.1. */
+/**
+ * Where `services/indexer/indexer.ts` listens. On the VPS this server runs inside the solfx-web
+ * container, where 127.0.0.1 is the container, so the deployed value is the bridge gateway
+ * (`NOX_INDEXER_URL=http://172.18.0.1:8788`, docs/OPERATIONS.md). The default suits a local run.
+ */
 const INDEXER = process.env.NOX_INDEXER_URL?.trim() || "http://127.0.0.1:8788";
 
 async function indexerProxy(req, res, pathname, search) {
