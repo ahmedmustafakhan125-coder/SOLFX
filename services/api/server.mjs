@@ -211,6 +211,33 @@ async function proxy(req, res, target) {
   }
 }
 
+/** Where `services/indexer/indexer.ts` listens. Local by default; it binds 127.0.0.1. */
+const INDEXER = process.env.NOX_INDEXER_URL?.trim() || "http://127.0.0.1:8788";
+
+async function indexerProxy(req, res, pathname, search) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405, { allow: "GET, HEAD", "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "read-only" }));
+    return;
+  }
+  try {
+    const upstream = await fetch(`${INDEXER}${pathname}${search}`, {
+      method: req.method,
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    res.writeHead(upstream.status, {
+      "content-type": upstream.headers.get("content-type") ?? "application/json",
+      "cache-control": "no-store",
+    });
+    if (req.method === "HEAD") return void res.end();
+    res.end(Buffer.from(await upstream.arrayBuffer()));
+  } catch {
+    res.writeHead(502, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "the NOXFUNDS indexer is not running" }));
+  }
+}
+
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -339,6 +366,10 @@ const server = createServer((req, res) => {
   }
 
   if (pathname === "/rpc") return void rpcProxy(req, res);
+
+  // The NOXFUNDS indexer, on this origin so the browser needs no second address. Read-only and
+  // unauthenticated: it serves what the chain already says. No Pyth key goes with it.
+  if (pathname.startsWith("/api/nox/")) return void indexerProxy(req, res, pathname, search);
 
   const target = upstreamUrl(pathname, search);
   if (target) return void proxy(req, res, target);

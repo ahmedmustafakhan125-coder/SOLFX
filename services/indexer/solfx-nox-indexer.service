@@ -1,0 +1,27 @@
+# The NOXFUNDS indexer: every program transaction, folded into a record per trader, served at
+# /api/nox/* (proxied by solfx-api). Not installed by anything in this repo — copy it to
+# /etc/systemd/system/ and enable it when the upgraded program is live:
+#
+#   cp services/indexer/solfx-nox-indexer.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now solfx-nox-indexer
+#
+# It reads the public devnet RPC by default and paces itself (250 ms between calls), because the
+# keyed endpoint in .env is the price poster's budget — measured 2026-09-08, two clients on it
+# starved the poster. The first backfill of 515 transactions took ~25 minutes at public rates on
+# 2026-10-03; it resumes from its cache if interrupted, so a restart costs nothing already done.
+[Unit]
+Description=NOXFUNDS indexer (trader records, evaluations, the verified mark)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/SOLFX/SOLFX
+Environment=NOX_INDEXER_RPC_URL=https://api.devnet.solana.com
+Environment=NOX_INDEXER_PORT=8788
+ExecStart=/root/SOLFX/SOLFX/clients/js/node_modules/.bin/tsx services/indexer/indexer.ts
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

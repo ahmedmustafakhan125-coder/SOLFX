@@ -22,5 +22,12 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "../clients/js/src"]
+  "include": ["src", "../clients/js/src"],
+  // The NOXFUNDS indexer runs on the server (node:sqlite), never in the browser, and nothing the
+  // app imports reaches it. Compiled against browser libraries and Node 20 types, it would fail
+  // for a reason that has nothing to do with the app.
+  "exclude": [
+    "../clients/js/src/nox/indexer.ts",
+    "../clients/js/src/__tests__/noxIndexer.test.ts"
+  ]
 }

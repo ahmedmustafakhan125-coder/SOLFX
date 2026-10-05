@@ -76,3 +76,6 @@ deployment.json
 # from what is on chain, so it is regenerated rather than committed, exactly like its parent.
 deployment.*.json
 .stack-logs/
+
+# The NOXFUNDS indexer's database: regenerable from the chain, never source.
+services/indexer/data/
