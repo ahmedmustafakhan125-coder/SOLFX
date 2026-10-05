@@ -813,6 +813,8 @@ which is only the right starting value under that condition.
 
 ## Further reading
 
+- [`docs/diagrams/noxfunds/`](diagrams/noxfunds/) — how it works as flowcharts: both journeys, the escrow, one trade, settlement
+- [`docs/NOXFUNDS-DEPLOY.md`](NOXFUNDS-DEPLOY.md) — deploying the 2026-10-03 upgrade, step by step
 - [`docs/NOXFUNDS-PLAN.md`](NOXFUNDS-PLAN.md) — the full internal design, 752 lines
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — the SolFX exchange underneath
 - [`docs/FOREX-EXPLAINED.md`](FOREX-EXPLAINED.md) — trading concepts from zero
