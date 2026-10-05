@@ -7,6 +7,7 @@
  */
 
 export * from "./direction";
+export * from "./entryKind";
 export * from "./evalRule";
 export * from "./evaluationState";
 export * from "./feedKind";

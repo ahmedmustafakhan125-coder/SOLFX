@@ -12,10 +12,10 @@ import {
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
-  getI64Decoder,
-  getI64Encoder,
   getStructDecoder,
   getStructEncoder,
+  getU16Decoder,
+  getU16Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -44,17 +44,17 @@ import {
   type ResolvedAccount,
 } from "../shared";
 
-export const FUNDED_PLACE_TAKE_PROFIT_DISCRIMINATOR = new Uint8Array([
-  195, 75, 243, 152, 49, 23, 236, 177,
+export const FUNDED_ADD_MARGIN_DISCRIMINATOR = new Uint8Array([
+  181, 238, 106, 184, 181, 71, 190, 177,
 ]);
 
-export function getFundedPlaceTakeProfitDiscriminatorBytes() {
+export function getFundedAddMarginDiscriminatorBytes() {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    FUNDED_PLACE_TAKE_PROFIT_DISCRIMINATOR,
+    FUNDED_ADD_MARGIN_DISCRIMINATOR,
   );
 }
 
-export type FundedPlaceTakeProfitInstruction<
+export type FundedAddMarginInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
   TAccountTrader extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
@@ -64,13 +64,18 @@ export type FundedPlaceTakeProfitInstruction<
   TAccountUserAccount extends string | AccountMeta<string> = string,
   TAccountMarket extends string | AccountMeta<string> = string,
   TAccountPosition extends string | AccountMeta<string> = string,
-  TAccountTriggerOrder extends string | AccountMeta<string> = string,
+  TAccountCollateralVault extends string | AccountMeta<string> = string,
+  TAccountLpPool extends string | AccountMeta<string> = string,
+  TAccountLpVault extends string | AccountMeta<string> = string,
+  TAccountInsuranceFund extends string | AccountMeta<string> = string,
+  TAccountInsuranceVault extends string | AccountMeta<string> = string,
+  TAccountFeeVault extends string | AccountMeta<string> = string,
   TAccountPriceUpdate extends string | AccountMeta<string> = string,
   TAccountSecondaryPriceUpdate extends string | AccountMeta<string> = string,
   TAccountQuoteConversionPriceUpdate extends string | AccountMeta<string> =
     string,
-  TAccountSystemProgram extends string | AccountMeta<string> =
-    "11111111111111111111111111111111",
+  TAccountTokenProgram extends string | AccountMeta<string> =
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountSolfxCoreProgram extends string | AccountMeta<string> =
     "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -86,26 +91,41 @@ export type FundedPlaceTakeProfitInstruction<
         ? ReadonlyAccount<TAccountConfig>
         : TAccountConfig,
       TAccountMandate extends string
-        ? ReadonlyAccount<TAccountMandate>
+        ? WritableAccount<TAccountMandate>
         : TAccountMandate,
       TAccountMandateSigner extends string
         ? WritableAccount<TAccountMandateSigner>
         : TAccountMandateSigner,
       TAccountProtocol extends string
-        ? ReadonlyAccount<TAccountProtocol>
+        ? WritableAccount<TAccountProtocol>
         : TAccountProtocol,
       TAccountUserAccount extends string
-        ? ReadonlyAccount<TAccountUserAccount>
+        ? WritableAccount<TAccountUserAccount>
         : TAccountUserAccount,
       TAccountMarket extends string
-        ? ReadonlyAccount<TAccountMarket>
+        ? WritableAccount<TAccountMarket>
         : TAccountMarket,
       TAccountPosition extends string
-        ? ReadonlyAccount<TAccountPosition>
+        ? WritableAccount<TAccountPosition>
         : TAccountPosition,
-      TAccountTriggerOrder extends string
-        ? WritableAccount<TAccountTriggerOrder>
-        : TAccountTriggerOrder,
+      TAccountCollateralVault extends string
+        ? WritableAccount<TAccountCollateralVault>
+        : TAccountCollateralVault,
+      TAccountLpPool extends string
+        ? WritableAccount<TAccountLpPool>
+        : TAccountLpPool,
+      TAccountLpVault extends string
+        ? WritableAccount<TAccountLpVault>
+        : TAccountLpVault,
+      TAccountInsuranceFund extends string
+        ? WritableAccount<TAccountInsuranceFund>
+        : TAccountInsuranceFund,
+      TAccountInsuranceVault extends string
+        ? WritableAccount<TAccountInsuranceVault>
+        : TAccountInsuranceVault,
+      TAccountFeeVault extends string
+        ? WritableAccount<TAccountFeeVault>
+        : TAccountFeeVault,
       TAccountPriceUpdate extends string
         ? ReadonlyAccount<TAccountPriceUpdate>
         : TAccountPriceUpdate,
@@ -115,9 +135,9 @@ export type FundedPlaceTakeProfitInstruction<
       TAccountQuoteConversionPriceUpdate extends string
         ? ReadonlyAccount<TAccountQuoteConversionPriceUpdate>
         : TAccountQuoteConversionPriceUpdate,
-      TAccountSystemProgram extends string
-        ? ReadonlyAccount<TAccountSystemProgram>
-        : TAccountSystemProgram,
+      TAccountTokenProgram extends string
+        ? ReadonlyAccount<TAccountTokenProgram>
+        : TAccountTokenProgram,
       TAccountSolfxCoreProgram extends string
         ? ReadonlyAccount<TAccountSolfxCoreProgram>
         : TAccountSolfxCoreProgram,
@@ -125,54 +145,51 @@ export type FundedPlaceTakeProfitInstruction<
     ]
   >;
 
-export type FundedPlaceTakeProfitInstructionData = {
+export type FundedAddMarginInstructionData = {
   discriminator: ReadonlyUint8Array;
-  orderId: number;
-  triggerPrice: bigint;
-  sizeBase: bigint;
+  marketIndex: number;
+  nonce: number;
+  amount: bigint;
 };
 
-export type FundedPlaceTakeProfitInstructionDataArgs = {
-  orderId: number;
-  triggerPrice: number | bigint;
-  sizeBase: number | bigint;
+export type FundedAddMarginInstructionDataArgs = {
+  marketIndex: number;
+  nonce: number;
+  amount: number | bigint;
 };
 
-export function getFundedPlaceTakeProfitInstructionDataEncoder(): FixedSizeEncoder<FundedPlaceTakeProfitInstructionDataArgs> {
+export function getFundedAddMarginInstructionDataEncoder(): FixedSizeEncoder<FundedAddMarginInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["orderId", getU8Encoder()],
-      ["triggerPrice", getI64Encoder()],
-      ["sizeBase", getU64Encoder()],
+      ["marketIndex", getU16Encoder()],
+      ["nonce", getU8Encoder()],
+      ["amount", getU64Encoder()],
     ]),
-    (value) => ({
-      ...value,
-      discriminator: FUNDED_PLACE_TAKE_PROFIT_DISCRIMINATOR,
-    }),
+    (value) => ({ ...value, discriminator: FUNDED_ADD_MARGIN_DISCRIMINATOR }),
   );
 }
 
-export function getFundedPlaceTakeProfitInstructionDataDecoder(): FixedSizeDecoder<FundedPlaceTakeProfitInstructionData> {
+export function getFundedAddMarginInstructionDataDecoder(): FixedSizeDecoder<FundedAddMarginInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["orderId", getU8Decoder()],
-    ["triggerPrice", getI64Decoder()],
-    ["sizeBase", getU64Decoder()],
+    ["marketIndex", getU16Decoder()],
+    ["nonce", getU8Decoder()],
+    ["amount", getU64Decoder()],
   ]);
 }
 
-export function getFundedPlaceTakeProfitInstructionDataCodec(): FixedSizeCodec<
-  FundedPlaceTakeProfitInstructionDataArgs,
-  FundedPlaceTakeProfitInstructionData
+export function getFundedAddMarginInstructionDataCodec(): FixedSizeCodec<
+  FundedAddMarginInstructionDataArgs,
+  FundedAddMarginInstructionData
 > {
   return combineCodec(
-    getFundedPlaceTakeProfitInstructionDataEncoder(),
-    getFundedPlaceTakeProfitInstructionDataDecoder(),
+    getFundedAddMarginInstructionDataEncoder(),
+    getFundedAddMarginInstructionDataDecoder(),
   );
 }
 
-export type FundedPlaceTakeProfitAsyncInput<
+export type FundedAddMarginAsyncInput<
   TAccountTrader extends string = string,
   TAccountConfig extends string = string,
   TAccountMandate extends string = string,
@@ -181,50 +198,51 @@ export type FundedPlaceTakeProfitAsyncInput<
   TAccountUserAccount extends string = string,
   TAccountMarket extends string = string,
   TAccountPosition extends string = string,
-  TAccountTriggerOrder extends string = string,
+  TAccountCollateralVault extends string = string,
+  TAccountLpPool extends string = string,
+  TAccountLpVault extends string = string,
+  TAccountInsuranceFund extends string = string,
+  TAccountInsuranceVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountPriceUpdate extends string = string,
   TAccountSecondaryPriceUpdate extends string = string,
   TAccountQuoteConversionPriceUpdate extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountTokenProgram extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
-  /**
-   * Pays the transaction fee. Pays no rent: the trigger's rent comes from the mandate signer,
-   * and comes back to it on a cancel.
-   */
   trader: TransactionSigner<TAccountTrader>;
   config?: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
-  /** The SolFX authority: dataless, system-owned, signs the CPI and pays the trigger's rent. */
   mandateSigner?: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
-  /** this program can sign for. Not deserialized — this instruction prices nothing. */
+  /**
+   * Deserialized and reloaded after the CPI: the change in its free collateral is the amount
+   * that moved. `solfx-core` owns it, so Anchor never writes it back.
+   */
   userAccount: Address<TAccountUserAccount>;
   market: Address<TAccountMarket>;
   /**
-   * Deserialized for its opening slot, which the minimum-hold gate reads. `Account<Position>`
-   * checks `solfx-core` owns it; `solfx-core` checks its seeds and that it belongs to
-   * `user_account`. Read-only: `place_trigger_order` reads the position's size, direction and
-   * opening slot and writes none of them. An unnecessary write lock would serialise this
-   * against a close on the same position for no reason.
+   * Deserialized so the position named is the position adjusted; `solfx-core` checks it
+   * belongs to `user_account`.
    */
   position: Address<TAccountPosition>;
-  /**
-   * the mandate signer. An `order_id` already in use fails there as "account already in use",
-   * which is how a take-profit is prevented from ever overwriting the trade's stop.
-   */
-  triggerOrder: Address<TAccountTriggerOrder>;
+  collateralVault: Address<TAccountCollateralVault>;
+  lpPool: Address<TAccountLpPool>;
+  lpVault: Address<TAccountLpVault>;
+  insuranceFund: Address<TAccountInsuranceFund>;
+  insuranceVault: Address<TAccountInsuranceVault>;
+  feeVault: Address<TAccountFeeVault>;
   priceUpdate: Address<TAccountPriceUpdate>;
   secondaryPriceUpdate?: Address<TAccountSecondaryPriceUpdate>;
   quoteConversionPriceUpdate?: Address<TAccountQuoteConversionPriceUpdate>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  tokenProgram?: Address<TAccountTokenProgram>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
-  orderId: FundedPlaceTakeProfitInstructionDataArgs["orderId"];
-  triggerPrice: FundedPlaceTakeProfitInstructionDataArgs["triggerPrice"];
-  sizeBase: FundedPlaceTakeProfitInstructionDataArgs["sizeBase"];
+  marketIndex: FundedAddMarginInstructionDataArgs["marketIndex"];
+  nonce: FundedAddMarginInstructionDataArgs["nonce"];
+  amount: FundedAddMarginInstructionDataArgs["amount"];
 };
 
-export async function getFundedPlaceTakeProfitInstructionAsync<
+export async function getFundedAddMarginInstructionAsync<
   TAccountTrader extends string,
   TAccountConfig extends string,
   TAccountMandate extends string,
@@ -233,15 +251,20 @@ export async function getFundedPlaceTakeProfitInstructionAsync<
   TAccountUserAccount extends string,
   TAccountMarket extends string,
   TAccountPosition extends string,
-  TAccountTriggerOrder extends string,
+  TAccountCollateralVault extends string,
+  TAccountLpPool extends string,
+  TAccountLpVault extends string,
+  TAccountInsuranceFund extends string,
+  TAccountInsuranceVault extends string,
+  TAccountFeeVault extends string,
   TAccountPriceUpdate extends string,
   TAccountSecondaryPriceUpdate extends string,
   TAccountQuoteConversionPriceUpdate extends string,
-  TAccountSystemProgram extends string,
+  TAccountTokenProgram extends string,
   TAccountSolfxCoreProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
-  input: FundedPlaceTakeProfitAsyncInput<
+  input: FundedAddMarginAsyncInput<
     TAccountTrader,
     TAccountConfig,
     TAccountMandate,
@@ -250,16 +273,21 @@ export async function getFundedPlaceTakeProfitInstructionAsync<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
-    TAccountTriggerOrder,
+    TAccountCollateralVault,
+    TAccountLpPool,
+    TAccountLpVault,
+    TAccountInsuranceFund,
+    TAccountInsuranceVault,
+    TAccountFeeVault,
     TAccountPriceUpdate,
     TAccountSecondaryPriceUpdate,
     TAccountQuoteConversionPriceUpdate,
-    TAccountSystemProgram,
+    TAccountTokenProgram,
     TAccountSolfxCoreProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  FundedPlaceTakeProfitInstruction<
+  FundedAddMarginInstruction<
     TProgramAddress,
     TAccountTrader,
     TAccountConfig,
@@ -269,11 +297,16 @@ export async function getFundedPlaceTakeProfitInstructionAsync<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
-    TAccountTriggerOrder,
+    TAccountCollateralVault,
+    TAccountLpPool,
+    TAccountLpVault,
+    TAccountInsuranceFund,
+    TAccountInsuranceVault,
+    TAccountFeeVault,
     TAccountPriceUpdate,
     TAccountSecondaryPriceUpdate,
     TAccountQuoteConversionPriceUpdate,
-    TAccountSystemProgram,
+    TAccountTokenProgram,
     TAccountSolfxCoreProgram
   >
 > {
@@ -284,13 +317,18 @@ export async function getFundedPlaceTakeProfitInstructionAsync<
   const originalAccounts = {
     trader: { value: input.trader ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
-    mandate: { value: input.mandate ?? null, isWritable: false },
+    mandate: { value: input.mandate ?? null, isWritable: true },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
-    protocol: { value: input.protocol ?? null, isWritable: false },
-    userAccount: { value: input.userAccount ?? null, isWritable: false },
-    market: { value: input.market ?? null, isWritable: false },
-    position: { value: input.position ?? null, isWritable: false },
-    triggerOrder: { value: input.triggerOrder ?? null, isWritable: true },
+    protocol: { value: input.protocol ?? null, isWritable: true },
+    userAccount: { value: input.userAccount ?? null, isWritable: true },
+    market: { value: input.market ?? null, isWritable: true },
+    position: { value: input.position ?? null, isWritable: true },
+    collateralVault: { value: input.collateralVault ?? null, isWritable: true },
+    lpPool: { value: input.lpPool ?? null, isWritable: true },
+    lpVault: { value: input.lpVault ?? null, isWritable: true },
+    insuranceFund: { value: input.insuranceFund ?? null, isWritable: true },
+    insuranceVault: { value: input.insuranceVault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     priceUpdate: { value: input.priceUpdate ?? null, isWritable: false },
     secondaryPriceUpdate: {
       value: input.secondaryPriceUpdate ?? null,
@@ -300,7 +338,7 @@ export async function getFundedPlaceTakeProfitInstructionAsync<
       value: input.quoteConversionPriceUpdate ?? null,
       isWritable: false,
     },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     solfxCoreProgram: {
       value: input.solfxCoreProgram ?? null,
       isWritable: false,
@@ -323,9 +361,9 @@ export async function getFundedPlaceTakeProfitInstructionAsync<
       mandate: expectAddress(accounts.mandate.value),
     });
   }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
   if (!accounts.solfxCoreProgram.value) {
     accounts.solfxCoreProgram.value =
@@ -343,18 +381,23 @@ export async function getFundedPlaceTakeProfitInstructionAsync<
       getAccountMeta(accounts.userAccount),
       getAccountMeta(accounts.market),
       getAccountMeta(accounts.position),
-      getAccountMeta(accounts.triggerOrder),
+      getAccountMeta(accounts.collateralVault),
+      getAccountMeta(accounts.lpPool),
+      getAccountMeta(accounts.lpVault),
+      getAccountMeta(accounts.insuranceFund),
+      getAccountMeta(accounts.insuranceVault),
+      getAccountMeta(accounts.feeVault),
       getAccountMeta(accounts.priceUpdate),
       getAccountMeta(accounts.secondaryPriceUpdate),
       getAccountMeta(accounts.quoteConversionPriceUpdate),
-      getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.solfxCoreProgram),
     ],
-    data: getFundedPlaceTakeProfitInstructionDataEncoder().encode(
-      args as FundedPlaceTakeProfitInstructionDataArgs,
+    data: getFundedAddMarginInstructionDataEncoder().encode(
+      args as FundedAddMarginInstructionDataArgs,
     ),
     programAddress,
-  } as FundedPlaceTakeProfitInstruction<
+  } as FundedAddMarginInstruction<
     TProgramAddress,
     TAccountTrader,
     TAccountConfig,
@@ -364,16 +407,21 @@ export async function getFundedPlaceTakeProfitInstructionAsync<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
-    TAccountTriggerOrder,
+    TAccountCollateralVault,
+    TAccountLpPool,
+    TAccountLpVault,
+    TAccountInsuranceFund,
+    TAccountInsuranceVault,
+    TAccountFeeVault,
     TAccountPriceUpdate,
     TAccountSecondaryPriceUpdate,
     TAccountQuoteConversionPriceUpdate,
-    TAccountSystemProgram,
+    TAccountTokenProgram,
     TAccountSolfxCoreProgram
   >);
 }
 
-export type FundedPlaceTakeProfitInput<
+export type FundedAddMarginInput<
   TAccountTrader extends string = string,
   TAccountConfig extends string = string,
   TAccountMandate extends string = string,
@@ -382,50 +430,51 @@ export type FundedPlaceTakeProfitInput<
   TAccountUserAccount extends string = string,
   TAccountMarket extends string = string,
   TAccountPosition extends string = string,
-  TAccountTriggerOrder extends string = string,
+  TAccountCollateralVault extends string = string,
+  TAccountLpPool extends string = string,
+  TAccountLpVault extends string = string,
+  TAccountInsuranceFund extends string = string,
+  TAccountInsuranceVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountPriceUpdate extends string = string,
   TAccountSecondaryPriceUpdate extends string = string,
   TAccountQuoteConversionPriceUpdate extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountTokenProgram extends string = string,
   TAccountSolfxCoreProgram extends string = string,
 > = {
-  /**
-   * Pays the transaction fee. Pays no rent: the trigger's rent comes from the mandate signer,
-   * and comes back to it on a cancel.
-   */
   trader: TransactionSigner<TAccountTrader>;
   config: Address<TAccountConfig>;
   mandate: Address<TAccountMandate>;
-  /** The SolFX authority: dataless, system-owned, signs the CPI and pays the trigger's rent. */
   mandateSigner: Address<TAccountMandateSigner>;
   protocol: Address<TAccountProtocol>;
-  /** this program can sign for. Not deserialized — this instruction prices nothing. */
+  /**
+   * Deserialized and reloaded after the CPI: the change in its free collateral is the amount
+   * that moved. `solfx-core` owns it, so Anchor never writes it back.
+   */
   userAccount: Address<TAccountUserAccount>;
   market: Address<TAccountMarket>;
   /**
-   * Deserialized for its opening slot, which the minimum-hold gate reads. `Account<Position>`
-   * checks `solfx-core` owns it; `solfx-core` checks its seeds and that it belongs to
-   * `user_account`. Read-only: `place_trigger_order` reads the position's size, direction and
-   * opening slot and writes none of them. An unnecessary write lock would serialise this
-   * against a close on the same position for no reason.
+   * Deserialized so the position named is the position adjusted; `solfx-core` checks it
+   * belongs to `user_account`.
    */
   position: Address<TAccountPosition>;
-  /**
-   * the mandate signer. An `order_id` already in use fails there as "account already in use",
-   * which is how a take-profit is prevented from ever overwriting the trade's stop.
-   */
-  triggerOrder: Address<TAccountTriggerOrder>;
+  collateralVault: Address<TAccountCollateralVault>;
+  lpPool: Address<TAccountLpPool>;
+  lpVault: Address<TAccountLpVault>;
+  insuranceFund: Address<TAccountInsuranceFund>;
+  insuranceVault: Address<TAccountInsuranceVault>;
+  feeVault: Address<TAccountFeeVault>;
   priceUpdate: Address<TAccountPriceUpdate>;
   secondaryPriceUpdate?: Address<TAccountSecondaryPriceUpdate>;
   quoteConversionPriceUpdate?: Address<TAccountQuoteConversionPriceUpdate>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  tokenProgram?: Address<TAccountTokenProgram>;
   solfxCoreProgram?: Address<TAccountSolfxCoreProgram>;
-  orderId: FundedPlaceTakeProfitInstructionDataArgs["orderId"];
-  triggerPrice: FundedPlaceTakeProfitInstructionDataArgs["triggerPrice"];
-  sizeBase: FundedPlaceTakeProfitInstructionDataArgs["sizeBase"];
+  marketIndex: FundedAddMarginInstructionDataArgs["marketIndex"];
+  nonce: FundedAddMarginInstructionDataArgs["nonce"];
+  amount: FundedAddMarginInstructionDataArgs["amount"];
 };
 
-export function getFundedPlaceTakeProfitInstruction<
+export function getFundedAddMarginInstruction<
   TAccountTrader extends string,
   TAccountConfig extends string,
   TAccountMandate extends string,
@@ -434,15 +483,20 @@ export function getFundedPlaceTakeProfitInstruction<
   TAccountUserAccount extends string,
   TAccountMarket extends string,
   TAccountPosition extends string,
-  TAccountTriggerOrder extends string,
+  TAccountCollateralVault extends string,
+  TAccountLpPool extends string,
+  TAccountLpVault extends string,
+  TAccountInsuranceFund extends string,
+  TAccountInsuranceVault extends string,
+  TAccountFeeVault extends string,
   TAccountPriceUpdate extends string,
   TAccountSecondaryPriceUpdate extends string,
   TAccountQuoteConversionPriceUpdate extends string,
-  TAccountSystemProgram extends string,
+  TAccountTokenProgram extends string,
   TAccountSolfxCoreProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
-  input: FundedPlaceTakeProfitInput<
+  input: FundedAddMarginInput<
     TAccountTrader,
     TAccountConfig,
     TAccountMandate,
@@ -451,15 +505,20 @@ export function getFundedPlaceTakeProfitInstruction<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
-    TAccountTriggerOrder,
+    TAccountCollateralVault,
+    TAccountLpPool,
+    TAccountLpVault,
+    TAccountInsuranceFund,
+    TAccountInsuranceVault,
+    TAccountFeeVault,
     TAccountPriceUpdate,
     TAccountSecondaryPriceUpdate,
     TAccountQuoteConversionPriceUpdate,
-    TAccountSystemProgram,
+    TAccountTokenProgram,
     TAccountSolfxCoreProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): FundedPlaceTakeProfitInstruction<
+): FundedAddMarginInstruction<
   TProgramAddress,
   TAccountTrader,
   TAccountConfig,
@@ -469,11 +528,16 @@ export function getFundedPlaceTakeProfitInstruction<
   TAccountUserAccount,
   TAccountMarket,
   TAccountPosition,
-  TAccountTriggerOrder,
+  TAccountCollateralVault,
+  TAccountLpPool,
+  TAccountLpVault,
+  TAccountInsuranceFund,
+  TAccountInsuranceVault,
+  TAccountFeeVault,
   TAccountPriceUpdate,
   TAccountSecondaryPriceUpdate,
   TAccountQuoteConversionPriceUpdate,
-  TAccountSystemProgram,
+  TAccountTokenProgram,
   TAccountSolfxCoreProgram
 > {
   // Program address.
@@ -483,13 +547,18 @@ export function getFundedPlaceTakeProfitInstruction<
   const originalAccounts = {
     trader: { value: input.trader ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
-    mandate: { value: input.mandate ?? null, isWritable: false },
+    mandate: { value: input.mandate ?? null, isWritable: true },
     mandateSigner: { value: input.mandateSigner ?? null, isWritable: true },
-    protocol: { value: input.protocol ?? null, isWritable: false },
-    userAccount: { value: input.userAccount ?? null, isWritable: false },
-    market: { value: input.market ?? null, isWritable: false },
-    position: { value: input.position ?? null, isWritable: false },
-    triggerOrder: { value: input.triggerOrder ?? null, isWritable: true },
+    protocol: { value: input.protocol ?? null, isWritable: true },
+    userAccount: { value: input.userAccount ?? null, isWritable: true },
+    market: { value: input.market ?? null, isWritable: true },
+    position: { value: input.position ?? null, isWritable: true },
+    collateralVault: { value: input.collateralVault ?? null, isWritable: true },
+    lpPool: { value: input.lpPool ?? null, isWritable: true },
+    lpVault: { value: input.lpVault ?? null, isWritable: true },
+    insuranceFund: { value: input.insuranceFund ?? null, isWritable: true },
+    insuranceVault: { value: input.insuranceVault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     priceUpdate: { value: input.priceUpdate ?? null, isWritable: false },
     secondaryPriceUpdate: {
       value: input.secondaryPriceUpdate ?? null,
@@ -499,7 +568,7 @@ export function getFundedPlaceTakeProfitInstruction<
       value: input.quoteConversionPriceUpdate ?? null,
       isWritable: false,
     },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     solfxCoreProgram: {
       value: input.solfxCoreProgram ?? null,
       isWritable: false,
@@ -514,9 +583,9 @@ export function getFundedPlaceTakeProfitInstruction<
   const args = { ...input };
 
   // Resolve default values.
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
   if (!accounts.solfxCoreProgram.value) {
     accounts.solfxCoreProgram.value =
@@ -534,18 +603,23 @@ export function getFundedPlaceTakeProfitInstruction<
       getAccountMeta(accounts.userAccount),
       getAccountMeta(accounts.market),
       getAccountMeta(accounts.position),
-      getAccountMeta(accounts.triggerOrder),
+      getAccountMeta(accounts.collateralVault),
+      getAccountMeta(accounts.lpPool),
+      getAccountMeta(accounts.lpVault),
+      getAccountMeta(accounts.insuranceFund),
+      getAccountMeta(accounts.insuranceVault),
+      getAccountMeta(accounts.feeVault),
       getAccountMeta(accounts.priceUpdate),
       getAccountMeta(accounts.secondaryPriceUpdate),
       getAccountMeta(accounts.quoteConversionPriceUpdate),
-      getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.solfxCoreProgram),
     ],
-    data: getFundedPlaceTakeProfitInstructionDataEncoder().encode(
-      args as FundedPlaceTakeProfitInstructionDataArgs,
+    data: getFundedAddMarginInstructionDataEncoder().encode(
+      args as FundedAddMarginInstructionDataArgs,
     ),
     programAddress,
-  } as FundedPlaceTakeProfitInstruction<
+  } as FundedAddMarginInstruction<
     TProgramAddress,
     TAccountTrader,
     TAccountConfig,
@@ -555,65 +629,66 @@ export function getFundedPlaceTakeProfitInstruction<
     TAccountUserAccount,
     TAccountMarket,
     TAccountPosition,
-    TAccountTriggerOrder,
+    TAccountCollateralVault,
+    TAccountLpPool,
+    TAccountLpVault,
+    TAccountInsuranceFund,
+    TAccountInsuranceVault,
+    TAccountFeeVault,
     TAccountPriceUpdate,
     TAccountSecondaryPriceUpdate,
     TAccountQuoteConversionPriceUpdate,
-    TAccountSystemProgram,
+    TAccountTokenProgram,
     TAccountSolfxCoreProgram
   >);
 }
 
-export type ParsedFundedPlaceTakeProfitInstruction<
+export type ParsedFundedAddMarginInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /**
-     * Pays the transaction fee. Pays no rent: the trigger's rent comes from the mandate signer,
-     * and comes back to it on a cancel.
-     */
     trader: TAccountMetas[0];
     config: TAccountMetas[1];
     mandate: TAccountMetas[2];
-    /** The SolFX authority: dataless, system-owned, signs the CPI and pays the trigger's rent. */
     mandateSigner: TAccountMetas[3];
     protocol: TAccountMetas[4];
-    /** this program can sign for. Not deserialized — this instruction prices nothing. */
+    /**
+     * Deserialized and reloaded after the CPI: the change in its free collateral is the amount
+     * that moved. `solfx-core` owns it, so Anchor never writes it back.
+     */
     userAccount: TAccountMetas[5];
     market: TAccountMetas[6];
     /**
-     * Deserialized for its opening slot, which the minimum-hold gate reads. `Account<Position>`
-     * checks `solfx-core` owns it; `solfx-core` checks its seeds and that it belongs to
-     * `user_account`. Read-only: `place_trigger_order` reads the position's size, direction and
-     * opening slot and writes none of them. An unnecessary write lock would serialise this
-     * against a close on the same position for no reason.
+     * Deserialized so the position named is the position adjusted; `solfx-core` checks it
+     * belongs to `user_account`.
      */
     position: TAccountMetas[7];
-    /**
-     * the mandate signer. An `order_id` already in use fails there as "account already in use",
-     * which is how a take-profit is prevented from ever overwriting the trade's stop.
-     */
-    triggerOrder: TAccountMetas[8];
-    priceUpdate: TAccountMetas[9];
-    secondaryPriceUpdate?: TAccountMetas[10] | undefined;
-    quoteConversionPriceUpdate?: TAccountMetas[11] | undefined;
-    systemProgram: TAccountMetas[12];
-    solfxCoreProgram: TAccountMetas[13];
+    collateralVault: TAccountMetas[8];
+    lpPool: TAccountMetas[9];
+    lpVault: TAccountMetas[10];
+    insuranceFund: TAccountMetas[11];
+    insuranceVault: TAccountMetas[12];
+    feeVault: TAccountMetas[13];
+    priceUpdate: TAccountMetas[14];
+    secondaryPriceUpdate?: TAccountMetas[15] | undefined;
+    quoteConversionPriceUpdate?: TAccountMetas[16] | undefined;
+    tokenProgram: TAccountMetas[17];
+    solfxCoreProgram: TAccountMetas[18];
   };
-  data: FundedPlaceTakeProfitInstructionData;
+  data: FundedAddMarginInstructionData;
 };
 
-export function parseFundedPlaceTakeProfitInstruction<
+export function parseFundedAddMarginInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedFundedPlaceTakeProfitInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 14) {
+): ParsedFundedAddMarginInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 19) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -640,15 +715,18 @@ export function parseFundedPlaceTakeProfitInstruction<
       userAccount: getNextAccount(),
       market: getNextAccount(),
       position: getNextAccount(),
-      triggerOrder: getNextAccount(),
+      collateralVault: getNextAccount(),
+      lpPool: getNextAccount(),
+      lpVault: getNextAccount(),
+      insuranceFund: getNextAccount(),
+      insuranceVault: getNextAccount(),
+      feeVault: getNextAccount(),
       priceUpdate: getNextAccount(),
       secondaryPriceUpdate: getNextOptionalAccount(),
       quoteConversionPriceUpdate: getNextOptionalAccount(),
-      systemProgram: getNextAccount(),
+      tokenProgram: getNextAccount(),
       solfxCoreProgram: getNextAccount(),
     },
-    data: getFundedPlaceTakeProfitInstructionDataDecoder().decode(
-      instruction.data,
-    ),
+    data: getFundedAddMarginInstructionDataDecoder().decode(instruction.data),
   };
 }

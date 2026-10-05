@@ -15,9 +15,11 @@ import type { Address } from "@solana/kit";
 import { nox } from "../index.js";
 import {
   NOX_SEEDS,
+  findEvalEntryOrder,
   findEvaluation,
   findEvaluationVault,
   findMandate,
+  findMandateEntryOrder,
   findNoxConfig,
   findProfile,
   findVirtualPosition,
@@ -62,6 +64,24 @@ describe("NOXFUNDS addresses match devnet", () => {
     expect(vpos).not.toBe("A2umvJtwkFnqyBuFGcY5txfAZuw7zwQAaj4eW38WFZqs"); // big-endian
   });
 
+  it("entry-order addresses match the Solana CLI's derivation", async () => {
+    // Pinned against `solana find-program-derived-address`, a separate implementation, since
+    // no entry order exists on any cluster yet.
+    const evaluation = await findEvaluation(TRADER, 3);
+    expect(await findEvalEntryOrder(evaluation, 4)).toBe(
+      "F6JhiSj84vb3Cn9roaCMfugkpecxTb3RoWms9uxgfsvF",
+    );
+    expect(
+      await findMandateEntryOrder(
+        "Bf7aVemJQwTq5trPgqo6t7vjmHy4M3FcxjjHSp1BCyrc" as Address,
+        200,
+      ),
+    ).toBe("A9P9S9A7Gu9tL92ZJ9qmSYfLa9f9Jg3yfNWa3VM5T2Kc");
+    await expect(findEvalEntryOrder(evaluation, 256)).rejects.toThrow(
+      RangeError,
+    );
+  });
+
   it("refuses a seq that is not a u8", async () => {
     await expect(findMandate(INVESTOR, TRADER, 256)).rejects.toThrow(
       RangeError,
@@ -98,6 +118,8 @@ describe("NOXFUNDS addresses match devnet", () => {
         EVAL_SEED: NOX_SEEDS.evaluation,
         EVAL_VAULT_SEED: NOX_SEEDS.evaluationVault,
         VPOS_SEED: NOX_SEEDS.virtualPosition,
+        EVAL_ORDER_SEED: NOX_SEEDS.evalEntryOrder,
+        MANDATE_ORDER_SEED: NOX_SEEDS.mandateEntryOrder,
       };
       for (const [name, value] of Object.entries(expected)) {
         expect(inRust.get(name), name).toBe(value);
@@ -127,7 +149,10 @@ describe("the NOXFUNDS IDL is derived, not typed", () => {
   };
 
   const anchorDiscriminator = (namespace: string, name: string) => [
-    ...createHash("sha256").update(`${namespace}:${name}`).digest().subarray(0, 8),
+    ...createHash("sha256")
+      .update(`${namespace}:${name}`)
+      .digest()
+      .subarray(0, 8),
   ];
 
   it("every instruction discriminator is sha256(global:<name>)[..8]", () => {

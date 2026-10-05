@@ -44,31 +44,31 @@ import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
 import {
   getDirectionDecoder,
   getDirectionEncoder,
+  getEntryKindDecoder,
+  getEntryKindEncoder,
   type Direction,
   type DirectionArgs,
+  type EntryKind,
+  type EntryKindArgs,
 } from "../types";
 
-export const EVAL_OPEN_POSITION_DISCRIMINATOR = new Uint8Array([
-  44, 175, 249, 12, 240, 36, 239, 100,
+export const EVAL_PLACE_ENTRY_ORDER_DISCRIMINATOR = new Uint8Array([
+  34, 250, 203, 120, 58, 71, 13, 205,
 ]);
 
-export function getEvalOpenPositionDiscriminatorBytes() {
+export function getEvalPlaceEntryOrderDiscriminatorBytes() {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    EVAL_OPEN_POSITION_DISCRIMINATOR,
+    EVAL_PLACE_ENTRY_ORDER_DISCRIMINATOR,
   );
 }
 
-export type EvalOpenPositionInstruction<
+export type EvalPlaceEntryOrderInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
   TAccountTrader extends string | AccountMeta<string> = string,
   TAccountConfig extends string | AccountMeta<string> = string,
   TAccountEvaluation extends string | AccountMeta<string> = string,
-  TAccountVirtualPosition extends string | AccountMeta<string> = string,
+  TAccountEntryOrder extends string | AccountMeta<string> = string,
   TAccountMarket extends string | AccountMeta<string> = string,
-  TAccountPriceUpdate extends string | AccountMeta<string> = string,
-  TAccountSecondaryPriceUpdate extends string | AccountMeta<string> = string,
-  TAccountQuoteConversionPriceUpdate extends string | AccountMeta<string> =
-    string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -86,21 +86,12 @@ export type EvalOpenPositionInstruction<
       TAccountEvaluation extends string
         ? WritableAccount<TAccountEvaluation>
         : TAccountEvaluation,
-      TAccountVirtualPosition extends string
-        ? WritableAccount<TAccountVirtualPosition>
-        : TAccountVirtualPosition,
+      TAccountEntryOrder extends string
+        ? WritableAccount<TAccountEntryOrder>
+        : TAccountEntryOrder,
       TAccountMarket extends string
         ? ReadonlyAccount<TAccountMarket>
         : TAccountMarket,
-      TAccountPriceUpdate extends string
-        ? ReadonlyAccount<TAccountPriceUpdate>
-        : TAccountPriceUpdate,
-      TAccountSecondaryPriceUpdate extends string
-        ? ReadonlyAccount<TAccountSecondaryPriceUpdate>
-        : TAccountSecondaryPriceUpdate,
-      TAccountQuoteConversionPriceUpdate extends string
-        ? ReadonlyAccount<TAccountQuoteConversionPriceUpdate>
-        : TAccountQuoteConversionPriceUpdate,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -108,133 +99,141 @@ export type EvalOpenPositionInstruction<
     ]
   >;
 
-export type EvalOpenPositionInstructionData = {
+export type EvalPlaceEntryOrderInstructionData = {
   discriminator: ReadonlyUint8Array;
+  orderId: number;
   marketIndex: number;
   nonce: number;
   direction: Direction;
+  kind: EntryKind;
+  triggerPrice: bigint;
   sizeBase: bigint;
   stopLossPrice: bigint;
+  /** Zero for none. */
+  takeProfitPrice: bigint;
+  /** Zero: good until cancelled. */
+  expiresAt: bigint;
 };
 
-export type EvalOpenPositionInstructionDataArgs = {
+export type EvalPlaceEntryOrderInstructionDataArgs = {
+  orderId: number;
   marketIndex: number;
   nonce: number;
   direction: DirectionArgs;
+  kind: EntryKindArgs;
+  triggerPrice: number | bigint;
   sizeBase: number | bigint;
   stopLossPrice: number | bigint;
+  /** Zero for none. */
+  takeProfitPrice: number | bigint;
+  /** Zero: good until cancelled. */
+  expiresAt: number | bigint;
 };
 
-export function getEvalOpenPositionInstructionDataEncoder(): FixedSizeEncoder<EvalOpenPositionInstructionDataArgs> {
+export function getEvalPlaceEntryOrderInstructionDataEncoder(): FixedSizeEncoder<EvalPlaceEntryOrderInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["orderId", getU8Encoder()],
       ["marketIndex", getU16Encoder()],
       ["nonce", getU8Encoder()],
       ["direction", getDirectionEncoder()],
+      ["kind", getEntryKindEncoder()],
+      ["triggerPrice", getI64Encoder()],
       ["sizeBase", getU64Encoder()],
       ["stopLossPrice", getI64Encoder()],
+      ["takeProfitPrice", getI64Encoder()],
+      ["expiresAt", getI64Encoder()],
     ]),
-    (value) => ({ ...value, discriminator: EVAL_OPEN_POSITION_DISCRIMINATOR }),
+    (value) => ({
+      ...value,
+      discriminator: EVAL_PLACE_ENTRY_ORDER_DISCRIMINATOR,
+    }),
   );
 }
 
-export function getEvalOpenPositionInstructionDataDecoder(): FixedSizeDecoder<EvalOpenPositionInstructionData> {
+export function getEvalPlaceEntryOrderInstructionDataDecoder(): FixedSizeDecoder<EvalPlaceEntryOrderInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["orderId", getU8Decoder()],
     ["marketIndex", getU16Decoder()],
     ["nonce", getU8Decoder()],
     ["direction", getDirectionDecoder()],
+    ["kind", getEntryKindDecoder()],
+    ["triggerPrice", getI64Decoder()],
     ["sizeBase", getU64Decoder()],
     ["stopLossPrice", getI64Decoder()],
+    ["takeProfitPrice", getI64Decoder()],
+    ["expiresAt", getI64Decoder()],
   ]);
 }
 
-export function getEvalOpenPositionInstructionDataCodec(): FixedSizeCodec<
-  EvalOpenPositionInstructionDataArgs,
-  EvalOpenPositionInstructionData
+export function getEvalPlaceEntryOrderInstructionDataCodec(): FixedSizeCodec<
+  EvalPlaceEntryOrderInstructionDataArgs,
+  EvalPlaceEntryOrderInstructionData
 > {
   return combineCodec(
-    getEvalOpenPositionInstructionDataEncoder(),
-    getEvalOpenPositionInstructionDataDecoder(),
+    getEvalPlaceEntryOrderInstructionDataEncoder(),
+    getEvalPlaceEntryOrderInstructionDataDecoder(),
   );
 }
 
-export type EvalOpenPositionAsyncInput<
+export type EvalPlaceEntryOrderAsyncInput<
   TAccountTrader extends string = string,
   TAccountConfig extends string = string,
   TAccountEvaluation extends string = string,
-  TAccountVirtualPosition extends string = string,
+  TAccountEntryOrder extends string = string,
   TAccountMarket extends string = string,
-  TAccountPriceUpdate extends string = string,
-  TAccountSecondaryPriceUpdate extends string = string,
-  TAccountQuoteConversionPriceUpdate extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   trader: TransactionSigner<TAccountTrader>;
   config?: Address<TAccountConfig>;
   evaluation: Address<TAccountEvaluation>;
-  virtualPosition: Address<TAccountVirtualPosition>;
+  entryOrder: Address<TAccountEntryOrder>;
   /**
-   * SolFX's own market account. `Account<Market>` checks it is owned by `solfx-core`, which
-   * is the only program that can create one, so it cannot be forged.
+   * SolFX's own market account, read for its size bounds and its price shape. No price is
+   * read: an order may rest across a closed session, and every price rule runs at the fill.
    */
   market: Address<TAccountMarket>;
-  /**
-   * Pyth's price update. `load_validated_price` checks it is the market's own feed and
-   * applies every staleness and confidence gate a real fill applies.
-   */
-  priceUpdate: Address<TAccountPriceUpdate>;
-  /**
-   * The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
-   * refuses a synthetic market without it, and checks it is the market's own feed.
-   */
-  secondaryPriceUpdate?: Address<TAccountSecondaryPriceUpdate>;
-  /** The conversion leg of a market not quoted in USD, checked the same way. */
-  quoteConversionPriceUpdate?: Address<TAccountQuoteConversionPriceUpdate>;
   systemProgram?: Address<TAccountSystemProgram>;
-  marketIndex: EvalOpenPositionInstructionDataArgs["marketIndex"];
-  nonce: EvalOpenPositionInstructionDataArgs["nonce"];
-  direction: EvalOpenPositionInstructionDataArgs["direction"];
-  sizeBase: EvalOpenPositionInstructionDataArgs["sizeBase"];
-  stopLossPrice: EvalOpenPositionInstructionDataArgs["stopLossPrice"];
+  orderId: EvalPlaceEntryOrderInstructionDataArgs["orderId"];
+  marketIndex: EvalPlaceEntryOrderInstructionDataArgs["marketIndex"];
+  nonce: EvalPlaceEntryOrderInstructionDataArgs["nonce"];
+  direction: EvalPlaceEntryOrderInstructionDataArgs["direction"];
+  kind: EvalPlaceEntryOrderInstructionDataArgs["kind"];
+  triggerPrice: EvalPlaceEntryOrderInstructionDataArgs["triggerPrice"];
+  sizeBase: EvalPlaceEntryOrderInstructionDataArgs["sizeBase"];
+  stopLossPrice: EvalPlaceEntryOrderInstructionDataArgs["stopLossPrice"];
+  takeProfitPrice: EvalPlaceEntryOrderInstructionDataArgs["takeProfitPrice"];
+  expiresAt: EvalPlaceEntryOrderInstructionDataArgs["expiresAt"];
 };
 
-export async function getEvalOpenPositionInstructionAsync<
+export async function getEvalPlaceEntryOrderInstructionAsync<
   TAccountTrader extends string,
   TAccountConfig extends string,
   TAccountEvaluation extends string,
-  TAccountVirtualPosition extends string,
+  TAccountEntryOrder extends string,
   TAccountMarket extends string,
-  TAccountPriceUpdate extends string,
-  TAccountSecondaryPriceUpdate extends string,
-  TAccountQuoteConversionPriceUpdate extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
-  input: EvalOpenPositionAsyncInput<
+  input: EvalPlaceEntryOrderAsyncInput<
     TAccountTrader,
     TAccountConfig,
     TAccountEvaluation,
-    TAccountVirtualPosition,
+    TAccountEntryOrder,
     TAccountMarket,
-    TAccountPriceUpdate,
-    TAccountSecondaryPriceUpdate,
-    TAccountQuoteConversionPriceUpdate,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  EvalOpenPositionInstruction<
+  EvalPlaceEntryOrderInstruction<
     TProgramAddress,
     TAccountTrader,
     TAccountConfig,
     TAccountEvaluation,
-    TAccountVirtualPosition,
+    TAccountEntryOrder,
     TAccountMarket,
-    TAccountPriceUpdate,
-    TAccountSecondaryPriceUpdate,
-    TAccountQuoteConversionPriceUpdate,
     TAccountSystemProgram
   >
 > {
@@ -246,17 +245,8 @@ export async function getEvalOpenPositionInstructionAsync<
     trader: { value: input.trader ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     evaluation: { value: input.evaluation ?? null, isWritable: true },
-    virtualPosition: { value: input.virtualPosition ?? null, isWritable: true },
+    entryOrder: { value: input.entryOrder ?? null, isWritable: true },
     market: { value: input.market ?? null, isWritable: false },
-    priceUpdate: { value: input.priceUpdate ?? null, isWritable: false },
-    secondaryPriceUpdate: {
-      value: input.secondaryPriceUpdate ?? null,
-      isWritable: false,
-    },
-    quoteConversionPriceUpdate: {
-      value: input.quoteConversionPriceUpdate ?? null,
-      isWritable: false,
-    },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -282,105 +272,80 @@ export async function getEvalOpenPositionInstructionAsync<
       getAccountMeta(accounts.trader),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.evaluation),
-      getAccountMeta(accounts.virtualPosition),
+      getAccountMeta(accounts.entryOrder),
       getAccountMeta(accounts.market),
-      getAccountMeta(accounts.priceUpdate),
-      getAccountMeta(accounts.secondaryPriceUpdate),
-      getAccountMeta(accounts.quoteConversionPriceUpdate),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getEvalOpenPositionInstructionDataEncoder().encode(
-      args as EvalOpenPositionInstructionDataArgs,
+    data: getEvalPlaceEntryOrderInstructionDataEncoder().encode(
+      args as EvalPlaceEntryOrderInstructionDataArgs,
     ),
     programAddress,
-  } as EvalOpenPositionInstruction<
+  } as EvalPlaceEntryOrderInstruction<
     TProgramAddress,
     TAccountTrader,
     TAccountConfig,
     TAccountEvaluation,
-    TAccountVirtualPosition,
+    TAccountEntryOrder,
     TAccountMarket,
-    TAccountPriceUpdate,
-    TAccountSecondaryPriceUpdate,
-    TAccountQuoteConversionPriceUpdate,
     TAccountSystemProgram
   >);
 }
 
-export type EvalOpenPositionInput<
+export type EvalPlaceEntryOrderInput<
   TAccountTrader extends string = string,
   TAccountConfig extends string = string,
   TAccountEvaluation extends string = string,
-  TAccountVirtualPosition extends string = string,
+  TAccountEntryOrder extends string = string,
   TAccountMarket extends string = string,
-  TAccountPriceUpdate extends string = string,
-  TAccountSecondaryPriceUpdate extends string = string,
-  TAccountQuoteConversionPriceUpdate extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   trader: TransactionSigner<TAccountTrader>;
   config: Address<TAccountConfig>;
   evaluation: Address<TAccountEvaluation>;
-  virtualPosition: Address<TAccountVirtualPosition>;
+  entryOrder: Address<TAccountEntryOrder>;
   /**
-   * SolFX's own market account. `Account<Market>` checks it is owned by `solfx-core`, which
-   * is the only program that can create one, so it cannot be forged.
+   * SolFX's own market account, read for its size bounds and its price shape. No price is
+   * read: an order may rest across a closed session, and every price rule runs at the fill.
    */
   market: Address<TAccountMarket>;
-  /**
-   * Pyth's price update. `load_validated_price` checks it is the market's own feed and
-   * applies every staleness and confidence gate a real fill applies.
-   */
-  priceUpdate: Address<TAccountPriceUpdate>;
-  /**
-   * The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
-   * refuses a synthetic market without it, and checks it is the market's own feed.
-   */
-  secondaryPriceUpdate?: Address<TAccountSecondaryPriceUpdate>;
-  /** The conversion leg of a market not quoted in USD, checked the same way. */
-  quoteConversionPriceUpdate?: Address<TAccountQuoteConversionPriceUpdate>;
   systemProgram?: Address<TAccountSystemProgram>;
-  marketIndex: EvalOpenPositionInstructionDataArgs["marketIndex"];
-  nonce: EvalOpenPositionInstructionDataArgs["nonce"];
-  direction: EvalOpenPositionInstructionDataArgs["direction"];
-  sizeBase: EvalOpenPositionInstructionDataArgs["sizeBase"];
-  stopLossPrice: EvalOpenPositionInstructionDataArgs["stopLossPrice"];
+  orderId: EvalPlaceEntryOrderInstructionDataArgs["orderId"];
+  marketIndex: EvalPlaceEntryOrderInstructionDataArgs["marketIndex"];
+  nonce: EvalPlaceEntryOrderInstructionDataArgs["nonce"];
+  direction: EvalPlaceEntryOrderInstructionDataArgs["direction"];
+  kind: EvalPlaceEntryOrderInstructionDataArgs["kind"];
+  triggerPrice: EvalPlaceEntryOrderInstructionDataArgs["triggerPrice"];
+  sizeBase: EvalPlaceEntryOrderInstructionDataArgs["sizeBase"];
+  stopLossPrice: EvalPlaceEntryOrderInstructionDataArgs["stopLossPrice"];
+  takeProfitPrice: EvalPlaceEntryOrderInstructionDataArgs["takeProfitPrice"];
+  expiresAt: EvalPlaceEntryOrderInstructionDataArgs["expiresAt"];
 };
 
-export function getEvalOpenPositionInstruction<
+export function getEvalPlaceEntryOrderInstruction<
   TAccountTrader extends string,
   TAccountConfig extends string,
   TAccountEvaluation extends string,
-  TAccountVirtualPosition extends string,
+  TAccountEntryOrder extends string,
   TAccountMarket extends string,
-  TAccountPriceUpdate extends string,
-  TAccountSecondaryPriceUpdate extends string,
-  TAccountQuoteConversionPriceUpdate extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
-  input: EvalOpenPositionInput<
+  input: EvalPlaceEntryOrderInput<
     TAccountTrader,
     TAccountConfig,
     TAccountEvaluation,
-    TAccountVirtualPosition,
+    TAccountEntryOrder,
     TAccountMarket,
-    TAccountPriceUpdate,
-    TAccountSecondaryPriceUpdate,
-    TAccountQuoteConversionPriceUpdate,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): EvalOpenPositionInstruction<
+): EvalPlaceEntryOrderInstruction<
   TProgramAddress,
   TAccountTrader,
   TAccountConfig,
   TAccountEvaluation,
-  TAccountVirtualPosition,
+  TAccountEntryOrder,
   TAccountMarket,
-  TAccountPriceUpdate,
-  TAccountSecondaryPriceUpdate,
-  TAccountQuoteConversionPriceUpdate,
   TAccountSystemProgram
 > {
   // Program address.
@@ -391,17 +356,8 @@ export function getEvalOpenPositionInstruction<
     trader: { value: input.trader ?? null, isWritable: true },
     config: { value: input.config ?? null, isWritable: false },
     evaluation: { value: input.evaluation ?? null, isWritable: true },
-    virtualPosition: { value: input.virtualPosition ?? null, isWritable: true },
+    entryOrder: { value: input.entryOrder ?? null, isWritable: true },
     market: { value: input.market ?? null, isWritable: false },
-    priceUpdate: { value: input.priceUpdate ?? null, isWritable: false },
-    secondaryPriceUpdate: {
-      value: input.secondaryPriceUpdate ?? null,
-      isWritable: false,
-    },
-    quoteConversionPriceUpdate: {
-      value: input.quoteConversionPriceUpdate ?? null,
-      isWritable: false,
-    },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -424,32 +380,26 @@ export function getEvalOpenPositionInstruction<
       getAccountMeta(accounts.trader),
       getAccountMeta(accounts.config),
       getAccountMeta(accounts.evaluation),
-      getAccountMeta(accounts.virtualPosition),
+      getAccountMeta(accounts.entryOrder),
       getAccountMeta(accounts.market),
-      getAccountMeta(accounts.priceUpdate),
-      getAccountMeta(accounts.secondaryPriceUpdate),
-      getAccountMeta(accounts.quoteConversionPriceUpdate),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getEvalOpenPositionInstructionDataEncoder().encode(
-      args as EvalOpenPositionInstructionDataArgs,
+    data: getEvalPlaceEntryOrderInstructionDataEncoder().encode(
+      args as EvalPlaceEntryOrderInstructionDataArgs,
     ),
     programAddress,
-  } as EvalOpenPositionInstruction<
+  } as EvalPlaceEntryOrderInstruction<
     TProgramAddress,
     TAccountTrader,
     TAccountConfig,
     TAccountEvaluation,
-    TAccountVirtualPosition,
+    TAccountEntryOrder,
     TAccountMarket,
-    TAccountPriceUpdate,
-    TAccountSecondaryPriceUpdate,
-    TAccountQuoteConversionPriceUpdate,
     TAccountSystemProgram
   >);
 }
 
-export type ParsedEvalOpenPositionInstruction<
+export type ParsedEvalPlaceEntryOrderInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
@@ -458,38 +408,26 @@ export type ParsedEvalOpenPositionInstruction<
     trader: TAccountMetas[0];
     config: TAccountMetas[1];
     evaluation: TAccountMetas[2];
-    virtualPosition: TAccountMetas[3];
+    entryOrder: TAccountMetas[3];
     /**
-     * SolFX's own market account. `Account<Market>` checks it is owned by `solfx-core`, which
-     * is the only program that can create one, so it cannot be forged.
+     * SolFX's own market account, read for its size bounds and its price shape. No price is
+     * read: an order may rest across a closed session, and every price rule runs at the fill.
      */
     market: TAccountMetas[4];
-    /**
-     * Pyth's price update. `load_validated_price` checks it is the market's own feed and
-     * applies every staleness and confidence gate a real fill applies.
-     */
-    priceUpdate: TAccountMetas[5];
-    /**
-     * The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
-     * refuses a synthetic market without it, and checks it is the market's own feed.
-     */
-    secondaryPriceUpdate?: TAccountMetas[6] | undefined;
-    /** The conversion leg of a market not quoted in USD, checked the same way. */
-    quoteConversionPriceUpdate?: TAccountMetas[7] | undefined;
-    systemProgram: TAccountMetas[8];
+    systemProgram: TAccountMetas[5];
   };
-  data: EvalOpenPositionInstructionData;
+  data: EvalPlaceEntryOrderInstructionData;
 };
 
-export function parseEvalOpenPositionInstruction<
+export function parseEvalPlaceEntryOrderInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedEvalOpenPositionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+): ParsedEvalPlaceEntryOrderInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 6) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -499,25 +437,18 @@ export function parseEvalOpenPositionInstruction<
     accountIndex += 1;
     return accountMeta;
   };
-  const getNextOptionalAccount = () => {
-    const accountMeta = getNextAccount();
-    return accountMeta.address === NOXFUNDS_PROGRAM_ADDRESS
-      ? undefined
-      : accountMeta;
-  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
       trader: getNextAccount(),
       config: getNextAccount(),
       evaluation: getNextAccount(),
-      virtualPosition: getNextAccount(),
+      entryOrder: getNextAccount(),
       market: getNextAccount(),
-      priceUpdate: getNextAccount(),
-      secondaryPriceUpdate: getNextOptionalAccount(),
-      quoteConversionPriceUpdate: getNextOptionalAccount(),
       systemProgram: getNextAccount(),
     },
-    data: getEvalOpenPositionInstructionDataDecoder().decode(instruction.data),
+    data: getEvalPlaceEntryOrderInstructionDataDecoder().decode(
+      instruction.data,
+    ),
   };
 }

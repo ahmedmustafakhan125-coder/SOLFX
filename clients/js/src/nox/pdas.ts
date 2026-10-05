@@ -34,6 +34,8 @@ export const NOX_SEEDS = {
   evaluation: "eval",
   evaluationVault: "eval_vault",
   virtualPosition: "vpos",
+  evalEntryOrder: "eorder",
+  mandateEntryOrder: "morder",
 } as const;
 
 const utf8 = new TextEncoder();
@@ -136,3 +138,25 @@ export const findVirtualPosition = async (
     seqByte(nonce),
   ]);
 };
+
+/** A resting entry on an evaluation, at `["eorder", evaluation, order_id]`. */
+export const findEvalEntryOrder = async (
+  evaluation: Address,
+  orderId: number,
+) =>
+  pda([
+    tag(NOX_SEEDS.evalEntryOrder),
+    addr.encode(evaluation) as Uint8Array,
+    seqByte(orderId),
+  ]);
+
+/** A resting entry on a funded mandate, at `["morder", mandate, order_id]`. */
+export const findMandateEntryOrder = async (
+  mandate: Address,
+  orderId: number,
+) =>
+  pda([
+    tag(NOX_SEEDS.mandateEntryOrder),
+    addr.encode(mandate) as Uint8Array,
+    seqByte(orderId),
+  ]);

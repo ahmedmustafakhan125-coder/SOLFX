@@ -6,10 +6,12 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./evalEntryOrder";
 export * from "./evaluation";
 export * from "./fundingRequest";
 export * from "./investorListing";
 export * from "./mandate";
+export * from "./mandateEntryOrder";
 export * from "./mandateOffer";
 export * from "./noxConfig";
 export * from "./traderListing";

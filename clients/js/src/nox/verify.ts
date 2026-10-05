@@ -18,6 +18,8 @@
  * | mandates funded, active | `MandateFunded` and `MandateSettled` |
  * | settled in profit | `MandateSettled` for a mandate whose trades summed above zero |
  * | tier | the last `TierChanged` |
+ * | gross profit/loss, a second source | `PartialCloseRecorded`: a partial close moves them and no count |
+ * | evaluations passed, last passed at | `TraderVerified`, emitted once per Phase 2 pass |
  *
  * `TradeRecorded` also carries the program's running totals after each trade, and every one of
  * them is checked against the replay as it goes — so a disagreement is pinned to the transaction
@@ -61,6 +63,8 @@ export type Derived = {
   mandatesSettledInProfit: number;
   /** `null` when the tier never changed, which means it is still the default, Bronze (0). */
   lastTier: number | null;
+  evaluationsPassed: number;
+  lastPassedAt: bigint;
 };
 
 export type TrailEntry = {
@@ -109,6 +113,8 @@ export function rederiveProfile(
     activeMandates: 0,
     mandatesSettledInProfit: 0,
     lastTier: null,
+    evaluationsPassed: 0,
+    lastPassedAt: 0n,
   };
   const trail: TrailEntry[] = [];
   const mandates = new Set<string>();
@@ -191,6 +197,42 @@ export function rederiveProfile(
           keep(e);
           break;
         }
+        case "PartialCloseRecorded": {
+          // Part of a position closed: the money moves the gross figures and the mandate's
+          // result, and nothing is counted — the trade is counted once, when it finally closes.
+          if (String(data.profile) !== profile) break;
+          const pnl = data.realizedPnl as bigint;
+          if (pnl > 0n) d.grossProfit += pnl;
+          else d.grossLoss += -pnl;
+          const mandate = String(data.mandate);
+          mandatePnl.set(mandate, (mandatePnl.get(mandate) ?? 0n) + pnl);
+          if (!firstDisagreement) {
+            const checks: [string, unknown, unknown][] = [
+              ["grossProfit", data.grossProfit, d.grossProfit],
+              ["grossLoss", data.grossLoss, d.grossLoss],
+            ];
+            for (const [field, event, replay] of checks) {
+              if (String(event) !== String(replay)) {
+                firstDisagreement = {
+                  signature: tx.signature,
+                  field,
+                  event: String(event),
+                  replay: String(replay),
+                };
+                break;
+              }
+            }
+          }
+          keep(e);
+          break;
+        }
+        case "TraderVerified": {
+          if (String(data.trader) !== trader) break;
+          d.evaluationsPassed++;
+          d.lastPassedAt = data.ts as bigint;
+          keep(e);
+          break;
+        }
         case "EquityObserved": {
           if (!mandates.has(String(data.mandate))) break;
           const bps = data.drawdownBps as bigint;
@@ -270,6 +312,8 @@ export type ProfileFigures = {
   mandatesSettledInProfit: number;
   untimedTrades: number;
   ambiguousTrades: number;
+  evaluationsPassed: number;
+  lastPassedAt: bigint;
 };
 
 export function compareProfile(onChain: ProfileFigures, d: Derived): Comparison[] {
@@ -295,6 +339,8 @@ export function compareProfile(onChain: ProfileFigures, d: Derived): Comparison[
     row("activeMandates", onChain.activeMandates, d.activeMandates),
     row("mandatesSettledInProfit", onChain.mandatesSettledInProfit, d.mandatesSettledInProfit),
     row("tier", onChain.tier, d.lastTier ?? 0),
+    row("evaluationsPassed", onChain.evaluationsPassed, d.evaluationsPassed),
+    row("lastPassedAt", onChain.lastPassedAt, d.lastPassedAt),
   ];
 }
 

@@ -30,7 +30,11 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findConfigPda, findStakeVaultPda } from "../pdas";
+import {
+  findConfigPda,
+  findStakeVaultPda,
+  findTraderProfilePda,
+} from "../pdas";
 import { NOXFUNDS_PROGRAM_ADDRESS } from "../programs";
 import {
   expectAddress,
@@ -56,6 +60,7 @@ export type ClaimStagePassInstruction<
   TAccountUsdcMint extends string | AccountMeta<string> = string,
   TAccountTraderToken extends string | AccountMeta<string> = string,
   TAccountStakeVault extends string | AccountMeta<string> = string,
+  TAccountTraderProfile extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -82,6 +87,9 @@ export type ClaimStagePassInstruction<
       TAccountStakeVault extends string
         ? WritableAccount<TAccountStakeVault>
         : TAccountStakeVault,
+      TAccountTraderProfile extends string
+        ? WritableAccount<TAccountTraderProfile>
+        : TAccountTraderProfile,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -125,6 +133,7 @@ export type ClaimStagePassAsyncInput<
   TAccountUsdcMint extends string = string,
   TAccountTraderToken extends string = string,
   TAccountStakeVault extends string = string,
+  TAccountTraderProfile extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   trader: TransactionSigner<TAccountTrader>;
@@ -133,6 +142,11 @@ export type ClaimStagePassAsyncInput<
   usdcMint: Address<TAccountUsdcMint>;
   traderToken: Address<TAccountTraderToken>;
   stakeVault?: Address<TAccountStakeVault>;
+  /**
+   * Where a Phase 2 pass is recorded. Bound to the signer by its seed, so a pass can only
+   * ever be credited to the trader who earned it.
+   */
+  traderProfile?: Address<TAccountTraderProfile>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -143,6 +157,7 @@ export async function getClaimStagePassInstructionAsync<
   TAccountUsdcMint extends string,
   TAccountTraderToken extends string,
   TAccountStakeVault extends string,
+  TAccountTraderProfile extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
@@ -153,6 +168,7 @@ export async function getClaimStagePassInstructionAsync<
     TAccountUsdcMint,
     TAccountTraderToken,
     TAccountStakeVault,
+    TAccountTraderProfile,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -165,6 +181,7 @@ export async function getClaimStagePassInstructionAsync<
     TAccountUsdcMint,
     TAccountTraderToken,
     TAccountStakeVault,
+    TAccountTraderProfile,
     TAccountTokenProgram
   >
 > {
@@ -179,6 +196,7 @@ export async function getClaimStagePassInstructionAsync<
     usdcMint: { value: input.usdcMint ?? null, isWritable: false },
     traderToken: { value: input.traderToken ?? null, isWritable: true },
     stakeVault: { value: input.stakeVault ?? null, isWritable: true },
+    traderProfile: { value: input.traderProfile ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -195,6 +213,11 @@ export async function getClaimStagePassInstructionAsync<
       evaluation: expectAddress(accounts.evaluation.value),
     });
   }
+  if (!accounts.traderProfile.value) {
+    accounts.traderProfile.value = await findTraderProfilePda({
+      trader: expectAddress(accounts.trader.value),
+    });
+  }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
@@ -209,6 +232,7 @@ export async function getClaimStagePassInstructionAsync<
       getAccountMeta(accounts.usdcMint),
       getAccountMeta(accounts.traderToken),
       getAccountMeta(accounts.stakeVault),
+      getAccountMeta(accounts.traderProfile),
       getAccountMeta(accounts.tokenProgram),
     ],
     data: getClaimStagePassInstructionDataEncoder().encode({}),
@@ -221,6 +245,7 @@ export async function getClaimStagePassInstructionAsync<
     TAccountUsdcMint,
     TAccountTraderToken,
     TAccountStakeVault,
+    TAccountTraderProfile,
     TAccountTokenProgram
   >);
 }
@@ -232,6 +257,7 @@ export type ClaimStagePassInput<
   TAccountUsdcMint extends string = string,
   TAccountTraderToken extends string = string,
   TAccountStakeVault extends string = string,
+  TAccountTraderProfile extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   trader: TransactionSigner<TAccountTrader>;
@@ -240,6 +266,11 @@ export type ClaimStagePassInput<
   usdcMint: Address<TAccountUsdcMint>;
   traderToken: Address<TAccountTraderToken>;
   stakeVault: Address<TAccountStakeVault>;
+  /**
+   * Where a Phase 2 pass is recorded. Bound to the signer by its seed, so a pass can only
+   * ever be credited to the trader who earned it.
+   */
+  traderProfile: Address<TAccountTraderProfile>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -250,6 +281,7 @@ export function getClaimStagePassInstruction<
   TAccountUsdcMint extends string,
   TAccountTraderToken extends string,
   TAccountStakeVault extends string,
+  TAccountTraderProfile extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
@@ -260,6 +292,7 @@ export function getClaimStagePassInstruction<
     TAccountUsdcMint,
     TAccountTraderToken,
     TAccountStakeVault,
+    TAccountTraderProfile,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -271,6 +304,7 @@ export function getClaimStagePassInstruction<
   TAccountUsdcMint,
   TAccountTraderToken,
   TAccountStakeVault,
+  TAccountTraderProfile,
   TAccountTokenProgram
 > {
   // Program address.
@@ -284,6 +318,7 @@ export function getClaimStagePassInstruction<
     usdcMint: { value: input.usdcMint ?? null, isWritable: false },
     traderToken: { value: input.traderToken ?? null, isWritable: true },
     stakeVault: { value: input.stakeVault ?? null, isWritable: true },
+    traderProfile: { value: input.traderProfile ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -306,6 +341,7 @@ export function getClaimStagePassInstruction<
       getAccountMeta(accounts.usdcMint),
       getAccountMeta(accounts.traderToken),
       getAccountMeta(accounts.stakeVault),
+      getAccountMeta(accounts.traderProfile),
       getAccountMeta(accounts.tokenProgram),
     ],
     data: getClaimStagePassInstructionDataEncoder().encode({}),
@@ -318,6 +354,7 @@ export function getClaimStagePassInstruction<
     TAccountUsdcMint,
     TAccountTraderToken,
     TAccountStakeVault,
+    TAccountTraderProfile,
     TAccountTokenProgram
   >);
 }
@@ -334,7 +371,12 @@ export type ParsedClaimStagePassInstruction<
     usdcMint: TAccountMetas[3];
     traderToken: TAccountMetas[4];
     stakeVault: TAccountMetas[5];
-    tokenProgram: TAccountMetas[6];
+    /**
+     * Where a Phase 2 pass is recorded. Bound to the signer by its seed, so a pass can only
+     * ever be credited to the trader who earned it.
+     */
+    traderProfile: TAccountMetas[6];
+    tokenProgram: TAccountMetas[7];
   };
   data: ClaimStagePassInstructionData;
 };
@@ -347,7 +389,7 @@ export function parseClaimStagePassInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimStagePassInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 7) {
+  if (instruction.accounts.length < 8) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -366,6 +408,7 @@ export function parseClaimStagePassInstruction<
       usdcMint: getNextAccount(),
       traderToken: getNextAccount(),
       stakeVault: getNextAccount(),
+      traderProfile: getNextAccount(),
       tokenProgram: getNextAccount(),
     },
     data: getClaimStagePassInstructionDataDecoder().decode(instruction.data),

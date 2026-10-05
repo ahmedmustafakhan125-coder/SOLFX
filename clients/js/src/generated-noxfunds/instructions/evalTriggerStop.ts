@@ -51,6 +51,9 @@ export type EvalTriggerStopInstruction<
   TAccountVirtualPosition extends string | AccountMeta<string> = string,
   TAccountMarket extends string | AccountMeta<string> = string,
   TAccountPriceUpdate extends string | AccountMeta<string> = string,
+  TAccountSecondaryPriceUpdate extends string | AccountMeta<string> = string,
+  TAccountQuoteConversionPriceUpdate extends string | AccountMeta<string> =
+    string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -75,6 +78,12 @@ export type EvalTriggerStopInstruction<
       TAccountPriceUpdate extends string
         ? ReadonlyAccount<TAccountPriceUpdate>
         : TAccountPriceUpdate,
+      TAccountSecondaryPriceUpdate extends string
+        ? ReadonlyAccount<TAccountSecondaryPriceUpdate>
+        : TAccountSecondaryPriceUpdate,
+      TAccountQuoteConversionPriceUpdate extends string
+        ? ReadonlyAccount<TAccountQuoteConversionPriceUpdate>
+        : TAccountQuoteConversionPriceUpdate,
       ...TRemainingAccounts,
     ]
   >;
@@ -115,6 +124,8 @@ export type EvalTriggerStopInput<
   TAccountVirtualPosition extends string = string,
   TAccountMarket extends string = string,
   TAccountPriceUpdate extends string = string,
+  TAccountSecondaryPriceUpdate extends string = string,
+  TAccountQuoteConversionPriceUpdate extends string = string,
 > = {
   /** Anyone. A stop that only its owner can fire is a stop the owner can choose not to fire. */
   keeper: TransactionSigner<TAccountKeeper>;
@@ -124,6 +135,13 @@ export type EvalTriggerStopInput<
   virtualPosition: Address<TAccountVirtualPosition>;
   market: Address<TAccountMarket>;
   priceUpdate: Address<TAccountPriceUpdate>;
+  /**
+   * The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
+   * refuses a synthetic market without it, and checks it is the market's own feed.
+   */
+  secondaryPriceUpdate?: Address<TAccountSecondaryPriceUpdate>;
+  /** The conversion leg of a market not quoted in USD, checked the same way. */
+  quoteConversionPriceUpdate?: Address<TAccountQuoteConversionPriceUpdate>;
 };
 
 export function getEvalTriggerStopInstruction<
@@ -133,6 +151,8 @@ export function getEvalTriggerStopInstruction<
   TAccountVirtualPosition extends string,
   TAccountMarket extends string,
   TAccountPriceUpdate extends string,
+  TAccountSecondaryPriceUpdate extends string,
+  TAccountQuoteConversionPriceUpdate extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
   input: EvalTriggerStopInput<
@@ -141,7 +161,9 @@ export function getEvalTriggerStopInstruction<
     TAccountEvaluation,
     TAccountVirtualPosition,
     TAccountMarket,
-    TAccountPriceUpdate
+    TAccountPriceUpdate,
+    TAccountSecondaryPriceUpdate,
+    TAccountQuoteConversionPriceUpdate
   >,
   config?: { programAddress?: TProgramAddress },
 ): EvalTriggerStopInstruction<
@@ -151,7 +173,9 @@ export function getEvalTriggerStopInstruction<
   TAccountEvaluation,
   TAccountVirtualPosition,
   TAccountMarket,
-  TAccountPriceUpdate
+  TAccountPriceUpdate,
+  TAccountSecondaryPriceUpdate,
+  TAccountQuoteConversionPriceUpdate
 > {
   // Program address.
   const programAddress = config?.programAddress ?? NOXFUNDS_PROGRAM_ADDRESS;
@@ -164,6 +188,14 @@ export function getEvalTriggerStopInstruction<
     virtualPosition: { value: input.virtualPosition ?? null, isWritable: true },
     market: { value: input.market ?? null, isWritable: false },
     priceUpdate: { value: input.priceUpdate ?? null, isWritable: false },
+    secondaryPriceUpdate: {
+      value: input.secondaryPriceUpdate ?? null,
+      isWritable: false,
+    },
+    quoteConversionPriceUpdate: {
+      value: input.quoteConversionPriceUpdate ?? null,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -179,6 +211,8 @@ export function getEvalTriggerStopInstruction<
       getAccountMeta(accounts.virtualPosition),
       getAccountMeta(accounts.market),
       getAccountMeta(accounts.priceUpdate),
+      getAccountMeta(accounts.secondaryPriceUpdate),
+      getAccountMeta(accounts.quoteConversionPriceUpdate),
     ],
     data: getEvalTriggerStopInstructionDataEncoder().encode({}),
     programAddress,
@@ -189,7 +223,9 @@ export function getEvalTriggerStopInstruction<
     TAccountEvaluation,
     TAccountVirtualPosition,
     TAccountMarket,
-    TAccountPriceUpdate
+    TAccountPriceUpdate,
+    TAccountSecondaryPriceUpdate,
+    TAccountQuoteConversionPriceUpdate
   >);
 }
 
@@ -207,6 +243,13 @@ export type ParsedEvalTriggerStopInstruction<
     virtualPosition: TAccountMetas[3];
     market: TAccountMetas[4];
     priceUpdate: TAccountMetas[5];
+    /**
+     * The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
+     * refuses a synthetic market without it, and checks it is the market's own feed.
+     */
+    secondaryPriceUpdate?: TAccountMetas[6] | undefined;
+    /** The conversion leg of a market not quoted in USD, checked the same way. */
+    quoteConversionPriceUpdate?: TAccountMetas[7] | undefined;
   };
   data: EvalTriggerStopInstructionData;
 };
@@ -219,7 +262,7 @@ export function parseEvalTriggerStopInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedEvalTriggerStopInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 8) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -228,6 +271,12 @@ export function parseEvalTriggerStopInstruction<
     const accountMeta = (instruction.accounts as TAccountMetas)[accountIndex]!;
     accountIndex += 1;
     return accountMeta;
+  };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === NOXFUNDS_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
   };
   return {
     programAddress: instruction.programAddress,
@@ -238,6 +287,8 @@ export function parseEvalTriggerStopInstruction<
       virtualPosition: getNextAccount(),
       market: getNextAccount(),
       priceUpdate: getNextAccount(),
+      secondaryPriceUpdate: getNextOptionalAccount(),
+      quoteConversionPriceUpdate: getNextOptionalAccount(),
     },
     data: getEvalTriggerStopInstructionDataDecoder().decode(instruction.data),
   };

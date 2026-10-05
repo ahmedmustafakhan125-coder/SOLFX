@@ -17,8 +17,10 @@ import {
   EQUITY_OBSERVED_DISCRIMINATOR,
   MANDATE_FUNDED_DISCRIMINATOR,
   MANDATE_SETTLED_DISCRIMINATOR,
+  PARTIAL_CLOSE_RECORDED_DISCRIMINATOR,
   POSITION_RECONCILED_DISCRIMINATOR,
   TRADE_RECORDED_DISCRIMINATOR,
+  TRADER_VERIFIED_DISCRIMINATOR,
 } from "../nox/events.generated.js";
 import { NOXFUNDS_PROGRAM_ADDRESS } from "../generated-noxfunds/programs/noxfunds.js";
 import { compareProfile, rederiveProfile, type ProfileTx } from "../nox/verify.js";
@@ -74,6 +76,52 @@ function trade(pnl: bigint, hold: bigint, totals: [number, number, number, bigin
     },
   );
 }
+
+/** A partial close, with the program's running gross figures after it. */
+function partial(pnl: bigint, grossProfit: bigint, grossLoss: bigint) {
+  return event(
+    PARTIAL_CLOSE_RECORDED_DISCRIMINATOR,
+    getStructEncoder([
+      ["profile", a],
+      ["mandate", a],
+      ["trader", a],
+      ["marketIndex", getU16Encoder()],
+      ["nonce", getU8Encoder()],
+      ["sizeClosed", getU64Encoder()],
+      ["realizedPnl", getI64Encoder()],
+      ["notionalReleased", getU64Encoder()],
+      ["grossProfit", getU64Encoder()],
+      ["grossLoss", getU64Encoder()],
+      ["ts", getI64Encoder()],
+    ]) as Encoder<object>,
+    {
+      profile: PROFILE,
+      mandate: MANDATE,
+      trader: TRADER,
+      marketIndex: 3,
+      nonce: 0,
+      sizeClosed: 1n,
+      realizedPnl: pnl,
+      notionalReleased: 0n,
+      grossProfit,
+      grossLoss,
+      ts: 0n,
+    },
+  );
+}
+
+const verified = (trader: Address, passed: number, ts: bigint) =>
+  event(
+    TRADER_VERIFIED_DISCRIMINATOR,
+    getStructEncoder([
+      ["trader", a],
+      ["evaluation", a],
+      ["accountSize", getU64Encoder()],
+      ["evaluationsPassed", getU32Encoder()],
+      ["ts", getI64Encoder()],
+    ]) as Encoder<object>,
+    { trader, evaluation: OTHER, accountSize: 10_000_000_000n, evaluationsPassed: passed, ts },
+  );
 
 const reconciled = event(
   POSITION_RECONCILED_DISCRIMINATOR,
@@ -305,9 +353,42 @@ describe("rederiveProfile folds events as record_trade does", () => {
         mandatesSettledInProfit: 0,
         untimedTrades: 0,
         ambiguousTrades: 0,
+        evaluationsPassed: 0,
+        lastPassedAt: 0n,
       },
       r.derived,
     );
     expect(rows.filter((x) => !x.agrees).map((x) => x.field)).toEqual(["grossLoss"]);
+  });
+
+  it("a partial close moves the gross figures and is not counted as a trade", () => {
+    // +40 off half, then the rest closes at −10: one trade (a loss), gross 40 / 10.
+    const r = rederiveProfile(PROFILE, TRADER, [
+      tx([partial(40n, 40n, 0n)]),
+      tx([trade(-10n, 5n, [1, 0, 1, 40n, 10n])]),
+    ]);
+    expect(r.firstDisagreement).toBeNull();
+    expect(r.derived.trades).toBe(1);
+    expect(r.derived.wins).toBe(0);
+    expect(r.derived.grossProfit).toBe(40n);
+    expect(r.derived.grossLoss).toBe(10n);
+    expect(r.derived.largestWin).toBe(0n);
+  });
+
+  it("a partial whose running totals disagree with the replay is pinned to its transaction", () => {
+    const r = rederiveProfile(PROFILE, TRADER, [tx([partial(40n, 41n, 0n)])]);
+    expect(r.firstDisagreement?.field).toBe("grossProfit");
+    expect(r.firstDisagreement?.event).toBe("41");
+    expect(r.firstDisagreement?.replay).toBe("40");
+  });
+
+  it("each pass of an evaluation is counted, and only the trader's own", () => {
+    const r = rederiveProfile(PROFILE, TRADER, [
+      tx([verified(TRADER, 1, 1_000n)]),
+      tx([verified(OTHER, 1, 2_000n)]),
+      tx([verified(TRADER, 2, 3_000n)]),
+    ]);
+    expect(r.derived.evaluationsPassed).toBe(2);
+    expect(r.derived.lastPassedAt).toBe(3_000n);
   });
 });

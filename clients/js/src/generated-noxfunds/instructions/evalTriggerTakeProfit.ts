@@ -25,26 +25,27 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
+  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
-  type WritableSignerAccount,
 } from "@solana/kit";
 import { NOXFUNDS_PROGRAM_ADDRESS } from "../programs";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
 
-export const EVAL_CLOSE_POSITION_DISCRIMINATOR = new Uint8Array([
-  40, 137, 84, 57, 105, 46, 100, 9,
+export const EVAL_TRIGGER_TAKE_PROFIT_DISCRIMINATOR = new Uint8Array([
+  20, 8, 193, 94, 160, 80, 61, 1,
 ]);
 
-export function getEvalClosePositionDiscriminatorBytes() {
+export function getEvalTriggerTakeProfitDiscriminatorBytes() {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    EVAL_CLOSE_POSITION_DISCRIMINATOR,
+    EVAL_TRIGGER_TAKE_PROFIT_DISCRIMINATOR,
   );
 }
 
-export type EvalClosePositionInstruction<
+export type EvalTriggerTakeProfitInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
+  TAccountKeeper extends string | AccountMeta<string> = string,
   TAccountTrader extends string | AccountMeta<string> = string,
   TAccountEvaluation extends string | AccountMeta<string> = string,
   TAccountVirtualPosition extends string | AccountMeta<string> = string,
@@ -58,9 +59,12 @@ export type EvalClosePositionInstruction<
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
+      TAccountKeeper extends string
+        ? ReadonlySignerAccount<TAccountKeeper> &
+            AccountSignerMeta<TAccountKeeper>
+        : TAccountKeeper,
       TAccountTrader extends string
-        ? WritableSignerAccount<TAccountTrader> &
-            AccountSignerMeta<TAccountTrader>
+        ? WritableAccount<TAccountTrader>
         : TAccountTrader,
       TAccountEvaluation extends string
         ? WritableAccount<TAccountEvaluation>
@@ -84,36 +88,40 @@ export type EvalClosePositionInstruction<
     ]
   >;
 
-export type EvalClosePositionInstructionData = {
+export type EvalTriggerTakeProfitInstructionData = {
   discriminator: ReadonlyUint8Array;
 };
 
-export type EvalClosePositionInstructionDataArgs = {};
+export type EvalTriggerTakeProfitInstructionDataArgs = {};
 
-export function getEvalClosePositionInstructionDataEncoder(): FixedSizeEncoder<EvalClosePositionInstructionDataArgs> {
+export function getEvalTriggerTakeProfitInstructionDataEncoder(): FixedSizeEncoder<EvalTriggerTakeProfitInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
-    (value) => ({ ...value, discriminator: EVAL_CLOSE_POSITION_DISCRIMINATOR }),
+    (value) => ({
+      ...value,
+      discriminator: EVAL_TRIGGER_TAKE_PROFIT_DISCRIMINATOR,
+    }),
   );
 }
 
-export function getEvalClosePositionInstructionDataDecoder(): FixedSizeDecoder<EvalClosePositionInstructionData> {
+export function getEvalTriggerTakeProfitInstructionDataDecoder(): FixedSizeDecoder<EvalTriggerTakeProfitInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
   ]);
 }
 
-export function getEvalClosePositionInstructionDataCodec(): FixedSizeCodec<
-  EvalClosePositionInstructionDataArgs,
-  EvalClosePositionInstructionData
+export function getEvalTriggerTakeProfitInstructionDataCodec(): FixedSizeCodec<
+  EvalTriggerTakeProfitInstructionDataArgs,
+  EvalTriggerTakeProfitInstructionData
 > {
   return combineCodec(
-    getEvalClosePositionInstructionDataEncoder(),
-    getEvalClosePositionInstructionDataDecoder(),
+    getEvalTriggerTakeProfitInstructionDataEncoder(),
+    getEvalTriggerTakeProfitInstructionDataDecoder(),
   );
 }
 
-export type EvalClosePositionInput<
+export type EvalTriggerTakeProfitInput<
+  TAccountKeeper extends string = string,
   TAccountTrader extends string = string,
   TAccountEvaluation extends string = string,
   TAccountVirtualPosition extends string = string,
@@ -122,7 +130,10 @@ export type EvalClosePositionInput<
   TAccountSecondaryPriceUpdate extends string = string,
   TAccountQuoteConversionPriceUpdate extends string = string,
 > = {
-  trader: TransactionSigner<TAccountTrader>;
+  /** Anyone. A target that only its owner can fire is one the owner has to be awake for. */
+  keeper: TransactionSigner<TAccountKeeper>;
+  /** keeper cannot redirect it. */
+  trader: Address<TAccountTrader>;
   evaluation: Address<TAccountEvaluation>;
   virtualPosition: Address<TAccountVirtualPosition>;
   market: Address<TAccountMarket>;
@@ -136,7 +147,8 @@ export type EvalClosePositionInput<
   quoteConversionPriceUpdate?: Address<TAccountQuoteConversionPriceUpdate>;
 };
 
-export function getEvalClosePositionInstruction<
+export function getEvalTriggerTakeProfitInstruction<
+  TAccountKeeper extends string,
   TAccountTrader extends string,
   TAccountEvaluation extends string,
   TAccountVirtualPosition extends string,
@@ -146,7 +158,8 @@ export function getEvalClosePositionInstruction<
   TAccountQuoteConversionPriceUpdate extends string,
   TProgramAddress extends Address = typeof NOXFUNDS_PROGRAM_ADDRESS,
 >(
-  input: EvalClosePositionInput<
+  input: EvalTriggerTakeProfitInput<
+    TAccountKeeper,
     TAccountTrader,
     TAccountEvaluation,
     TAccountVirtualPosition,
@@ -156,8 +169,9 @@ export function getEvalClosePositionInstruction<
     TAccountQuoteConversionPriceUpdate
   >,
   config?: { programAddress?: TProgramAddress },
-): EvalClosePositionInstruction<
+): EvalTriggerTakeProfitInstruction<
   TProgramAddress,
+  TAccountKeeper,
   TAccountTrader,
   TAccountEvaluation,
   TAccountVirtualPosition,
@@ -171,6 +185,7 @@ export function getEvalClosePositionInstruction<
 
   // Original accounts.
   const originalAccounts = {
+    keeper: { value: input.keeper ?? null, isWritable: false },
     trader: { value: input.trader ?? null, isWritable: true },
     evaluation: { value: input.evaluation ?? null, isWritable: true },
     virtualPosition: { value: input.virtualPosition ?? null, isWritable: true },
@@ -193,6 +208,7 @@ export function getEvalClosePositionInstruction<
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
+      getAccountMeta(accounts.keeper),
       getAccountMeta(accounts.trader),
       getAccountMeta(accounts.evaluation),
       getAccountMeta(accounts.virtualPosition),
@@ -201,10 +217,11 @@ export function getEvalClosePositionInstruction<
       getAccountMeta(accounts.secondaryPriceUpdate),
       getAccountMeta(accounts.quoteConversionPriceUpdate),
     ],
-    data: getEvalClosePositionInstructionDataEncoder().encode({}),
+    data: getEvalTriggerTakeProfitInstructionDataEncoder().encode({}),
     programAddress,
-  } as EvalClosePositionInstruction<
+  } as EvalTriggerTakeProfitInstruction<
     TProgramAddress,
+    TAccountKeeper,
     TAccountTrader,
     TAccountEvaluation,
     TAccountVirtualPosition,
@@ -215,37 +232,40 @@ export function getEvalClosePositionInstruction<
   >);
 }
 
-export type ParsedEvalClosePositionInstruction<
+export type ParsedEvalTriggerTakeProfitInstruction<
   TProgram extends string = typeof NOXFUNDS_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    trader: TAccountMetas[0];
-    evaluation: TAccountMetas[1];
-    virtualPosition: TAccountMetas[2];
-    market: TAccountMetas[3];
-    priceUpdate: TAccountMetas[4];
+    /** Anyone. A target that only its owner can fire is one the owner has to be awake for. */
+    keeper: TAccountMetas[0];
+    /** keeper cannot redirect it. */
+    trader: TAccountMetas[1];
+    evaluation: TAccountMetas[2];
+    virtualPosition: TAccountMetas[3];
+    market: TAccountMetas[4];
+    priceUpdate: TAccountMetas[5];
     /**
      * The second leg of a synthetic market. Absent for a direct one; `load_validated_price`
      * refuses a synthetic market without it, and checks it is the market's own feed.
      */
-    secondaryPriceUpdate?: TAccountMetas[5] | undefined;
+    secondaryPriceUpdate?: TAccountMetas[6] | undefined;
     /** The conversion leg of a market not quoted in USD, checked the same way. */
-    quoteConversionPriceUpdate?: TAccountMetas[6] | undefined;
+    quoteConversionPriceUpdate?: TAccountMetas[7] | undefined;
   };
-  data: EvalClosePositionInstructionData;
+  data: EvalTriggerTakeProfitInstructionData;
 };
 
-export function parseEvalClosePositionInstruction<
+export function parseEvalTriggerTakeProfitInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedEvalClosePositionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 7) {
+): ParsedEvalTriggerTakeProfitInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 8) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -264,6 +284,7 @@ export function parseEvalClosePositionInstruction<
   return {
     programAddress: instruction.programAddress,
     accounts: {
+      keeper: getNextAccount(),
       trader: getNextAccount(),
       evaluation: getNextAccount(),
       virtualPosition: getNextAccount(),
@@ -272,6 +293,8 @@ export function parseEvalClosePositionInstruction<
       secondaryPriceUpdate: getNextOptionalAccount(),
       quoteConversionPriceUpdate: getNextOptionalAccount(),
     },
-    data: getEvalClosePositionInstructionDataDecoder().decode(instruction.data),
+    data: getEvalTriggerTakeProfitInstructionDataDecoder().decode(
+      instruction.data,
+    ),
   };
 }

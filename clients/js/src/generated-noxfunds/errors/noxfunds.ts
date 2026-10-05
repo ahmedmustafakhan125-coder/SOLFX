@@ -126,11 +126,46 @@ export const NOXFUNDS_ERROR__POSITION_ARGS_MISMATCH = 0x17a5; // 6053
 export const NOXFUNDS_ERROR__STOP_PROTECTS_OPEN_POSITION = 0x17a6; // 6054
 /** PreviousEvaluationActive: Finish or walk away from your previous evaluation first */
 export const NOXFUNDS_ERROR__PREVIOUS_EVALUATION_ACTIVE = 0x17a7; // 6055
+/** TriggerAlreadyMet: That trigger price is already met at the current price */
+export const NOXFUNDS_ERROR__TRIGGER_ALREADY_MET = 0x17a8; // 6056
+/** TakeProfitOnWrongSide: A take-profit must sit on the profitable side */
+export const NOXFUNDS_ERROR__TAKE_PROFIT_ON_WRONG_SIDE = 0x17a9; // 6057
+/** TakeProfitNotTriggered: The oracle price has not reached this take-profit */
+export const NOXFUNDS_ERROR__TAKE_PROFIT_NOT_TRIGGERED = 0x17aa; // 6058
+/** StopNotTighter: A stop may only move toward the price, never away from it */
+export const NOXFUNDS_ERROR__STOP_NOT_TIGHTER = 0x17ab; // 6059
+/** EntryNotTriggered: The oracle price has not reached this entry order's trigger */
+export const NOXFUNDS_ERROR__ENTRY_NOT_TRIGGERED = 0x17ac; // 6060
+/** EntryOrderExpired: This entry order has expired */
+export const NOXFUNDS_ERROR__ENTRY_ORDER_EXPIRED = 0x17ad; // 6061
+/** TooManyPendingOrders: Too many entry orders are already resting */
+export const NOXFUNDS_ERROR__TOO_MANY_PENDING_ORDERS = 0x17ae; // 6062
+/** EntryOrdersPending: Cancel your resting entry orders before claiming the stage */
+export const NOXFUNDS_ERROR__ENTRY_ORDERS_PENDING = 0x17af; // 6063
+/** NotYourOrderToCancel: Only the trader may cancel a live, unexpired order */
+export const NOXFUNDS_ERROR__NOT_YOUR_ORDER_TO_CANCEL = 0x17b0; // 6064
+/** InvalidExpiry: An expiry must be in the future, or zero for none */
+export const NOXFUNDS_ERROR__INVALID_EXPIRY = 0x17b1; // 6065
+/** InvalidPriceLimit: An entry order's price bound must not let it fill worse than its kind allows */
+export const NOXFUNDS_ERROR__INVALID_PRICE_LIMIT = 0x17b2; // 6066
+/** NotTheStopLoss: That order is not this position's stop-loss */
+export const NOXFUNDS_ERROR__NOT_THE_STOP_LOSS = 0x17b3; // 6067
+/** OrderNotOnMandate: That entry order does not belong to this mandate */
+export const NOXFUNDS_ERROR__ORDER_NOT_ON_MANDATE = 0x17b4; // 6068
+/** MandateNotSettled: Only a settled mandate's signer can be swept */
+export const NOXFUNDS_ERROR__MANDATE_NOT_SETTLED = 0x17b5; // 6069
+/** InvalidKey: That key cannot be the default address */
+export const NOXFUNDS_ERROR__INVALID_KEY = 0x17b6; // 6070
+/** NotThePendingAdmin: Signer is not the proposed admin */
+export const NOXFUNDS_ERROR__NOT_THE_PENDING_ADMIN = 0x17b7; // 6071
 
 export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED
   | typeof NOXFUNDS_ERROR__DAILY_LOSS_EXCEEDED
   | typeof NOXFUNDS_ERROR__DRAWDOWN_EXCEEDED
+  | typeof NOXFUNDS_ERROR__ENTRY_NOT_TRIGGERED
+  | typeof NOXFUNDS_ERROR__ENTRY_ORDER_EXPIRED
+  | typeof NOXFUNDS_ERROR__ENTRY_ORDERS_PENDING
   | typeof NOXFUNDS_ERROR__EVALUATION_INCOMPLETE
   | typeof NOXFUNDS_ERROR__EVALUATION_LEVERAGE_TOO_HIGH
   | typeof NOXFUNDS_ERROR__EVALUATION_NOT_ACTIVE
@@ -138,12 +173,16 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__INCOMPLETE_OBSERVATION
   | typeof NOXFUNDS_ERROR__INSUFFICIENT_PRINCIPAL
   | typeof NOXFUNDS_ERROR__INVALID_ACCOUNT_SIZE
+  | typeof NOXFUNDS_ERROR__INVALID_EXPIRY
+  | typeof NOXFUNDS_ERROR__INVALID_KEY
   | typeof NOXFUNDS_ERROR__INVALID_LISTING_TERMS
   | typeof NOXFUNDS_ERROR__INVALID_MANDATE_RULES
+  | typeof NOXFUNDS_ERROR__INVALID_PRICE_LIMIT
   | typeof NOXFUNDS_ERROR__LISTING_NOT_OPEN
   | typeof NOXFUNDS_ERROR__MANDATE_EXCEEDS_TIER_LIMIT
   | typeof NOXFUNDS_ERROR__MANDATE_NOT_ACTIVE
   | typeof NOXFUNDS_ERROR__MANDATE_NOT_SETTLEABLE
+  | typeof NOXFUNDS_ERROR__MANDATE_NOT_SETTLED
   | typeof NOXFUNDS_ERROR__MANDATE_NOT_WINDING_DOWN
   | typeof NOXFUNDS_ERROR__MARKET_NOT_OPEN
   | typeof NOXFUNDS_ERROR__MARKET_NOT_PERMITTED
@@ -159,10 +198,14 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__NOT_THE_LISTING_TRADER
   | typeof NOXFUNDS_ERROR__NOT_THE_OFFER_INVESTOR
   | typeof NOXFUNDS_ERROR__NOT_THE_OFFER_TRADER
+  | typeof NOXFUNDS_ERROR__NOT_THE_PENDING_ADMIN
+  | typeof NOXFUNDS_ERROR__NOT_THE_STOP_LOSS
   | typeof NOXFUNDS_ERROR__NOT_THE_TRADER
   | typeof NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY
+  | typeof NOXFUNDS_ERROR__NOT_YOUR_ORDER_TO_CANCEL
   | typeof NOXFUNDS_ERROR__OFFER_EXPIRED
   | typeof NOXFUNDS_ERROR__OFFER_NOT_OPEN
+  | typeof NOXFUNDS_ERROR__ORDER_NOT_ON_MANDATE
   | typeof NOXFUNDS_ERROR__POSITION_ARGS_MISMATCH
   | typeof NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION
   | typeof NOXFUNDS_ERROR__POSITION_NOT_TRACKED
@@ -175,14 +218,19 @@ export type NoxfundsError =
   | typeof NOXFUNDS_ERROR__RISK_PER_TRADE_EXCEEDED
   | typeof NOXFUNDS_ERROR__SLOT_NOT_RECONCILED
   | typeof NOXFUNDS_ERROR__STOP_LOSS_REQUIRED
+  | typeof NOXFUNDS_ERROR__STOP_NOT_TIGHTER
   | typeof NOXFUNDS_ERROR__STOP_NOT_TRIGGERED
   | typeof NOXFUNDS_ERROR__STOP_ON_WRONG_SIDE
   | typeof NOXFUNDS_ERROR__STOP_PROTECTS_OPEN_POSITION
   | typeof NOXFUNDS_ERROR__STOP_TOO_FAR
+  | typeof NOXFUNDS_ERROR__TAKE_PROFIT_NOT_TRIGGERED
+  | typeof NOXFUNDS_ERROR__TAKE_PROFIT_ON_WRONG_SIDE
   | typeof NOXFUNDS_ERROR__TOO_MANY_ACTIVE_MANDATES
   | typeof NOXFUNDS_ERROR__TOO_MANY_OPEN_POSITIONS
+  | typeof NOXFUNDS_ERROR__TOO_MANY_PENDING_ORDERS
   | typeof NOXFUNDS_ERROR__TOTAL_NOTIONAL_EXCEEDED
   | typeof NOXFUNDS_ERROR__TRADE_EXCEEDS_MANDATE
+  | typeof NOXFUNDS_ERROR__TRIGGER_ALREADY_MET
   | typeof NOXFUNDS_ERROR__ZERO_AMOUNT;
 
 let noxfundsErrorMessages: Record<NoxfundsError, string> | undefined;
@@ -191,6 +239,9 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__CONSISTENCY_RULE_VIOLATED]: `A single day accounts for more than half the profit target`,
     [NOXFUNDS_ERROR__DAILY_LOSS_EXCEEDED]: `Evaluation has lost more than its daily limit today`,
     [NOXFUNDS_ERROR__DRAWDOWN_EXCEEDED]: `Mandate has breached its maximum drawdown`,
+    [NOXFUNDS_ERROR__ENTRY_NOT_TRIGGERED]: `The oracle price has not reached this entry order's trigger`,
+    [NOXFUNDS_ERROR__ENTRY_ORDER_EXPIRED]: `This entry order has expired`,
+    [NOXFUNDS_ERROR__ENTRY_ORDERS_PENDING]: `Cancel your resting entry orders before claiming the stage`,
     [NOXFUNDS_ERROR__EVALUATION_INCOMPLETE]: `Evaluation has not yet met every requirement of this stage`,
     [NOXFUNDS_ERROR__EVALUATION_LEVERAGE_TOO_HIGH]: `Trade is more leveraged than this market allows against the simulated balance`,
     [NOXFUNDS_ERROR__EVALUATION_NOT_ACTIVE]: `Evaluation is not active`,
@@ -198,12 +249,16 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__INCOMPLETE_OBSERVATION]: `Equity observation must supply every open position exactly once`,
     [NOXFUNDS_ERROR__INSUFFICIENT_PRINCIPAL]: `The investor's token account holds less than the principal`,
     [NOXFUNDS_ERROR__INVALID_ACCOUNT_SIZE]: `Simulated account size must be between $10,000 and $200,000`,
+    [NOXFUNDS_ERROR__INVALID_EXPIRY]: `An expiry must be in the future, or zero for none`,
+    [NOXFUNDS_ERROR__INVALID_KEY]: `That key cannot be the default address`,
     [NOXFUNDS_ERROR__INVALID_LISTING_TERMS]: `Listing terms are not internally consistent`,
     [NOXFUNDS_ERROR__INVALID_MANDATE_RULES]: `Mandate rules are not internally consistent`,
+    [NOXFUNDS_ERROR__INVALID_PRICE_LIMIT]: `An entry order's price bound must not let it fill worse than its kind allows`,
     [NOXFUNDS_ERROR__LISTING_NOT_OPEN]: `That listing is closed; it is not accepting requests`,
     [NOXFUNDS_ERROR__MANDATE_EXCEEDS_TIER_LIMIT]: `This mandate is larger than the trader's tier permits`,
     [NOXFUNDS_ERROR__MANDATE_NOT_ACTIVE]: `Mandate is not Active`,
     [NOXFUNDS_ERROR__MANDATE_NOT_SETTLEABLE]: `Mandate is not winding down or breached, so it cannot be settled`,
+    [NOXFUNDS_ERROR__MANDATE_NOT_SETTLED]: `Only a settled mandate's signer can be swept`,
     [NOXFUNDS_ERROR__MANDATE_NOT_WINDING_DOWN]: `Only a breached or winding-down mandate may be wound down by a third party`,
     [NOXFUNDS_ERROR__MARKET_NOT_OPEN]: `Market is not open for this action`,
     [NOXFUNDS_ERROR__MARKET_NOT_PERMITTED]: `This market is not in the mandate's permitted set`,
@@ -219,10 +274,14 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__NOT_THE_LISTING_TRADER]: `Signer is not this listing's trader`,
     [NOXFUNDS_ERROR__NOT_THE_OFFER_INVESTOR]: `Signer is not the investor who posted this offer`,
     [NOXFUNDS_ERROR__NOT_THE_OFFER_TRADER]: `Signer is not the trader this offer is addressed to`,
+    [NOXFUNDS_ERROR__NOT_THE_PENDING_ADMIN]: `Signer is not the proposed admin`,
+    [NOXFUNDS_ERROR__NOT_THE_STOP_LOSS]: `That order is not this position's stop-loss`,
     [NOXFUNDS_ERROR__NOT_THE_TRADER]: `Signer is not this mandate's trader`,
     [NOXFUNDS_ERROR__NOT_THE_UPGRADE_AUTHORITY]: `Only the program's upgrade authority may initialise the configuration`,
+    [NOXFUNDS_ERROR__NOT_YOUR_ORDER_TO_CANCEL]: `Only the trader may cancel a live, unexpired order`,
     [NOXFUNDS_ERROR__OFFER_EXPIRED]: `Offer has expired`,
     [NOXFUNDS_ERROR__OFFER_NOT_OPEN]: `Offer is not open; it has already been accepted or revoked`,
+    [NOXFUNDS_ERROR__ORDER_NOT_ON_MANDATE]: `That entry order does not belong to this mandate`,
     [NOXFUNDS_ERROR__POSITION_ARGS_MISMATCH]: `The position closed is not the one named in the instruction`,
     [NOXFUNDS_ERROR__POSITION_NOT_IN_EVALUATION]: `This simulated position does not belong to this evaluation`,
     [NOXFUNDS_ERROR__POSITION_NOT_TRACKED]: `This mandate is not tracking a position at that market and nonce`,
@@ -235,14 +294,19 @@ if (process.env.NODE_ENV !== "production") {
     [NOXFUNDS_ERROR__RISK_PER_TRADE_EXCEEDED]: `Risk at the stop exceeds the mandate's per-trade risk limit`,
     [NOXFUNDS_ERROR__SLOT_NOT_RECONCILED]: `A position at this market and nonce closed without being reconciled; reconcile it first`,
     [NOXFUNDS_ERROR__STOP_LOSS_REQUIRED]: `Every funded trade must carry a stop-loss`,
+    [NOXFUNDS_ERROR__STOP_NOT_TIGHTER]: `A stop may only move toward the price, never away from it`,
     [NOXFUNDS_ERROR__STOP_NOT_TRIGGERED]: `The oracle price has not reached this stop`,
     [NOXFUNDS_ERROR__STOP_ON_WRONG_SIDE]: `Stop-loss is on the wrong side of the entry price`,
     [NOXFUNDS_ERROR__STOP_PROTECTS_OPEN_POSITION]: `A stop-loss cannot be removed while its position is open`,
     [NOXFUNDS_ERROR__STOP_TOO_FAR]: `Stop-loss is further from entry than the mandate allows`,
+    [NOXFUNDS_ERROR__TAKE_PROFIT_NOT_TRIGGERED]: `The oracle price has not reached this take-profit`,
+    [NOXFUNDS_ERROR__TAKE_PROFIT_ON_WRONG_SIDE]: `A take-profit must sit on the profitable side`,
     [NOXFUNDS_ERROR__TOO_MANY_ACTIVE_MANDATES]: `The trader already holds as many mandates as their tier permits`,
     [NOXFUNDS_ERROR__TOO_MANY_OPEN_POSITIONS]: `Mandate already holds its maximum number of open positions`,
+    [NOXFUNDS_ERROR__TOO_MANY_PENDING_ORDERS]: `Too many entry orders are already resting`,
     [NOXFUNDS_ERROR__TOTAL_NOTIONAL_EXCEEDED]: `Trade would exceed the mandate's total open notional`,
     [NOXFUNDS_ERROR__TRADE_EXCEEDS_MANDATE]: `Trade notional exceeds the mandate's per-trade ceiling`,
+    [NOXFUNDS_ERROR__TRIGGER_ALREADY_MET]: `That trigger price is already met at the current price`,
     [NOXFUNDS_ERROR__ZERO_AMOUNT]: `Amount must be greater than zero`,
   };
 }

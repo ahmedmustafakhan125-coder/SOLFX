@@ -18,21 +18,35 @@ import {
 } from "@solana/kit";
 import {
   parseAbandonEvaluationInstruction,
+  parseAcceptAdminInstruction,
   parseAcceptOfferInstruction,
   parseClaimSettlementInstruction,
   parseClaimStagePassInstruction,
   parseCloseRequestInstruction,
   parseCreateSolfxAccountInstruction,
   parseDeclineOfferInstruction,
+  parseEvalCancelEntryOrderInstruction,
   parseEvalClosePositionInstruction,
+  parseEvalFillEntryOrderInstruction,
+  parseEvalMoveStopInstruction,
   parseEvalObserveEquityInstruction,
   parseEvalOpenPositionInstruction,
+  parseEvalPlaceEntryOrderInstruction,
+  parseEvalSetTakeProfitInstruction,
   parseEvalTriggerStopInstruction,
+  parseEvalTriggerTakeProfitInstruction,
   parseForfeitStakeInstruction,
+  parseFundedAddMarginInstruction,
+  parseFundedCancelEntryOrderInstruction,
   parseFundedCancelStopInstruction,
   parseFundedClosePositionInstruction,
+  parseFundedFillEntryOrderInstruction,
+  parseFundedMoveStopInstruction,
   parseFundedOpenPositionInstruction,
+  parseFundedPlaceEntryOrderInstruction,
   parseFundedPlaceTakeProfitInstruction,
+  parseFundedReducePositionInstruction,
+  parseFundedRemoveMarginInstruction,
   parseFundMandateInstruction,
   parseFundSolfxCollateralInstruction,
   parseInitializeConfigInstruction,
@@ -42,32 +56,50 @@ import {
   parsePostListingInstruction,
   parsePostOfferInstruction,
   parsePostRequestInstruction,
+  parseProposeAdminInstruction,
   parseRecomputeTierInstruction,
   parseReconcilePositionInstruction,
   parseRequestSettlementInstruction,
   parseRevokeOfferInstruction,
+  parseSetGuardianInstruction,
   parseSetPausedInstruction,
+  parseSetTreasuryInstruction,
   parseStartEvaluationInstruction,
+  parseSweepMandateSignerInstruction,
   parseUpdateInvestorListingInstruction,
   parseUpdateListingInstruction,
   parseWindDownCancelStopInstruction,
   parseWindDownPositionInstruction,
   type ParsedAbandonEvaluationInstruction,
+  type ParsedAcceptAdminInstruction,
   type ParsedAcceptOfferInstruction,
   type ParsedClaimSettlementInstruction,
   type ParsedClaimStagePassInstruction,
   type ParsedCloseRequestInstruction,
   type ParsedCreateSolfxAccountInstruction,
   type ParsedDeclineOfferInstruction,
+  type ParsedEvalCancelEntryOrderInstruction,
   type ParsedEvalClosePositionInstruction,
+  type ParsedEvalFillEntryOrderInstruction,
+  type ParsedEvalMoveStopInstruction,
   type ParsedEvalObserveEquityInstruction,
   type ParsedEvalOpenPositionInstruction,
+  type ParsedEvalPlaceEntryOrderInstruction,
+  type ParsedEvalSetTakeProfitInstruction,
   type ParsedEvalTriggerStopInstruction,
+  type ParsedEvalTriggerTakeProfitInstruction,
   type ParsedForfeitStakeInstruction,
+  type ParsedFundedAddMarginInstruction,
+  type ParsedFundedCancelEntryOrderInstruction,
   type ParsedFundedCancelStopInstruction,
   type ParsedFundedClosePositionInstruction,
+  type ParsedFundedFillEntryOrderInstruction,
+  type ParsedFundedMoveStopInstruction,
   type ParsedFundedOpenPositionInstruction,
+  type ParsedFundedPlaceEntryOrderInstruction,
   type ParsedFundedPlaceTakeProfitInstruction,
+  type ParsedFundedReducePositionInstruction,
+  type ParsedFundedRemoveMarginInstruction,
   type ParsedFundMandateInstruction,
   type ParsedFundSolfxCollateralInstruction,
   type ParsedInitializeConfigInstruction,
@@ -77,12 +109,16 @@ import {
   type ParsedPostListingInstruction,
   type ParsedPostOfferInstruction,
   type ParsedPostRequestInstruction,
+  type ParsedProposeAdminInstruction,
   type ParsedRecomputeTierInstruction,
   type ParsedReconcilePositionInstruction,
   type ParsedRequestSettlementInstruction,
   type ParsedRevokeOfferInstruction,
+  type ParsedSetGuardianInstruction,
   type ParsedSetPausedInstruction,
+  type ParsedSetTreasuryInstruction,
   type ParsedStartEvaluationInstruction,
+  type ParsedSweepMandateSignerInstruction,
   type ParsedUpdateInvestorListingInstruction,
   type ParsedUpdateListingInstruction,
   type ParsedWindDownCancelStopInstruction,
@@ -93,10 +129,12 @@ export const NOXFUNDS_PROGRAM_ADDRESS =
   "9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx" as Address<"9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx">;
 
 export enum NoxfundsAccount {
+  EvalEntryOrder,
   Evaluation,
   FundingRequest,
   InvestorListing,
   Mandate,
+  MandateEntryOrder,
   MandateOffer,
   NoxConfig,
   TraderListing,
@@ -108,6 +146,17 @@ export function identifyNoxfundsAccount(
   account: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): NoxfundsAccount {
   const data = "data" in account ? account.data : account;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([7, 195, 135, 196, 209, 156, 33, 246]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsAccount.EvalEntryOrder;
+  }
   if (
     containsBytes(
       data,
@@ -151,6 +200,17 @@ export function identifyNoxfundsAccount(
     )
   ) {
     return NoxfundsAccount.Mandate;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([6, 107, 193, 13, 18, 19, 225, 160]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsAccount.MandateEntryOrder;
   }
   if (
     containsBytes(
@@ -214,23 +274,37 @@ export function identifyNoxfundsAccount(
 
 export enum NoxfundsInstruction {
   AbandonEvaluation,
+  AcceptAdmin,
   AcceptOffer,
   ClaimSettlement,
   ClaimStagePass,
   CloseRequest,
   CreateSolfxAccount,
   DeclineOffer,
+  EvalCancelEntryOrder,
   EvalClosePosition,
+  EvalFillEntryOrder,
+  EvalMoveStop,
   EvalObserveEquity,
   EvalOpenPosition,
+  EvalPlaceEntryOrder,
+  EvalSetTakeProfit,
   EvalTriggerStop,
+  EvalTriggerTakeProfit,
   ForfeitStake,
   FundMandate,
   FundSolfxCollateral,
+  FundedAddMargin,
+  FundedCancelEntryOrder,
   FundedCancelStop,
   FundedClosePosition,
+  FundedFillEntryOrder,
+  FundedMoveStop,
   FundedOpenPosition,
+  FundedPlaceEntryOrder,
   FundedPlaceTakeProfit,
+  FundedReducePosition,
+  FundedRemoveMargin,
   InitializeConfig,
   InitializeTraderProfile,
   ObserveMandateEquity,
@@ -238,12 +312,16 @@ export enum NoxfundsInstruction {
   PostListing,
   PostOffer,
   PostRequest,
+  ProposeAdmin,
   RecomputeTier,
   ReconcilePosition,
   RequestSettlement,
   RevokeOffer,
+  SetGuardian,
   SetPaused,
+  SetTreasury,
   StartEvaluation,
+  SweepMandateSigner,
   UpdateInvestorListing,
   UpdateListing,
   WindDownCancelStop,
@@ -264,6 +342,17 @@ export function identifyNoxfundsInstruction(
     )
   ) {
     return NoxfundsInstruction.AbandonEvaluation;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([112, 42, 45, 90, 116, 181, 13, 170]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.AcceptAdmin;
   }
   if (
     containsBytes(
@@ -335,12 +424,45 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([138, 70, 125, 121, 61, 199, 90, 238]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalCancelEntryOrder;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([40, 137, 84, 57, 105, 46, 100, 9]),
       ),
       0,
     )
   ) {
     return NoxfundsInstruction.EvalClosePosition;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([6, 9, 189, 22, 128, 132, 249, 173]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalFillEntryOrder;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([77, 94, 18, 113, 14, 249, 55, 119]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalMoveStop;
   }
   if (
     containsBytes(
@@ -368,12 +490,45 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([34, 250, 203, 120, 58, 71, 13, 205]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalPlaceEntryOrder;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([58, 193, 232, 113, 205, 244, 147, 67]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalSetTakeProfit;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([43, 85, 122, 170, 91, 181, 194, 204]),
       ),
       0,
     )
   ) {
     return NoxfundsInstruction.EvalTriggerStop;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([20, 8, 193, 94, 160, 80, 61, 1]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.EvalTriggerTakeProfit;
   }
   if (
     containsBytes(
@@ -412,6 +567,28 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([181, 238, 106, 184, 181, 71, 190, 177]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.FundedAddMargin;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([65, 245, 58, 157, 218, 148, 70, 100]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.FundedCancelEntryOrder;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([134, 246, 181, 255, 164, 74, 78, 238]),
       ),
       0,
@@ -434,6 +611,28 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([162, 199, 220, 118, 211, 69, 243, 187]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.FundedFillEntryOrder;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([191, 166, 174, 148, 239, 182, 82, 184]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.FundedMoveStop;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([109, 93, 55, 146, 36, 186, 248, 83]),
       ),
       0,
@@ -445,12 +644,45 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([74, 137, 151, 94, 196, 254, 222, 24]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.FundedPlaceEntryOrder;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([195, 75, 243, 152, 49, 23, 236, 177]),
       ),
       0,
     )
   ) {
     return NoxfundsInstruction.FundedPlaceTakeProfit;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([156, 99, 203, 15, 45, 66, 67, 20]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.FundedReducePosition;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([66, 242, 30, 97, 228, 87, 26, 223]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.FundedRemoveMargin;
   }
   if (
     containsBytes(
@@ -533,6 +765,17 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([121, 214, 199, 212, 87, 39, 117, 234]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.ProposeAdmin;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([88, 190, 225, 127, 27, 185, 123, 147]),
       ),
       0,
@@ -577,6 +820,17 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([147, 243, 50, 121, 154, 164, 50, 30]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.SetGuardian;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([91, 60, 125, 192, 176, 225, 166, 218]),
       ),
       0,
@@ -588,12 +842,34 @@ export function identifyNoxfundsInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([57, 97, 196, 95, 195, 206, 106, 136]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.SetTreasury;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([155, 126, 223, 83, 56, 34, 155, 210]),
       ),
       0,
     )
   ) {
     return NoxfundsInstruction.StartEvaluation;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([235, 243, 152, 15, 151, 43, 147, 80]),
+      ),
+      0,
+    )
+  ) {
+    return NoxfundsInstruction.SweepMandateSigner;
   }
   if (
     containsBytes(
@@ -651,6 +927,9 @@ export type ParsedNoxfundsInstruction<
       instructionType: NoxfundsInstruction.AbandonEvaluation;
     } & ParsedAbandonEvaluationInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.AcceptAdmin;
+    } & ParsedAcceptAdminInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.AcceptOffer;
     } & ParsedAcceptOfferInstruction<TProgram>)
   | ({
@@ -669,8 +948,17 @@ export type ParsedNoxfundsInstruction<
       instructionType: NoxfundsInstruction.DeclineOffer;
     } & ParsedDeclineOfferInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.EvalCancelEntryOrder;
+    } & ParsedEvalCancelEntryOrderInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.EvalClosePosition;
     } & ParsedEvalClosePositionInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.EvalFillEntryOrder;
+    } & ParsedEvalFillEntryOrderInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.EvalMoveStop;
+    } & ParsedEvalMoveStopInstruction<TProgram>)
   | ({
       instructionType: NoxfundsInstruction.EvalObserveEquity;
     } & ParsedEvalObserveEquityInstruction<TProgram>)
@@ -678,8 +966,17 @@ export type ParsedNoxfundsInstruction<
       instructionType: NoxfundsInstruction.EvalOpenPosition;
     } & ParsedEvalOpenPositionInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.EvalPlaceEntryOrder;
+    } & ParsedEvalPlaceEntryOrderInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.EvalSetTakeProfit;
+    } & ParsedEvalSetTakeProfitInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.EvalTriggerStop;
     } & ParsedEvalTriggerStopInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.EvalTriggerTakeProfit;
+    } & ParsedEvalTriggerTakeProfitInstruction<TProgram>)
   | ({
       instructionType: NoxfundsInstruction.ForfeitStake;
     } & ParsedForfeitStakeInstruction<TProgram>)
@@ -690,17 +987,38 @@ export type ParsedNoxfundsInstruction<
       instructionType: NoxfundsInstruction.FundSolfxCollateral;
     } & ParsedFundSolfxCollateralInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.FundedAddMargin;
+    } & ParsedFundedAddMarginInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.FundedCancelEntryOrder;
+    } & ParsedFundedCancelEntryOrderInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.FundedCancelStop;
     } & ParsedFundedCancelStopInstruction<TProgram>)
   | ({
       instructionType: NoxfundsInstruction.FundedClosePosition;
     } & ParsedFundedClosePositionInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.FundedFillEntryOrder;
+    } & ParsedFundedFillEntryOrderInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.FundedMoveStop;
+    } & ParsedFundedMoveStopInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.FundedOpenPosition;
     } & ParsedFundedOpenPositionInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.FundedPlaceEntryOrder;
+    } & ParsedFundedPlaceEntryOrderInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.FundedPlaceTakeProfit;
     } & ParsedFundedPlaceTakeProfitInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.FundedReducePosition;
+    } & ParsedFundedReducePositionInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.FundedRemoveMargin;
+    } & ParsedFundedRemoveMarginInstruction<TProgram>)
   | ({
       instructionType: NoxfundsInstruction.InitializeConfig;
     } & ParsedInitializeConfigInstruction<TProgram>)
@@ -723,6 +1041,9 @@ export type ParsedNoxfundsInstruction<
       instructionType: NoxfundsInstruction.PostRequest;
     } & ParsedPostRequestInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.ProposeAdmin;
+    } & ParsedProposeAdminInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.RecomputeTier;
     } & ParsedRecomputeTierInstruction<TProgram>)
   | ({
@@ -735,11 +1056,20 @@ export type ParsedNoxfundsInstruction<
       instructionType: NoxfundsInstruction.RevokeOffer;
     } & ParsedRevokeOfferInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.SetGuardian;
+    } & ParsedSetGuardianInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.SetPaused;
     } & ParsedSetPausedInstruction<TProgram>)
   | ({
+      instructionType: NoxfundsInstruction.SetTreasury;
+    } & ParsedSetTreasuryInstruction<TProgram>)
+  | ({
       instructionType: NoxfundsInstruction.StartEvaluation;
     } & ParsedStartEvaluationInstruction<TProgram>)
+  | ({
+      instructionType: NoxfundsInstruction.SweepMandateSigner;
+    } & ParsedSweepMandateSignerInstruction<TProgram>)
   | ({
       instructionType: NoxfundsInstruction.UpdateInvestorListing;
     } & ParsedUpdateInvestorListingInstruction<TProgram>)
@@ -763,6 +1093,13 @@ export function parseNoxfundsInstruction<TProgram extends string>(
       return {
         instructionType: NoxfundsInstruction.AbandonEvaluation,
         ...parseAbandonEvaluationInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.AcceptAdmin: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.AcceptAdmin,
+        ...parseAcceptAdminInstruction(instruction),
       };
     }
     case NoxfundsInstruction.AcceptOffer: {
@@ -807,11 +1144,32 @@ export function parseNoxfundsInstruction<TProgram extends string>(
         ...parseDeclineOfferInstruction(instruction),
       };
     }
+    case NoxfundsInstruction.EvalCancelEntryOrder: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalCancelEntryOrder,
+        ...parseEvalCancelEntryOrderInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.EvalClosePosition: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: NoxfundsInstruction.EvalClosePosition,
         ...parseEvalClosePositionInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.EvalFillEntryOrder: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalFillEntryOrder,
+        ...parseEvalFillEntryOrderInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.EvalMoveStop: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalMoveStop,
+        ...parseEvalMoveStopInstruction(instruction),
       };
     }
     case NoxfundsInstruction.EvalObserveEquity: {
@@ -828,11 +1186,32 @@ export function parseNoxfundsInstruction<TProgram extends string>(
         ...parseEvalOpenPositionInstruction(instruction),
       };
     }
+    case NoxfundsInstruction.EvalPlaceEntryOrder: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalPlaceEntryOrder,
+        ...parseEvalPlaceEntryOrderInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.EvalSetTakeProfit: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalSetTakeProfit,
+        ...parseEvalSetTakeProfitInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.EvalTriggerStop: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: NoxfundsInstruction.EvalTriggerStop,
         ...parseEvalTriggerStopInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.EvalTriggerTakeProfit: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.EvalTriggerTakeProfit,
+        ...parseEvalTriggerTakeProfitInstruction(instruction),
       };
     }
     case NoxfundsInstruction.ForfeitStake: {
@@ -856,6 +1235,20 @@ export function parseNoxfundsInstruction<TProgram extends string>(
         ...parseFundSolfxCollateralInstruction(instruction),
       };
     }
+    case NoxfundsInstruction.FundedAddMargin: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.FundedAddMargin,
+        ...parseFundedAddMarginInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.FundedCancelEntryOrder: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.FundedCancelEntryOrder,
+        ...parseFundedCancelEntryOrderInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.FundedCancelStop: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -870,6 +1263,20 @@ export function parseNoxfundsInstruction<TProgram extends string>(
         ...parseFundedClosePositionInstruction(instruction),
       };
     }
+    case NoxfundsInstruction.FundedFillEntryOrder: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.FundedFillEntryOrder,
+        ...parseFundedFillEntryOrderInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.FundedMoveStop: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.FundedMoveStop,
+        ...parseFundedMoveStopInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.FundedOpenPosition: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -877,11 +1284,32 @@ export function parseNoxfundsInstruction<TProgram extends string>(
         ...parseFundedOpenPositionInstruction(instruction),
       };
     }
+    case NoxfundsInstruction.FundedPlaceEntryOrder: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.FundedPlaceEntryOrder,
+        ...parseFundedPlaceEntryOrderInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.FundedPlaceTakeProfit: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: NoxfundsInstruction.FundedPlaceTakeProfit,
         ...parseFundedPlaceTakeProfitInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.FundedReducePosition: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.FundedReducePosition,
+        ...parseFundedReducePositionInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.FundedRemoveMargin: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.FundedRemoveMargin,
+        ...parseFundedRemoveMarginInstruction(instruction),
       };
     }
     case NoxfundsInstruction.InitializeConfig: {
@@ -933,6 +1361,13 @@ export function parseNoxfundsInstruction<TProgram extends string>(
         ...parsePostRequestInstruction(instruction),
       };
     }
+    case NoxfundsInstruction.ProposeAdmin: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.ProposeAdmin,
+        ...parseProposeAdminInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.RecomputeTier: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -961,6 +1396,13 @@ export function parseNoxfundsInstruction<TProgram extends string>(
         ...parseRevokeOfferInstruction(instruction),
       };
     }
+    case NoxfundsInstruction.SetGuardian: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.SetGuardian,
+        ...parseSetGuardianInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.SetPaused: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -968,11 +1410,25 @@ export function parseNoxfundsInstruction<TProgram extends string>(
         ...parseSetPausedInstruction(instruction),
       };
     }
+    case NoxfundsInstruction.SetTreasury: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.SetTreasury,
+        ...parseSetTreasuryInstruction(instruction),
+      };
+    }
     case NoxfundsInstruction.StartEvaluation: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: NoxfundsInstruction.StartEvaluation,
         ...parseStartEvaluationInstruction(instruction),
+      };
+    }
+    case NoxfundsInstruction.SweepMandateSigner: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: NoxfundsInstruction.SweepMandateSigner,
+        ...parseSweepMandateSignerInstruction(instruction),
       };
     }
     case NoxfundsInstruction.UpdateInvestorListing: {

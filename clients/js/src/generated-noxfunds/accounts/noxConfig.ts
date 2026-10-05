@@ -66,6 +66,11 @@ export type NoxConfig = {
   protocolFeeBps: number;
   paused: boolean;
   bump: number;
+  /**
+   * An admin proposed by the current one and not yet accepted. Default when none. Carved from
+   * `_reserved` on 2026-10-03, so the existing config reads it as "no proposal".
+   */
+  pendingAdmin: Address;
   reserved: ReadonlyUint8Array;
 };
 
@@ -85,6 +90,11 @@ export type NoxConfigArgs = {
   protocolFeeBps: number;
   paused: boolean;
   bump: number;
+  /**
+   * An admin proposed by the current one and not yet accepted. Default when none. Carved from
+   * `_reserved` on 2026-10-03, so the existing config reads it as "no proposal".
+   */
+  pendingAdmin: Address;
   reserved: ReadonlyUint8Array;
 };
 
@@ -101,7 +111,8 @@ export function getNoxConfigEncoder(): FixedSizeEncoder<NoxConfigArgs> {
       ["protocolFeeBps", getU16Encoder()],
       ["paused", getBooleanEncoder()],
       ["bump", getU8Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 64)],
+      ["pendingAdmin", getAddressEncoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     (value) => ({ ...value, discriminator: NOX_CONFIG_DISCRIMINATOR }),
   );
@@ -119,7 +130,8 @@ export function getNoxConfigDecoder(): FixedSizeDecoder<NoxConfig> {
     ["protocolFeeBps", getU16Decoder()],
     ["paused", getBooleanDecoder()],
     ["bump", getU8Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 64)],
+    ["pendingAdmin", getAddressDecoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 

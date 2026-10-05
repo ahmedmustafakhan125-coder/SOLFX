@@ -5,7 +5,7 @@
  * references, and nothing references an event. Every codec here is the same one Codama emits
  * for that field type elsewhere in this client.
  *
- * 33 events.
+ * 48 events.
  */
 import {
   getAddressDecoder,
@@ -39,6 +39,24 @@ export function getConfigInitializedDecoder(): Decoder<ConfigInitialized> {
   ]);
 }
 
+export type ConfigKeyChanged = {
+  key: number;
+  old: Address;
+  new: Address;
+  ts: bigint;
+};
+
+export const CONFIG_KEY_CHANGED_DISCRIMINATOR = new Uint8Array([62, 233, 29, 44, 251, 211, 86, 224]);
+
+export function getConfigKeyChangedDecoder(): Decoder<ConfigKeyChanged> {
+  return getStructDecoder([
+    ["key", getU8Decoder()],
+    ["old", getAddressDecoder()],
+    ["new", getAddressDecoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
 export type EquityObserved = {
   mandate: Address;
   equity: bigint;
@@ -59,6 +77,144 @@ export function getEquityObservedDecoder(): Decoder<EquityObserved> {
     ["drawdownBps", getU64Decoder()],
     ["openPositions", getU8Decoder()],
     ["observer", getAddressDecoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type EvalEntryOrderCancelled = {
+  evaluation: Address;
+  order: Address;
+  by: Address;
+  expired: boolean;
+  ts: bigint;
+};
+
+export const EVAL_ENTRY_ORDER_CANCELLED_DISCRIMINATOR = new Uint8Array([187, 53, 237, 37, 192, 205, 152, 181]);
+
+export function getEvalEntryOrderCancelledDecoder(): Decoder<EvalEntryOrderCancelled> {
+  return getStructDecoder([
+    ["evaluation", getAddressDecoder()],
+    ["order", getAddressDecoder()],
+    ["by", getAddressDecoder()],
+    ["expired", getBooleanDecoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type EvalEntryOrderFilled = {
+  evaluation: Address;
+  order: Address;
+  position: Address;
+  oraclePrice: bigint;
+  keeper: Address;
+  ts: bigint;
+};
+
+export const EVAL_ENTRY_ORDER_FILLED_DISCRIMINATOR = new Uint8Array([11, 75, 234, 179, 92, 145, 208, 197]);
+
+export function getEvalEntryOrderFilledDecoder(): Decoder<EvalEntryOrderFilled> {
+  return getStructDecoder([
+    ["evaluation", getAddressDecoder()],
+    ["order", getAddressDecoder()],
+    ["position", getAddressDecoder()],
+    ["oraclePrice", getI64Decoder()],
+    ["keeper", getAddressDecoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type EvalEntryOrderPlaced = {
+  evaluation: Address;
+  order: Address;
+  orderId: number;
+  marketIndex: number;
+  nonce: number;
+  direction: number;
+  kind: number;
+  triggerPrice: bigint;
+  sizeBase: bigint;
+  stopLossPrice: bigint;
+  takeProfitPrice: bigint;
+  expiresAt: bigint;
+  ts: bigint;
+};
+
+export const EVAL_ENTRY_ORDER_PLACED_DISCRIMINATOR = new Uint8Array([111, 152, 67, 196, 233, 24, 80, 174]);
+
+export function getEvalEntryOrderPlacedDecoder(): Decoder<EvalEntryOrderPlaced> {
+  return getStructDecoder([
+    ["evaluation", getAddressDecoder()],
+    ["order", getAddressDecoder()],
+    ["orderId", getU8Decoder()],
+    ["marketIndex", getU16Decoder()],
+    ["nonce", getU8Decoder()],
+    ["direction", getU8Decoder()],
+    ["kind", getU8Decoder()],
+    ["triggerPrice", getI64Decoder()],
+    ["sizeBase", getU64Decoder()],
+    ["stopLossPrice", getI64Decoder()],
+    ["takeProfitPrice", getI64Decoder()],
+    ["expiresAt", getI64Decoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type EvalStopMoved = {
+  evaluation: Address;
+  position: Address;
+  oldStop: bigint;
+  newStop: bigint;
+  ts: bigint;
+};
+
+export const EVAL_STOP_MOVED_DISCRIMINATOR = new Uint8Array([108, 19, 46, 232, 114, 20, 48, 171]);
+
+export function getEvalStopMovedDecoder(): Decoder<EvalStopMoved> {
+  return getStructDecoder([
+    ["evaluation", getAddressDecoder()],
+    ["position", getAddressDecoder()],
+    ["oldStop", getI64Decoder()],
+    ["newStop", getI64Decoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type EvalTakeProfitFired = {
+  evaluation: Address;
+  position: Address;
+  triggerPrice: bigint;
+  oraclePrice: bigint;
+  keeper: Address;
+  ts: bigint;
+};
+
+export const EVAL_TAKE_PROFIT_FIRED_DISCRIMINATOR = new Uint8Array([125, 34, 171, 238, 217, 165, 9, 176]);
+
+export function getEvalTakeProfitFiredDecoder(): Decoder<EvalTakeProfitFired> {
+  return getStructDecoder([
+    ["evaluation", getAddressDecoder()],
+    ["position", getAddressDecoder()],
+    ["triggerPrice", getI64Decoder()],
+    ["oraclePrice", getI64Decoder()],
+    ["keeper", getAddressDecoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type EvalTakeProfitSet = {
+  evaluation: Address;
+  position: Address;
+  triggerPrice: bigint;
+  ts: bigint;
+};
+
+export const EVAL_TAKE_PROFIT_SET_DISCRIMINATOR = new Uint8Array([74, 55, 228, 174, 161, 102, 12, 177]);
+
+export function getEvalTakeProfitSetDecoder(): Decoder<EvalTakeProfitSet> {
+  return getStructDecoder([
+    ["evaluation", getAddressDecoder()],
+    ["position", getAddressDecoder()],
+    ["triggerPrice", getI64Decoder()],
     ["ts", getI64Decoder()],
   ]);
 }
@@ -185,6 +341,52 @@ export function getEvaluationTradeOpenedDecoder(): Decoder<EvaluationTradeOpened
     ["fee", getU64Decoder()],
     ["stopPrice", getI64Decoder()],
     ["riskUsedBps", getU64Decoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type FundedMarginMoved = {
+  mandate: Address;
+  marketIndex: number;
+  nonce: number;
+  added: boolean;
+  amount: bigint;
+  ts: bigint;
+};
+
+export const FUNDED_MARGIN_MOVED_DISCRIMINATOR = new Uint8Array([84, 75, 161, 237, 170, 105, 74, 135]);
+
+export function getFundedMarginMovedDecoder(): Decoder<FundedMarginMoved> {
+  return getStructDecoder([
+    ["mandate", getAddressDecoder()],
+    ["marketIndex", getU16Decoder()],
+    ["nonce", getU8Decoder()],
+    ["added", getBooleanDecoder()],
+    ["amount", getU64Decoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type FundedStopMoved = {
+  mandate: Address;
+  position: Address;
+  oldOrderId: number;
+  newOrderId: number;
+  oldStop: bigint;
+  newStop: bigint;
+  ts: bigint;
+};
+
+export const FUNDED_STOP_MOVED_DISCRIMINATOR = new Uint8Array([40, 12, 120, 214, 227, 240, 4, 175]);
+
+export function getFundedStopMovedDecoder(): Decoder<FundedStopMoved> {
+  return getStructDecoder([
+    ["mandate", getAddressDecoder()],
+    ["position", getAddressDecoder()],
+    ["oldOrderId", getU8Decoder()],
+    ["newOrderId", getU8Decoder()],
+    ["oldStop", getI64Decoder()],
+    ["newStop", getI64Decoder()],
     ["ts", getI64Decoder()],
   ]);
 }
@@ -351,6 +553,88 @@ export function getMandateBreachedDecoder(): Decoder<MandateBreached> {
   ]);
 }
 
+export type MandateEntryOrderCancelled = {
+  mandate: Address;
+  order: Address;
+  by: Address;
+  expired: boolean;
+  ts: bigint;
+};
+
+export const MANDATE_ENTRY_ORDER_CANCELLED_DISCRIMINATOR = new Uint8Array([151, 169, 207, 26, 11, 44, 218, 179]);
+
+export function getMandateEntryOrderCancelledDecoder(): Decoder<MandateEntryOrderCancelled> {
+  return getStructDecoder([
+    ["mandate", getAddressDecoder()],
+    ["order", getAddressDecoder()],
+    ["by", getAddressDecoder()],
+    ["expired", getBooleanDecoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type MandateEntryOrderFilled = {
+  mandate: Address;
+  order: Address;
+  marketIndex: number;
+  nonce: number;
+  oraclePrice: bigint;
+  keeper: Address;
+  ts: bigint;
+};
+
+export const MANDATE_ENTRY_ORDER_FILLED_DISCRIMINATOR = new Uint8Array([30, 11, 126, 58, 144, 188, 160, 143]);
+
+export function getMandateEntryOrderFilledDecoder(): Decoder<MandateEntryOrderFilled> {
+  return getStructDecoder([
+    ["mandate", getAddressDecoder()],
+    ["order", getAddressDecoder()],
+    ["marketIndex", getU16Decoder()],
+    ["nonce", getU8Decoder()],
+    ["oraclePrice", getI64Decoder()],
+    ["keeper", getAddressDecoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type MandateEntryOrderPlaced = {
+  mandate: Address;
+  order: Address;
+  orderId: number;
+  marketIndex: number;
+  nonce: number;
+  direction: number;
+  kind: number;
+  triggerPrice: bigint;
+  priceLimit: bigint;
+  sizeBase: bigint;
+  collateral: bigint;
+  stopLossPrice: bigint;
+  expiresAt: bigint;
+  ts: bigint;
+};
+
+export const MANDATE_ENTRY_ORDER_PLACED_DISCRIMINATOR = new Uint8Array([252, 245, 177, 146, 123, 79, 169, 63]);
+
+export function getMandateEntryOrderPlacedDecoder(): Decoder<MandateEntryOrderPlaced> {
+  return getStructDecoder([
+    ["mandate", getAddressDecoder()],
+    ["order", getAddressDecoder()],
+    ["orderId", getU8Decoder()],
+    ["marketIndex", getU16Decoder()],
+    ["nonce", getU8Decoder()],
+    ["direction", getU8Decoder()],
+    ["kind", getU8Decoder()],
+    ["triggerPrice", getI64Decoder()],
+    ["priceLimit", getI64Decoder()],
+    ["sizeBase", getU64Decoder()],
+    ["collateral", getU64Decoder()],
+    ["stopLossPrice", getI64Decoder()],
+    ["expiresAt", getI64Decoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
 export type MandateFunded = {
   mandate: Address;
   investor: Address;
@@ -409,6 +693,26 @@ export function getMandateSettledDecoder(): Decoder<MandateSettled> {
     ["investorShare", getU64Decoder()],
     ["wasBreached", getBooleanDecoder()],
     ["settledBy", getAddressDecoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
+export type MandateSignerSwept = {
+  mandate: Address;
+  trader: Address;
+  lamports: bigint;
+  caller: Address;
+  ts: bigint;
+};
+
+export const MANDATE_SIGNER_SWEPT_DISCRIMINATOR = new Uint8Array([139, 107, 64, 14, 69, 119, 186, 68]);
+
+export function getMandateSignerSweptDecoder(): Decoder<MandateSignerSwept> {
+  return getStructDecoder([
+    ["mandate", getAddressDecoder()],
+    ["trader", getAddressDecoder()],
+    ["lamports", getU64Decoder()],
+    ["caller", getAddressDecoder()],
     ["ts", getI64Decoder()],
   ]);
 }
@@ -496,6 +800,38 @@ export function getOfferRevokedDecoder(): Decoder<OfferRevoked> {
     ["trader", getAddressDecoder()],
     ["principal", getU64Decoder()],
     ["timestamp", getI64Decoder()],
+  ]);
+}
+
+export type PartialCloseRecorded = {
+  profile: Address;
+  mandate: Address;
+  trader: Address;
+  marketIndex: number;
+  nonce: number;
+  sizeClosed: bigint;
+  realizedPnl: bigint;
+  notionalReleased: bigint;
+  grossProfit: bigint;
+  grossLoss: bigint;
+  ts: bigint;
+};
+
+export const PARTIAL_CLOSE_RECORDED_DISCRIMINATOR = new Uint8Array([209, 240, 137, 150, 58, 47, 180, 100]);
+
+export function getPartialCloseRecordedDecoder(): Decoder<PartialCloseRecorded> {
+  return getStructDecoder([
+    ["profile", getAddressDecoder()],
+    ["mandate", getAddressDecoder()],
+    ["trader", getAddressDecoder()],
+    ["marketIndex", getU16Decoder()],
+    ["nonce", getU8Decoder()],
+    ["sizeClosed", getU64Decoder()],
+    ["realizedPnl", getI64Decoder()],
+    ["notionalReleased", getU64Decoder()],
+    ["grossProfit", getU64Decoder()],
+    ["grossLoss", getU64Decoder()],
+    ["ts", getI64Decoder()],
   ]);
 }
 
@@ -785,15 +1121,44 @@ export function getTraderProfileCreatedDecoder(): Decoder<TraderProfileCreated> 
   ]);
 }
 
+export type TraderVerified = {
+  trader: Address;
+  evaluation: Address;
+  accountSize: bigint;
+  evaluationsPassed: number;
+  ts: bigint;
+};
+
+export const TRADER_VERIFIED_DISCRIMINATOR = new Uint8Array([48, 45, 155, 166, 48, 166, 196, 79]);
+
+export function getTraderVerifiedDecoder(): Decoder<TraderVerified> {
+  return getStructDecoder([
+    ["trader", getAddressDecoder()],
+    ["evaluation", getAddressDecoder()],
+    ["accountSize", getU64Decoder()],
+    ["evaluationsPassed", getU32Decoder()],
+    ["ts", getI64Decoder()],
+  ]);
+}
+
 /** Every event, for dispatch by discriminator. */
 export const NOX_EVENTS = [
   { name: "ConfigInitialized" as const, discriminator: CONFIG_INITIALIZED_DISCRIMINATOR, decoder: getConfigInitializedDecoder() },
+  { name: "ConfigKeyChanged" as const, discriminator: CONFIG_KEY_CHANGED_DISCRIMINATOR, decoder: getConfigKeyChangedDecoder() },
   { name: "EquityObserved" as const, discriminator: EQUITY_OBSERVED_DISCRIMINATOR, decoder: getEquityObservedDecoder() },
+  { name: "EvalEntryOrderCancelled" as const, discriminator: EVAL_ENTRY_ORDER_CANCELLED_DISCRIMINATOR, decoder: getEvalEntryOrderCancelledDecoder() },
+  { name: "EvalEntryOrderFilled" as const, discriminator: EVAL_ENTRY_ORDER_FILLED_DISCRIMINATOR, decoder: getEvalEntryOrderFilledDecoder() },
+  { name: "EvalEntryOrderPlaced" as const, discriminator: EVAL_ENTRY_ORDER_PLACED_DISCRIMINATOR, decoder: getEvalEntryOrderPlacedDecoder() },
+  { name: "EvalStopMoved" as const, discriminator: EVAL_STOP_MOVED_DISCRIMINATOR, decoder: getEvalStopMovedDecoder() },
+  { name: "EvalTakeProfitFired" as const, discriminator: EVAL_TAKE_PROFIT_FIRED_DISCRIMINATOR, decoder: getEvalTakeProfitFiredDecoder() },
+  { name: "EvalTakeProfitSet" as const, discriminator: EVAL_TAKE_PROFIT_SET_DISCRIMINATOR, decoder: getEvalTakeProfitSetDecoder() },
   { name: "EvaluationEquityObserved" as const, discriminator: EVALUATION_EQUITY_OBSERVED_DISCRIMINATOR, decoder: getEvaluationEquityObservedDecoder() },
   { name: "EvaluationFailed" as const, discriminator: EVALUATION_FAILED_DISCRIMINATOR, decoder: getEvaluationFailedDecoder() },
   { name: "EvaluationStarted" as const, discriminator: EVALUATION_STARTED_DISCRIMINATOR, decoder: getEvaluationStartedDecoder() },
   { name: "EvaluationTradeClosed" as const, discriminator: EVALUATION_TRADE_CLOSED_DISCRIMINATOR, decoder: getEvaluationTradeClosedDecoder() },
   { name: "EvaluationTradeOpened" as const, discriminator: EVALUATION_TRADE_OPENED_DISCRIMINATOR, decoder: getEvaluationTradeOpenedDecoder() },
+  { name: "FundedMarginMoved" as const, discriminator: FUNDED_MARGIN_MOVED_DISCRIMINATOR, decoder: getFundedMarginMovedDecoder() },
+  { name: "FundedStopMoved" as const, discriminator: FUNDED_STOP_MOVED_DISCRIMINATOR, decoder: getFundedStopMovedDecoder() },
   { name: "FundedTradeClosed" as const, discriminator: FUNDED_TRADE_CLOSED_DISCRIMINATOR, decoder: getFundedTradeClosedDecoder() },
   { name: "FundedTradeOpened" as const, discriminator: FUNDED_TRADE_OPENED_DISCRIMINATOR, decoder: getFundedTradeOpenedDecoder() },
   { name: "InvestorListingClosed" as const, discriminator: INVESTOR_LISTING_CLOSED_DISCRIMINATOR, decoder: getInvestorListingClosedDecoder() },
@@ -801,12 +1166,17 @@ export const NOX_EVENTS = [
   { name: "ListingClosed" as const, discriminator: LISTING_CLOSED_DISCRIMINATOR, decoder: getListingClosedDecoder() },
   { name: "ListingPosted" as const, discriminator: LISTING_POSTED_DISCRIMINATOR, decoder: getListingPostedDecoder() },
   { name: "MandateBreached" as const, discriminator: MANDATE_BREACHED_DISCRIMINATOR, decoder: getMandateBreachedDecoder() },
+  { name: "MandateEntryOrderCancelled" as const, discriminator: MANDATE_ENTRY_ORDER_CANCELLED_DISCRIMINATOR, decoder: getMandateEntryOrderCancelledDecoder() },
+  { name: "MandateEntryOrderFilled" as const, discriminator: MANDATE_ENTRY_ORDER_FILLED_DISCRIMINATOR, decoder: getMandateEntryOrderFilledDecoder() },
+  { name: "MandateEntryOrderPlaced" as const, discriminator: MANDATE_ENTRY_ORDER_PLACED_DISCRIMINATOR, decoder: getMandateEntryOrderPlacedDecoder() },
   { name: "MandateFunded" as const, discriminator: MANDATE_FUNDED_DISCRIMINATOR, decoder: getMandateFundedDecoder() },
   { name: "MandateSettled" as const, discriminator: MANDATE_SETTLED_DISCRIMINATOR, decoder: getMandateSettledDecoder() },
+  { name: "MandateSignerSwept" as const, discriminator: MANDATE_SIGNER_SWEPT_DISCRIMINATOR, decoder: getMandateSignerSweptDecoder() },
   { name: "OfferAccepted" as const, discriminator: OFFER_ACCEPTED_DISCRIMINATOR, decoder: getOfferAcceptedDecoder() },
   { name: "OfferDeclined" as const, discriminator: OFFER_DECLINED_DISCRIMINATOR, decoder: getOfferDeclinedDecoder() },
   { name: "OfferPosted" as const, discriminator: OFFER_POSTED_DISCRIMINATOR, decoder: getOfferPostedDecoder() },
   { name: "OfferRevoked" as const, discriminator: OFFER_REVOKED_DISCRIMINATOR, decoder: getOfferRevokedDecoder() },
+  { name: "PartialCloseRecorded" as const, discriminator: PARTIAL_CLOSE_RECORDED_DISCRIMINATOR, decoder: getPartialCloseRecordedDecoder() },
   { name: "PositionReconciled" as const, discriminator: POSITION_RECONCILED_DISCRIMINATOR, decoder: getPositionReconciledDecoder() },
   { name: "PositionWoundDown" as const, discriminator: POSITION_WOUND_DOWN_DISCRIMINATOR, decoder: getPositionWoundDownDecoder() },
   { name: "RequestClosed" as const, discriminator: REQUEST_CLOSED_DISCRIMINATOR, decoder: getRequestClosedDecoder() },
@@ -820,6 +1190,7 @@ export const NOX_EVENTS = [
   { name: "TierChanged" as const, discriminator: TIER_CHANGED_DISCRIMINATOR, decoder: getTierChangedDecoder() },
   { name: "TradeRecorded" as const, discriminator: TRADE_RECORDED_DISCRIMINATOR, decoder: getTradeRecordedDecoder() },
   { name: "TraderProfileCreated" as const, discriminator: TRADER_PROFILE_CREATED_DISCRIMINATOR, decoder: getTraderProfileCreatedDecoder() },
+  { name: "TraderVerified" as const, discriminator: TRADER_VERIFIED_DISCRIMINATOR, decoder: getTraderVerifiedDecoder() },
 ] as const;
 
 export type NoxEventName = (typeof NOX_EVENTS)[number]["name"];

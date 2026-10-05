@@ -106,6 +106,13 @@ export type Evaluation = {
   startedAt: bigint;
   bump: number;
   vaultBump: number;
+  /**
+   * Entry orders resting against this evaluation. Carved from `_reserved` on 2026-10-03, so
+   * it reads as zero on evaluations created before it — correct, since none could exist.
+   * `claim_stage_pass` refuses while any rest, so an order placed in Phase 1 cannot fill
+   * into Phase 2.
+   */
+  pendingOrders: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -151,6 +158,13 @@ export type EvaluationArgs = {
   startedAt: number | bigint;
   bump: number;
   vaultBump: number;
+  /**
+   * Entry orders resting against this evaluation. Carved from `_reserved` on 2026-10-03, so
+   * it reads as zero on evaluations created before it — correct, since none could exist.
+   * `claim_stage_pass` refuses while any rest, so an order placed in Phase 1 cannot fill
+   * into Phase 2.
+   */
+  pendingOrders: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -186,7 +200,8 @@ export function getEvaluationEncoder(): FixedSizeEncoder<EvaluationArgs> {
       ["startedAt", getI64Encoder()],
       ["bump", getU8Encoder()],
       ["vaultBump", getU8Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 64)],
+      ["pendingOrders", getU8Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 63)],
     ]),
     (value) => ({ ...value, discriminator: EVALUATION_DISCRIMINATOR }),
   );
@@ -223,7 +238,8 @@ export function getEvaluationDecoder(): FixedSizeDecoder<Evaluation> {
     ["startedAt", getI64Decoder()],
     ["bump", getU8Decoder()],
     ["vaultBump", getU8Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 64)],
+    ["pendingOrders", getU8Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 63)],
   ]);
 }
 

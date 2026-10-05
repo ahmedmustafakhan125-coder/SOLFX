@@ -112,6 +112,15 @@ export type TraderProfile = {
    * ambiguity against the trader and anyone reading it should be able to see how often.
    */
   ambiguousTrades: number;
+  /**
+   * Evaluations this trader has passed, both phases. Incremented by `claim_stage_pass` on
+   * the Phase 2 pass and by nothing else, so it is the program's own statement that the
+   * rules were cleared. Read as zero on every profile created before it existed, which is
+   * correct: no evaluation had passed on devnet when it was added.
+   */
+  evaluationsPassed: number;
+  /** When the latest of those passes happened. Zero if never. */
+  lastPassedAt: bigint;
   reserved: ReadonlyUint8Array;
 };
 
@@ -163,6 +172,15 @@ export type TraderProfileArgs = {
    * ambiguity against the trader and anyone reading it should be able to see how often.
    */
   ambiguousTrades: number;
+  /**
+   * Evaluations this trader has passed, both phases. Incremented by `claim_stage_pass` on
+   * the Phase 2 pass and by nothing else, so it is the program's own statement that the
+   * rules were cleared. Read as zero on every profile created before it existed, which is
+   * correct: no evaluation had passed on devnet when it was added.
+   */
+  evaluationsPassed: number;
+  /** When the latest of those passes happened. Zero if never. */
+  lastPassedAt: number | bigint;
   reserved: ReadonlyUint8Array;
 };
 
@@ -189,7 +207,9 @@ export function getTraderProfileEncoder(): FixedSizeEncoder<TraderProfileArgs> {
       ["bump", getU8Encoder()],
       ["untimedTrades", getU32Encoder()],
       ["ambiguousTrades", getU32Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 56)],
+      ["evaluationsPassed", getU32Encoder()],
+      ["lastPassedAt", getI64Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 44)],
     ]),
     (value) => ({ ...value, discriminator: TRADER_PROFILE_DISCRIMINATOR }),
   );
@@ -217,7 +237,9 @@ export function getTraderProfileDecoder(): FixedSizeDecoder<TraderProfile> {
     ["bump", getU8Decoder()],
     ["untimedTrades", getU32Decoder()],
     ["ambiguousTrades", getU32Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 56)],
+    ["evaluationsPassed", getU32Decoder()],
+    ["lastPassedAt", getI64Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 44)],
   ]);
 }
 

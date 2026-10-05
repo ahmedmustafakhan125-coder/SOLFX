@@ -78,6 +78,13 @@ export type VirtualPosition = {
   cumBorrowEntry: bigint;
   openedAt: bigint;
   bump: number;
+  /**
+   * The take-profit, or zero for none. Added 2026-10-03, which grew the account: safe only
+   * because no `VirtualPosition` existed on devnet at the upgrade (each is closed when its
+   * position closes). `_reserved` follows so the next field does not need the same care.
+   */
+  takeProfitPrice: bigint;
+  reserved: ReadonlyUint8Array;
 };
 
 export type VirtualPositionArgs = {
@@ -96,6 +103,13 @@ export type VirtualPositionArgs = {
   cumBorrowEntry: number | bigint;
   openedAt: number | bigint;
   bump: number;
+  /**
+   * The take-profit, or zero for none. Added 2026-10-03, which grew the account: safe only
+   * because no `VirtualPosition` existed on devnet at the upgrade (each is closed when its
+   * position closes). `_reserved` follows so the next field does not need the same care.
+   */
+  takeProfitPrice: number | bigint;
+  reserved: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link VirtualPositionArgs} account data. */
@@ -115,6 +129,8 @@ export function getVirtualPositionEncoder(): FixedSizeEncoder<VirtualPositionArg
       ["cumBorrowEntry", getU128Encoder()],
       ["openedAt", getI64Encoder()],
       ["bump", getU8Encoder()],
+      ["takeProfitPrice", getI64Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     (value) => ({ ...value, discriminator: VIRTUAL_POSITION_DISCRIMINATOR }),
   );
@@ -136,6 +152,8 @@ export function getVirtualPositionDecoder(): FixedSizeDecoder<VirtualPosition> {
     ["cumBorrowEntry", getU128Decoder()],
     ["openedAt", getI64Decoder()],
     ["bump", getU8Decoder()],
+    ["takeProfitPrice", getI64Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 
@@ -210,5 +228,5 @@ export async function fetchAllMaybeVirtualPosition(
 }
 
 export function getVirtualPositionSize(): number {
-  return 109;
+  return 149;
 }
