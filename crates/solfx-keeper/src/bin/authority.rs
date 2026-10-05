@@ -951,7 +951,8 @@ mod tests {
             protocol_fee_bps: 500,
             paused: false,
             bump: 255,
-            _reserved: [0; 64],
+            pending_admin: Pubkey::default(),
+            _reserved: [0; 32],
         }
     }
 

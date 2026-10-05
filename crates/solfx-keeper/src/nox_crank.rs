@@ -13,8 +13,13 @@
 //!   to observe the mandate at all. Then an `Active` mandate holding positions is marked. A
 //!   `Breached` or `WindingDown` mandate has its positions closed and its stops cancelled once
 //!   their positions are gone.
-//! - **Evaluations.** A simulated stop whose price has been reached is fired, and an evaluation
-//!   holding simulated positions is marked.
+//! - **Evaluations.** A simulated stop whose price has been reached is fired; a simulated
+//!   take-profit is fired once reached **and** past the ten-minute hold; an evaluation holding
+//!   simulated positions is marked.
+//! - **Entry orders.** A resting entry — on an evaluation or a funded mandate — whose trigger the
+//!   oracle has reached is filled; one that can no longer fill (expired, or its evaluation or
+//!   mandate over) is cleared, its rent back to the trader.
+//! - **Settled mandates.** A settled mandate's signer still holding SOL is swept to its trader.
 //! - **Tiers.** A profile whose record earns a different tier from the one it shows is
 //!   recomputed.
 //!
@@ -40,12 +45,15 @@ use anyhow::Result;
 use solana_instruction::{AccountMeta, Instruction};
 use solana_pubkey::Pubkey;
 
-use noxfunds::constants::{CONFIG_SEED, MANDATE_SIGNER_SEED, MANDATE_VAULT_SEED, TRADER_SEED};
-use noxfunds::state::{
-    Evaluation, EvaluationState, Mandate, MandateState, PositionSlot, TraderProfile, TraderTier,
-    VirtualPosition,
+use noxfunds::constants::{
+    CONFIG_SEED, EVAL_MIN_HOLD_SECS, MANDATE_SIGNER_SEED, MANDATE_VAULT_SEED, TRADER_SEED,
+    VPOS_SEED,
 };
-use solfx_core::constants::POSITION_SEED;
+use noxfunds::state::{
+    EntryKind, EvalEntryOrder, Evaluation, EvaluationState, Mandate, MandateEntryOrder,
+    MandateState, PositionSlot, TraderProfile, TraderTier, VirtualPosition,
+};
+use solfx_core::constants::{POSITION_SEED, TRIGGER_SEED};
 use solfx_core::state::{Direction, Position, PriceSource, TriggerKind, UserAccount};
 
 use crate::book::{market_pda, Book};
@@ -102,6 +110,8 @@ pub struct Priced {
     /// Whether the market's status allows a close. Marking needs only a valid price; closing
     /// and firing a stop need the market open as well.
     pub closable: bool,
+    /// Whether it allows an open — what filling an entry order needs.
+    pub openable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -252,6 +262,9 @@ pub struct SimPosition {
     pub market_index: u16,
     pub direction: Direction,
     pub stop_price: i64,
+    /// Zero for none.
+    pub take_profit_price: i64,
+    pub opened_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -260,7 +273,12 @@ pub enum EvalStep {
         position: Pubkey,
         market_index: u16,
     },
-    /// (virtual position, market, price update) triples, each open position exactly once.
+    TriggerTakeProfit {
+        position: Pubkey,
+        market_index: u16,
+    },
+    /// One group per open position, each exactly once: (virtual position, market, primary leg,
+    /// then the secondary and conversion legs if its market has them).
     Observe {
         triples: Vec<Pubkey>,
     },
@@ -268,27 +286,39 @@ pub enum EvalStep {
 
 /// What to do for one active evaluation.
 ///
-/// Stops first, and nothing else in the same pass: firing one changes the set of open
-/// positions, and a mark built from the old set would be refused as incomplete.
+/// Stops and targets first, and nothing else in the same pass: firing one changes the set of
+/// open positions, and a mark built from the old set would be refused as incomplete.
+///
+/// A target fires only once the position has been held `EVAL_MIN_HOLD_SECS`, as the program
+/// requires; before then it is not met as far as the chain is concerned, and sending would fail.
 pub fn plan_evaluation(
     open_positions: u8,
     positions: &[SimPosition],
+    now: i64,
     priced: impl Fn(u16) -> Option<Priced>,
 ) -> Vec<EvalStep> {
-    let stops: Vec<EvalStep> = positions
-        .iter()
-        .filter(|p| {
-            priced(p.market_index).is_some_and(|m| {
-                m.closable && TriggerKind::StopLoss.is_met(p.direction, p.stop_price, m.spot)
-            })
-        })
-        .map(|p| EvalStep::TriggerStop {
-            position: p.key,
-            market_index: p.market_index,
-        })
-        .collect();
-    if !stops.is_empty() {
-        return stops;
+    let mut exits: Vec<EvalStep> = Vec::new();
+    for p in positions {
+        let Some(m) = priced(p.market_index).filter(|m| m.closable) else {
+            continue;
+        };
+        if TriggerKind::StopLoss.is_met(p.direction, p.stop_price, m.spot) {
+            exits.push(EvalStep::TriggerStop {
+                position: p.key,
+                market_index: p.market_index,
+            });
+        } else if p.take_profit_price > 0
+            && now.saturating_sub(p.opened_at) >= EVAL_MIN_HOLD_SECS
+            && TriggerKind::TakeProfit.is_met(p.direction, p.take_profit_price, m.spot)
+        {
+            exits.push(EvalStep::TriggerTakeProfit {
+                position: p.key,
+                market_index: p.market_index,
+            });
+        }
+    }
+    if !exits.is_empty() {
+        return exits;
     }
 
     // The account's count and the positions found must agree, or the view is mid-change.
@@ -297,18 +327,90 @@ pub fn plan_evaluation(
     }
     let mut triples = Vec::new();
     for p in positions {
-        // Evaluations price one leg only (`load_validated_price(.., None, None, ..)`), so the
-        // market and its primary account are the whole of what the program reads.
+        // One group per position: the position, then the market and its legs in the order the
+        // program reads them — primary, the secondary if synthetic, the conversion leg if not
+        // quoted in USD. `priced_from_book` builds `legs` from the market's own configuration,
+        // which is what the program checks the group's shape against.
         let Some(m) = priced(p.market_index) else {
             return Vec::new();
         };
-        let mut legs = m.legs.into_iter();
-        let (Some(market), Some(primary)) = (legs.next(), legs.next()) else {
+        if m.legs.len() < 2 {
             return Vec::new();
-        };
-        triples.extend([p.key, market, primary]);
+        }
+        triples.push(p.key);
+        triples.extend(m.legs);
     }
     vec![EvalStep::Observe { triples }]
+}
+
+/// One resting entry order, as much of it as the decision needs. The same shape for an
+/// evaluation's and a mandate's, because the rule is the same.
+#[derive(Debug, Clone, Copy)]
+pub struct SimOrder {
+    pub market_index: u16,
+    pub direction: Direction,
+    pub kind: EntryKind,
+    pub trigger_price: i64,
+    /// Zero: good until cancelled.
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderStep {
+    Fill,
+    Clear,
+}
+
+/// What to do with one entry order. Pure.
+///
+/// `live` is whether its evaluation or mandate can still take a position (`Active`). An order
+/// that can never fill again — expired, or its owner finished — is cleared so its rent goes back
+/// to the trader; one whose trigger the oracle has reached on an open market is filled, and the
+/// program judges every rule again before it does.
+#[must_use]
+pub fn plan_entry_order(
+    live: bool,
+    order: &SimOrder,
+    now: i64,
+    priced: impl Fn(u16) -> Option<Priced>,
+) -> Option<OrderStep> {
+    let expired = order.expires_at != 0 && now > order.expires_at;
+    if !live || expired {
+        return Some(OrderStep::Clear);
+    }
+    let m = priced(order.market_index).filter(|m| m.openable)?;
+    order
+        .kind
+        .is_met(order.direction, order.trigger_price, m.spot)
+        .then_some(OrderStep::Fill)
+}
+
+/// A market's price legs as the program reads them — the secondary only for a synthetic market,
+/// the conversion leg only for one not quoted in USD — decided by the market's configuration,
+/// exactly as `load_validated_price` decides it, so the keeper never sends a leg the program
+/// would refuse as unexpected.
+fn eval_legs(book: &Book, market_index: u16) -> Option<(Pubkey, Option<Pubkey>, Option<Pubkey>)> {
+    let market = book.markets.get(&market_index)?;
+    let feeds = book.feeds.get(&market_index)?;
+    let secondary = if matches!(market.price_source, PriceSource::Synthetic { .. }) {
+        Some(feeds.secondary?)
+    } else {
+        None
+    };
+    let conversion = if market.needs_quote_conversion() {
+        Some(feeds.quote_conversion?)
+    } else {
+        None
+    };
+    Some((feeds.primary, secondary, conversion))
+}
+
+fn trigger_pda(position: &Pubkey, order_id: u8) -> Pubkey {
+    Pubkey::find_program_address(
+        &[TRIGGER_SEED, position.as_ref(), &[order_id]],
+        &solfx_core::ID,
+    )
+    .0
 }
 
 /// Price a market from the book, through the **trading** gate — the one every NOXFUNDS
@@ -330,6 +432,7 @@ pub fn priced_from_book(book: &Book, market_index: u16) -> Option<Priced> {
         legs,
         spot: price.spot.price,
         closable: market.status.allows_close(),
+        openable: market.status.allows_open(),
     })
 }
 
@@ -345,6 +448,9 @@ pub async fn run_nox(shared: Arc<Shared>) {
         }
     }
 }
+
+/// An account and its address, as `Chain::all` returns them.
+type Keyed<T> = (Pubkey, T);
 
 struct Action {
     ix: Instruction,
@@ -374,16 +480,34 @@ fn token_amount(data: &[u8]) -> Option<u64> {
 
 async fn nox_pass(shared: &Arc<Shared>) -> Result<()> {
     let chain = &shared.chain;
-    let mandates: Vec<(Pubkey, Mandate)> = chain.all(&noxfunds::ID).await?;
-    let mandates: Vec<(Pubkey, Mandate)> = mandates
+    let all_mandates: Vec<(Pubkey, Mandate)> = chain.all(&noxfunds::ID).await?;
+    let (settled, mandates): (Vec<Keyed<Mandate>>, Vec<Keyed<Mandate>>) = all_mandates
         .into_iter()
-        .filter(|(_, m)| m.state != MandateState::Settled)
-        .collect();
-    let evaluations: Vec<(Pubkey, Evaluation)> = chain.all(&noxfunds::ID).await?;
-    let evaluations: Vec<(Pubkey, Evaluation)> = evaluations
+        .partition(|(_, m)| m.state == MandateState::Settled);
+    let all_evaluations: Vec<(Pubkey, Evaluation)> = chain.all(&noxfunds::ID).await?;
+    let eval_by_key: HashMap<Pubkey, Evaluation> = all_evaluations.iter().cloned().collect();
+    let evaluations: Vec<(Pubkey, Evaluation)> = all_evaluations
         .into_iter()
         .filter(|(_, e)| e.state == EvaluationState::Active)
         .collect();
+    let eval_orders: Vec<(Pubkey, EvalEntryOrder)> = chain.all(&noxfunds::ID).await?;
+    let mandate_orders: Vec<(Pubkey, MandateEntryOrder)> = chain.all(&noxfunds::ID).await?;
+    // A settled mandate's signer exists only while it holds lamports: a dataless system account
+    // with none is reclaimed by the runtime. So "it exists" is "there is something to sweep".
+    let settled_signers: Vec<Pubkey> = settled
+        .iter()
+        .map(|(k, _)| nox_pda(&[MANDATE_SIGNER_SEED, k.as_ref()]))
+        .collect();
+    let sweepable: Vec<bool> = if settled_signers.is_empty() {
+        Vec::new()
+    } else {
+        chain
+            .multiple(&settled_signers)
+            .await?
+            .into_iter()
+            .map(|a| a.is_some())
+            .collect()
+    };
     let virtual_positions: Vec<(Pubkey, VirtualPosition)> =
         if evaluations.iter().any(|(_, e)| e.open_positions > 0) {
             chain.all(&noxfunds::ID).await?
@@ -440,11 +564,54 @@ async fn nox_pass(shared: &Arc<Shared>) -> Result<()> {
                 market_index: p.market_index,
                 direction: p.direction,
                 stop_price: p.stop_price,
+                take_profit_price: p.take_profit_price,
+                opened_at: p.opened_at,
             });
         }
         for (key, e) in &evaluations {
             let positions = by_eval.remove(key).unwrap_or_default();
             evaluation_actions(shared, &book, *key, e, &positions, &mut actions);
+        }
+        let mandate_by_key: HashMap<Pubkey, &Mandate> =
+            mandates.iter().map(|(k, m)| (*k, m)).collect();
+        for (key, o) in &eval_orders {
+            if let Some(e) = eval_by_key.get(&o.evaluation) {
+                eval_order_action(shared, &book, *key, o, e, &mut actions);
+            }
+        }
+        for (key, o) in &mandate_orders {
+            // A mandate missing from the unsettled set is settled: its orders can only be cleared.
+            let m = mandate_by_key.get(&o.mandate).copied().or_else(|| {
+                settled
+                    .iter()
+                    .find(|(k, _)| *k == o.mandate)
+                    .map(|(_, m)| m)
+            });
+            if let Some(m) = m {
+                mandate_order_action(shared, &book, *key, o, m, &mut actions);
+            }
+        }
+        for ((key, m), has_lamports) in settled.iter().zip(&sweepable) {
+            if *has_lamports {
+                actions.push(Action {
+                    ix: Instruction {
+                        program_id: noxfunds::ID,
+                        accounts: noxfunds::accounts::SweepMandateSigner {
+                            caller: shared.chain.pubkey(),
+                            mandate: *key,
+                            mandate_signer: nox_pda(&[MANDATE_SIGNER_SEED, key.as_ref()]),
+                            trader: m.trader,
+                            system_program: solana_pubkey::pubkey!(
+                                "11111111111111111111111111111111"
+                            ),
+                        }
+                        .to_account_metas(None),
+                        data: noxfunds::instruction::SweepMandateSigner {}.data(),
+                    },
+                    label: "sweep_mandate_signer",
+                    subject: *key,
+                });
+            }
         }
         for (key, p) in &profiles {
             if TraderTier::for_stats(p) != p.tier {
@@ -667,13 +834,16 @@ fn evaluation_actions(
     out: &mut Vec<Action>,
 ) {
     let me = shared.chain.pubkey();
-    for step in plan_evaluation(e.open_positions, positions, |i| priced_from_book(book, i)) {
+    let now = book.clock.unix_timestamp;
+    for step in plan_evaluation(e.open_positions, positions, now, |i| {
+        priced_from_book(book, i)
+    }) {
         let (accounts, data, label): (Vec<AccountMeta>, Vec<u8>, &'static str) = match step {
             EvalStep::TriggerStop {
                 position,
                 market_index,
             } => {
-                let Some(feeds) = book.feeds.get(&market_index) else {
+                let Some((primary, secondary, conversion)) = eval_legs(book, market_index) else {
                     continue;
                 };
                 (
@@ -683,11 +853,36 @@ fn evaluation_actions(
                         evaluation: key,
                         virtual_position: position,
                         market: market_pda(market_index),
-                        price_update: feeds.primary,
+                        price_update: primary,
+                        secondary_price_update: secondary,
+                        quote_conversion_price_update: conversion,
                     }
                     .to_account_metas(None),
                     noxfunds::instruction::EvalTriggerStop {}.data(),
                     "eval_trigger_stop",
+                )
+            }
+            EvalStep::TriggerTakeProfit {
+                position,
+                market_index,
+            } => {
+                let Some((primary, secondary, conversion)) = eval_legs(book, market_index) else {
+                    continue;
+                };
+                (
+                    noxfunds::accounts::EvalTriggerTakeProfit {
+                        keeper: me,
+                        trader: e.trader,
+                        evaluation: key,
+                        virtual_position: position,
+                        market: market_pda(market_index),
+                        price_update: primary,
+                        secondary_price_update: secondary,
+                        quote_conversion_price_update: conversion,
+                    }
+                    .to_account_metas(None),
+                    noxfunds::instruction::EvalTriggerTakeProfit {}.data(),
+                    "eval_trigger_take_profit",
                 )
             }
             EvalStep::Observe { triples } => {
@@ -723,6 +918,161 @@ fn evaluation_actions(
     }
 }
 
+/// Fill or clear one evaluation entry order.
+fn eval_order_action(
+    shared: &Shared,
+    book: &Book,
+    key: Pubkey,
+    o: &EvalEntryOrder,
+    e: &Evaluation,
+    out: &mut Vec<Action>,
+) {
+    let sim = SimOrder {
+        market_index: o.market_index,
+        direction: o.direction,
+        kind: o.kind,
+        trigger_price: o.trigger_price,
+        expires_at: o.expires_at,
+    };
+    let live = e.state == EvaluationState::Active;
+    let now = book.clock.unix_timestamp;
+    let me = shared.chain.pubkey();
+    let (accounts, data, label): (Vec<AccountMeta>, Vec<u8>, &'static str) =
+        match plan_entry_order(live, &sim, now, |i| priced_from_book(book, i)) {
+            None => return,
+            Some(OrderStep::Clear) => (
+                noxfunds::accounts::EvalCancelEntryOrder {
+                    caller: me,
+                    trader: e.trader,
+                    evaluation: o.evaluation,
+                    entry_order: key,
+                }
+                .to_account_metas(None),
+                noxfunds::instruction::EvalCancelEntryOrder {}.data(),
+                "eval_cancel_entry_order",
+            ),
+            Some(OrderStep::Fill) => {
+                let Some((primary, secondary, conversion)) = eval_legs(book, o.market_index) else {
+                    return;
+                };
+                let vpos = nox_pda(&[
+                    VPOS_SEED,
+                    o.evaluation.as_ref(),
+                    &o.market_index.to_le_bytes(),
+                    &[o.nonce],
+                ]);
+                (
+                    noxfunds::accounts::EvalFillEntryOrder {
+                        keeper: me,
+                        config: nox_pda(&[CONFIG_SEED]),
+                        evaluation: o.evaluation,
+                        entry_order: key,
+                        virtual_position: vpos,
+                        market: market_pda(o.market_index),
+                        price_update: primary,
+                        secondary_price_update: secondary,
+                        quote_conversion_price_update: conversion,
+                        system_program: solana_pubkey::pubkey!("11111111111111111111111111111111"),
+                    }
+                    .to_account_metas(None),
+                    noxfunds::instruction::EvalFillEntryOrder {}.data(),
+                    "eval_fill_entry_order",
+                )
+            }
+        };
+    out.push(Action {
+        ix: Instruction {
+            program_id: noxfunds::ID,
+            accounts,
+            data,
+        },
+        label,
+        subject: key,
+    });
+}
+
+/// Fill or clear one funded entry order.
+fn mandate_order_action(
+    shared: &Shared,
+    book: &Book,
+    key: Pubkey,
+    o: &MandateEntryOrder,
+    m: &Mandate,
+    out: &mut Vec<Action>,
+) {
+    let sim = SimOrder {
+        market_index: o.market_index,
+        direction: o.direction,
+        kind: o.kind,
+        trigger_price: o.trigger_price,
+        expires_at: o.expires_at,
+    };
+    let live = m.state == MandateState::Active;
+    let now = book.clock.unix_timestamp;
+    let me = shared.chain.pubkey();
+    let (accounts, data, label): (Vec<AccountMeta>, Vec<u8>, &'static str) =
+        match plan_entry_order(live, &sim, now, |i| priced_from_book(book, i)) {
+            None => return,
+            Some(OrderStep::Clear) => (
+                noxfunds::accounts::FundedCancelEntryOrder {
+                    caller: me,
+                    trader: m.trader,
+                    mandate: o.mandate,
+                    entry_order: key,
+                }
+                .to_account_metas(None),
+                noxfunds::instruction::FundedCancelEntryOrder {}.data(),
+                "funded_cancel_entry_order",
+            ),
+            Some(OrderStep::Fill) => {
+                let Some(feeds) = book.feeds.get(&o.market_index) else {
+                    return;
+                };
+                let position = position_pda(&m.solfx_user_account, o.market_index, o.nonce);
+                let v = shared.vaults;
+                (
+                    noxfunds::accounts::FundedFillEntryOrder {
+                        keeper: me,
+                        trader: m.trader,
+                        config: nox_pda(&[CONFIG_SEED]),
+                        mandate: o.mandate,
+                        entry_order: key,
+                        mandate_signer: nox_pda(&[MANDATE_SIGNER_SEED, o.mandate.as_ref()]),
+                        protocol: v.protocol,
+                        user_account: m.solfx_user_account,
+                        market: market_pda(o.market_index),
+                        position,
+                        trigger_order: trigger_pda(&position, o.stop_order_id),
+                        collateral_vault: v.collateral_vault,
+                        lp_pool: v.lp_pool,
+                        lp_vault: v.lp_vault,
+                        insurance_fund: v.insurance_fund,
+                        insurance_vault: v.insurance_vault,
+                        fee_vault: v.fee_vault,
+                        price_update: feeds.primary,
+                        secondary_price_update: feeds.secondary,
+                        quote_conversion_price_update: feeds.quote_conversion,
+                        token_program: TOKEN_PROGRAM,
+                        system_program: solana_pubkey::pubkey!("11111111111111111111111111111111"),
+                        solfx_core_program: solfx_core::ID,
+                    }
+                    .to_account_metas(None),
+                    noxfunds::instruction::FundedFillEntryOrder {}.data(),
+                    "funded_fill_entry_order",
+                )
+            }
+        };
+    out.push(Action {
+        ix: Instruction {
+            program_id: noxfunds::ID,
+            accounts,
+            data,
+        },
+        label,
+        subject: key,
+    });
+}
+
 /// Failures that mean "nothing to do" or "someone got there first", not a fault.
 ///
 /// Its own list rather than an extension of [`crate::chain::is_benign_race`]: those names are
@@ -737,6 +1087,13 @@ fn is_benign(err: &anyhow::Error) -> bool {
         "StopNotTriggered",
         "StopProtectsOpenPosition",
         "MandateNotWindingDown",
+        // An order or target the view saw as met, and the chain, a moment later, did not — or a
+        // limit reached on the oracle whose execution price, spread included, is not there yet.
+        "TakeProfitNotTriggered",
+        "MinimumHoldNotMet",
+        "EntryNotTriggered",
+        "EntryOrderExpired",
+        "SlippageExceeded",
         // Someone else closed or cancelled it first.
         "AccountNotInitialized",
         "AccountOwnedByWrongProgram",
@@ -771,6 +1128,7 @@ mod tests {
             ],
             spot: 100_000_000_000,
             closable: true,
+            openable: true,
         })
     }
 
@@ -975,8 +1333,22 @@ mod tests {
             market_index: 5,
             direction,
             stop_price,
+            take_profit_price: 0,
+            opened_at: 0,
         }
     }
+
+    /// Long from time 0 with a stop at 50 and a target at 120.
+    fn with_target(opened_at: i64) -> SimPosition {
+        SimPosition {
+            take_profit_price: 120,
+            opened_at,
+            ..sim(1, Direction::Long, 50)
+        }
+    }
+
+    /// Past the hold: `EVAL_MIN_HOLD_SECS` after opening at 0.
+    const HELD: i64 = EVAL_MIN_HOLD_SECS;
 
     fn at(spot: i64) -> impl Fn(u16) -> Option<Priced> {
         move |_| {
@@ -987,6 +1359,7 @@ mod tests {
                 ],
                 spot,
                 closable: true,
+                openable: true,
             })
         }
     }
@@ -996,11 +1369,11 @@ mod tests {
     fn a_long_simulated_stop_fires_at_its_price_and_not_above() {
         let long = [sim(1, Direction::Long, 99)];
         assert!(matches!(
-            plan_evaluation(1, &long, at(99)).as_slice(),
+            plan_evaluation(1, &long, 0, at(99)).as_slice(),
             [EvalStep::TriggerStop { .. }]
         ));
         assert!(matches!(
-            plan_evaluation(1, &long, at(100)).as_slice(),
+            plan_evaluation(1, &long, 0, at(100)).as_slice(),
             [EvalStep::Observe { .. }]
         ));
     }
@@ -1009,11 +1382,11 @@ mod tests {
     fn a_short_simulated_stop_fires_at_its_price_and_not_below() {
         let short = [sim(1, Direction::Short, 101)];
         assert!(matches!(
-            plan_evaluation(1, &short, at(101)).as_slice(),
+            plan_evaluation(1, &short, 0, at(101)).as_slice(),
             [EvalStep::TriggerStop { .. }]
         ));
         assert!(matches!(
-            plan_evaluation(1, &short, at(100)).as_slice(),
+            plan_evaluation(1, &short, 0, at(100)).as_slice(),
             [EvalStep::Observe { .. }]
         ));
     }
@@ -1021,7 +1394,7 @@ mod tests {
     #[test]
     fn an_evaluation_is_marked_with_one_triple_per_position() {
         let two = [sim(1, Direction::Long, 50), sim(2, Direction::Short, 150)];
-        let steps = plan_evaluation(2, &two, at(100));
+        let steps = plan_evaluation(2, &two, 0, at(100));
         let [EvalStep::Observe { triples }] = steps.as_slice() else {
             panic!("expected one observe, got {steps:?}");
         };
@@ -1030,13 +1403,37 @@ mod tests {
         assert_eq!(triples[3], two[1].key);
     }
 
+    /// A position on a market with more legs carries all of them, in the program's order, so the
+    /// group's shape matches what the market's configuration demands.
+    #[test]
+    fn a_multi_leg_position_is_marked_with_all_its_legs() {
+        let leg = |b: u8| Pubkey::new_from_array([b; 32]);
+        let four = |_: u16| {
+            Some(Priced {
+                legs: vec![leg(1), leg(2), leg(3), leg(4)],
+                spot: 100,
+                closable: true,
+                openable: true,
+            })
+        };
+        let one = [sim(9, Direction::Long, 50)];
+        let steps = plan_evaluation(1, &one, 0, four);
+        let [EvalStep::Observe { triples }] = steps.as_slice() else {
+            panic!("expected one observe, got {steps:?}");
+        };
+        assert_eq!(
+            triples.as_slice(),
+            &[one[0].key, leg(1), leg(2), leg(3), leg(4)]
+        );
+    }
+
     /// A count that disagrees with what was found is a view caught mid-change; a mark built
     /// from it would be refused as incomplete.
     #[test]
     fn a_mismatched_count_is_not_marked() {
         let one = [sim(1, Direction::Long, 50)];
-        assert!(plan_evaluation(2, &one, at(100)).is_empty());
-        assert!(plan_evaluation(0, &[], at(100)).is_empty());
+        assert!(plan_evaluation(2, &one, 0, at(100)).is_empty());
+        assert!(plan_evaluation(0, &[], 0, at(100)).is_empty());
     }
 
     #[test]
@@ -1050,12 +1447,104 @@ mod tests {
                 ],
                 spot: 90,
                 closable: false,
+                openable: false,
             })
         };
         assert!(matches!(
-            plan_evaluation(1, &long, closed).as_slice(),
+            plan_evaluation(1, &long, 0, closed).as_slice(),
             [EvalStep::Observe { .. }]
         ));
+    }
+
+    /// **A target waits for the hold**, as the program makes it: met before ten minutes is not
+    /// met at all, and the stop still takes priority over everything.
+    #[test]
+    fn a_simulated_target_fires_only_once_reached_and_held() {
+        let early = [with_target(0)];
+        assert!(matches!(
+            plan_evaluation(1, &early, HELD - 1, at(130)).as_slice(),
+            [EvalStep::Observe { .. }]
+        ));
+        assert!(matches!(
+            plan_evaluation(1, &early, HELD, at(119)).as_slice(),
+            [EvalStep::Observe { .. }]
+        ));
+        assert!(matches!(
+            plan_evaluation(1, &early, HELD, at(120)).as_slice(),
+            [EvalStep::TriggerTakeProfit { .. }]
+        ));
+        // A position without a target never fires one.
+        let none = [sim(1, Direction::Long, 50)];
+        assert!(matches!(
+            plan_evaluation(1, &none, HELD, at(1_000)).as_slice(),
+            [EvalStep::Observe { .. }]
+        ));
+    }
+
+    fn order(kind: EntryKind, direction: Direction, trigger: i64, expires_at: i64) -> SimOrder {
+        SimOrder {
+            market_index: 5,
+            direction,
+            kind,
+            trigger_price: trigger,
+            expires_at,
+        }
+    }
+
+    #[test]
+    fn an_entry_order_fills_when_its_trigger_is_reached_and_not_before() {
+        let buy_limit = order(EntryKind::Limit, Direction::Long, 100, 0);
+        assert_eq!(plan_entry_order(true, &buy_limit, 0, at(101)), None);
+        assert_eq!(
+            plan_entry_order(true, &buy_limit, 0, at(100)),
+            Some(OrderStep::Fill)
+        );
+        let sell_stop = order(EntryKind::Stop, Direction::Short, 100, 0);
+        assert_eq!(plan_entry_order(true, &sell_stop, 0, at(101)), None);
+        assert_eq!(
+            plan_entry_order(true, &sell_stop, 0, at(99)),
+            Some(OrderStep::Fill)
+        );
+    }
+
+    /// An order that can never fill again is cleared, so the trader gets the rent back — and is
+    /// cleared even when its market cannot be priced, because clearing reads no price.
+    #[test]
+    fn a_dead_entry_order_is_cleared_whatever_the_price() {
+        let expiring = order(EntryKind::Limit, Direction::Long, 100, 500);
+        assert_eq!(plan_entry_order(true, &expiring, 500, at(1_000)), None);
+        assert_eq!(
+            plan_entry_order(true, &expiring, 501, |_| None),
+            Some(OrderStep::Clear)
+        );
+        let owner_ended = order(EntryKind::Limit, Direction::Long, 100, 0);
+        assert_eq!(
+            plan_entry_order(false, &owner_ended, 0, |_| None),
+            Some(OrderStep::Clear)
+        );
+    }
+
+    #[test]
+    fn an_entry_order_waits_while_its_market_is_closed_for_opens() {
+        let buy_limit = order(EntryKind::Limit, Direction::Long, 100, 0);
+        let closed = |_: u16| {
+            Some(Priced {
+                legs: vec![],
+                spot: 50,
+                closable: true,
+                openable: false,
+            })
+        };
+        assert_eq!(plan_entry_order(true, &buy_limit, 0, closed), None);
+    }
+
+    /// The trigger address follows SolFX's seeds byte for byte.
+    #[test]
+    fn the_trigger_address_follows_solfx_seeds() {
+        let position = position_pda(&USER, 3, 0);
+        let b =
+            Pubkey::find_program_address(&[b"order", position.as_ref(), &[2]], &solfx_core::ID).0;
+        assert_eq!(trigger_pda(&position, 2), b);
     }
 
     /// The crank derives a position's address from SolFX's own seed constant; spelled out here

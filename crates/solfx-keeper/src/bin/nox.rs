@@ -1321,8 +1321,10 @@ async fn select_market<'a>(
     // composed from two feeds, and a non-USD-quoted one needs a conversion leg, so neither can be
     // priced — or marked — from a single account. Refused here, before step 1, because the
     // alternative is worse than an error: steps 1–5 would fund a real mandate, and the open at
-    // step 6 would then fail and leave it stranded. An evaluation refuses them outright. The program marks these markets correctly;
-    // this client does not yet build their extra legs.
+    // step 6 would then fail and leave it stranded. The program prices and marks these markets —
+    // funded since Stage 4, evaluations since 2026-10-03 — but this tool sizes a trade from one
+    // USD price, so it still builds single-leg trades only; the browser and the keeper pass the
+    // extra legs.
     if matches!(market.price_source, PriceSource::Synthetic { .. })
         || market.needs_quote_conversion()
     {
@@ -1700,6 +1702,9 @@ async fn eval(
                 virtual_position: vpos,
                 market: market_key,
                 price_update,
+                // `select_market` admits single-leg markets only, so there is nothing to pass.
+                secondary_price_update: None,
+                quote_conversion_price_update: None,
                 system_program: anchor_lang::system_program::ID,
             }
             .to_account_metas(None),
@@ -1775,6 +1780,8 @@ async fn eval(
             virtual_position: vpos,
             market: market_key,
             price_update,
+            secondary_price_update: None,
+            quote_conversion_price_update: None,
         }
         .to_account_metas(None),
         data: noxfunds::instruction::EvalClosePosition {}.data(),
