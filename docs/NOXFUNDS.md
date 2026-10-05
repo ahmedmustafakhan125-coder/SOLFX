@@ -449,7 +449,11 @@ depends on SolFX, SolFX knows nothing about NOXFUNDS. This is enforced in CI.
 | `FundingRequest` | `["request", trader, investor]` | a trader's ask, with a note; the trader's rent, always returned |
 | `Evaluation` | `["eval", trader, seq]` | a simulated balance, its stage, its record, its loss limits |
 | evaluation vault | `["eval_vault", evaluation]` | the $50 stake, until it is refunded or forfeited |
-| `VirtualPosition` | `["vpos", evaluation, market_index (LE), nonce]` | one simulated position, priced as a real one |
+| `VirtualPosition` | `["vpos", evaluation, market_index (LE), nonce]` | one simulated position, priced as a real one, with its stop and target |
+| `EvalEntryOrder` † | `["eorder", evaluation, order_id]` | a resting limit or stop entry on an evaluation |
+| `MandateEntryOrder` † | `["morder", mandate, order_id]` | a resting limit or stop entry on a funded mandate |
+
+† Built and tested on 2026-10-03 (see "Changes not yet deployed" below); **not on devnet yet**.
 
 The `seq` on a mandate lets one investor fund the same trader more than once. The signer is
 derived from the *mandate*, not the trader, so a trader holding several mandates from different
@@ -466,28 +470,34 @@ These are recorded because they are non-obvious and cost real time to discover:
    are 840 and 552 bytes held by value; against Solana's 4,096-byte stack frame they cannot be
    allowed to share a frame.
 
-### Instructions — 35
+### Instructions — 35 deployed, 53 in the source
 
-**Admin:** `initialize_config`, `set_paused`
+**Admin:** `initialize_config`, `set_paused`; † `set_guardian`, `set_treasury`, `propose_admin`,
+`accept_admin`
 **Trader:** `initialize_trader_profile`, `recompute_tier`, `create_solfx_account`,
 `funded_open_position`, `funded_close_position`, `funded_place_take_profit`,
-`funded_cancel_stop`
+`funded_cancel_stop`; † `funded_move_stop`, `funded_reduce_position`,
+`funded_place_entry_order`, `funded_cancel_entry_order`, `funded_add_margin`,
+`funded_remove_margin`
 **Investor:** `fund_mandate`, `fund_solfx_collateral`, `request_settlement`, `claim_settlement`
 **Public / keeper:** `observe_mandate_equity`, `wind_down_position`, `wind_down_cancel_stop`,
-`reconcile_position`
+`reconcile_position`; † `funded_fill_entry_order`, `sweep_mandate_signer`
 **Marketplace:** `post_listing`, `update_listing`, `post_investor_listing`,
 `update_investor_listing`, `post_offer`, `revoke_offer`, `accept_offer`, `decline_offer`,
 `post_request`, `close_request`
 **Evaluation:** `start_evaluation`, `eval_open_position`, `eval_close_position`,
 `eval_trigger_stop`, `eval_observe_equity`, `claim_stage_pass`, `forfeit_stake`,
-`abandon_evaluation`
+`abandon_evaluation`; † `eval_set_take_profit`, `eval_trigger_take_profit`, `eval_move_stop`,
+`eval_place_entry_order`, `eval_fill_entry_order`, `eval_cancel_entry_order`
+
+† Not deployed yet.
 
 `initialize_config` can only be called by the program's **upgrade authority** — enforced on
 chain by checking the program's own `ProgramData` account, not by a stored address that a
 first caller could claim. A first-caller-wins initialiser is a standard way to lose a protocol
 on deployment day.
 
-### Events — 33
+### Events — 33 deployed, 48 in the source
 
 `ConfigInitialized`, `MandateFunded`, `FundedTradeOpened`, `FundedTradeClosed`,
 `TakeProfitPlaced`, `StopCancelled`, `EquityObserved`, `MandateBreached`, `SettlementRequested`, `MandateSettled`,
@@ -496,7 +506,11 @@ on deployment day.
 `InvestorListingClosed`, `OfferPosted`, `OfferRevoked`, `OfferAccepted`, `OfferDeclined`,
 `RequestPosted`, `RequestClosed`, `EvaluationStarted`, `EvaluationTradeOpened`,
 `EvaluationTradeClosed`, `EvaluationEquityObserved`, `StagePassed`, `EvaluationFailed`,
-`StakeRefunded`, `StakeForfeited`.
+`StakeRefunded`, `StakeForfeited`; † `TraderVerified`, `EvalTakeProfitSet`,
+`EvalTakeProfitFired`, `EvalStopMoved`, `EvalEntryOrderPlaced`, `EvalEntryOrderFilled`,
+`EvalEntryOrderCancelled`, `FundedStopMoved`, `MandateEntryOrderPlaced`,
+`MandateEntryOrderFilled`, `MandateEntryOrderCancelled`, `PartialCloseRecorded`,
+`MandateSignerSwept`, `ConfigKeyChanged`, `FundedMarginMoved`.
 
 Events are the point, not decoration. **Every statistic NOXFUNDS displays must be
 re-derivable from these events by a third party** who trusts none of our infrastructure.
@@ -652,24 +666,27 @@ This section exists because a document that only lists what works is marketing.
   entry tier's; only single-leg markets can be traded; and the $50 stake is flat — the plan says
   it rises for larger evaluations but never says by how much. Passing records no tier: tiers
   come from funded trading, as they always have.
-- **Resting entry orders do not exist, on either protocol.** SolFX's trigger orders attach to
-  an open position, so they can close one and cannot open one. A "limit order" on the trader
-  dashboard would be the browser watching a price and sending when it hits — which stops the
-  moment the tab closes — so it is not offered. The stop and the take-profit are real on-chain
-  orders a keeper fires. Adding a genuine resting entry would be a change to `solfx-core`.
-- **The browser ticket trades single-leg markets only.** `funded_open_position` accepts the
-  secondary and quote-conversion oracle legs a synthetic or non-USD-quoted market needs; the
-  page resolves one price account per market and so lists only the markets that need one.
-  EUR/JPY and USD/INR are `nox market --execute` for now, and the panel says so rather than
-  offering a trade that would be refused.
-- **A mandate's SOL is not recoverable.** The mandate signer is a PDA that pays the rent for
-  the SolFX account and for every resting order, and is refunded when those close. Nothing in
-  the program sweeps what is left, and a PDA has no key, so roughly 0.02 SOL per mandate stays
-  there after settlement. Small, and stated rather than discovered.
+- **Resting entry orders: built, not deployed.** SolFX's own trigger orders still only close
+  positions, and `solfx-core` is unchanged. NOXFUNDS now holds the order itself
+  (`EvalEntryOrder`, `MandateEntryOrder`) and a keeper fills it through the same checks a
+  market order runs — no change to `solfx-core` was needed, contrary to what this section used
+  to say, because the mandate signer and the simulated book both belong to NOXFUNDS. Until the
+  upgrade is deployed, devnet has none.
+- **The browser tickets: every market shape, from the next app build.** The page now reads
+  every leg a market names, composes a synthetic's price as `compose_synthetic` does, and
+  converts a market not quoted in USD at the rate of the moment, rounding as the program
+  rounds (unit-tested against the program's own figures). For funded trades this works with
+  the program already deployed; for evaluations it needs the upgrade. The site has not been
+  rebuilt, so the live page still lists single-leg markets only. The `nox` CLI still sizes from
+  one USD price and refuses the others, as it says.
+- **A mandate's SOL: recoverable once the upgrade is deployed.** `sweep_mandate_signer` returns
+  a settled mandate signer's lamports to its trader, and the keeper sends it unprompted. On the
+  deployed program roughly 0.02 SOL per settled mandate still sits there.
 - **The verification page re-derives the trader's record, not everything.** `/nox/verify` (and
   `npm run verify:traders` in `clients/js`, against any RPC endpoint) replays every event about a
-  trader and compares all 15 figures on `TraderProfile` with the account; on 2026-09-24 it agreed
-  on 45 of 45 across the three traders on devnet. Three limits. The page reads through this
+  trader and compares the figures on `TraderProfile` with the account — 15 on 2026-09-24, when it
+  agreed on 45 of 45 across the three traders on devnet; 17 from 2026-10-03, adding
+  `evaluationsPassed` and `lastPassedAt`, and the indexer's first backfill agreed on 51 of 51. Three limits. The page reads through this
   site's RPC proxy; the script is the way to leave the site out. "Settled in profit" cannot be
   proven from events for a mandate whose positions closed together at a profit, because the
   program records those at zero and keeps the true total only on the mandate. The page says so
@@ -682,13 +699,24 @@ This section exists because a document that only lists what works is marketing.
   moment it happens. Evaluations are marked every five minutes, because their pricing is private
   to the program and cannot be estimated from outside; the stop, fired as soon as it is met, is
   what bounds a simulated loss between marks. It is run by the operator and paid by nobody, like
-  SolFX's own cranks, and it does not settle.
+  SolFX's own cranks, and it does not settle. From the upgrade it also fires simulated targets,
+  fills and clears entry orders, and sweeps settled signers — those paths are unit-tested in the
+  keeper and have not run against a cluster.
+- **Multi-leg markets in evaluations: built, not deployed.** Every evaluation instruction takes
+  the optional secondary and conversion legs, and `eval_observe_equity` reads each position's
+  legs in the number its market demands (`tests/stage11.rs`: a rupee-quoted trade lands in
+  dollars, a synthetic needs its second leg, a mixed book refuses a missing or spare leg).
+- **The indexer is written and not installed.** `services/indexer/` backfilled devnet on
+  2026-10-03 (515 transactions, 0 truncated, 51 of 51 figures agreeing with the accounts), but no
+  systemd unit runs it yet, so `/api/nox/*` answers "not running" on the live site.
 
 **Not done:**
 
 - **No security audit. Zero, by anyone independent.** Not a formal audit. The internal review
   in Part 11 was done by the team that wrote the code, which is not the same thing.
-- **No fuzzing.** SolFX's own fuzzing is a later-phase exit criterion; NOXFUNDS has none.
+- **No fuzzing.** SolFX's own fuzzing is a later-phase exit criterion; NOXFUNDS has none. What
+  it has instead is narrower: property tests (`proptest`) on the order predicates, and LiteSVM
+  tests that hold a partial close and a stop-out to the unit.
 - **Never deployed to mainnet, and no mainnet date.** Devnet only, with test USDC.
 - **Not economically tested at size.** The largest mandate ever run is $200.
 - **The upgrade authority is a single key**, and it is the same key that holds authority over
@@ -701,6 +729,33 @@ are in [`docs/noxfunds-budgets.md`](noxfunds-budgets.md).
 
 Green tests mean the behaviours someone thought to test behave as expected. Nothing more.
 NOXFUNDS is not audited, not safe, and not production-ready.
+
+---
+
+## Changes not yet deployed — 2026-10-03
+
+Built, tested, and **not on devnet**. Every line below is true of the source and of LiteSVM,
+and of nothing a reader can check on chain until the upgrade lands. The plan and the evidence
+for each are in [`NOXFUNDS-COMPLETION-PLAN.md`](NOXFUNDS-COMPLETION-PLAN.md).
+
+| What | Rule that keeps it safe | Tests |
+|---|---|---|
+| Evaluation shorts in the browser | the program always took them; only the page refused | `stage8.rs` |
+| Evaluation take-profit | placed only where unmet; fires only after the 10-minute hold, and counts as a voluntary close | `stage8.rs` |
+| Tightening a stop (evaluation and funded) | toward the price only, never already met, only after the hold; a funded stop is replaced, never removed | `stage8.rs`, `stage9.rs`, proptest |
+| Resting limit / stop entries (both) | every rule of an open re-checked at the fill; a limit never fills worse than its price | `stage8.rs`, `stage9.rs` |
+| Partial close (funded) | measured from the venue's own balances; moves gross figures, never the trade count | `stage9.rs`, two balance-to-the-unit identities |
+| Add / remove margin (funded) | booked by the measured change; removing needs an `Active` mandate and `solfx-core`'s initial margin | `stage9.rs`, balance-to-the-unit through a stop-out |
+| Every market shape in evaluations | the legs the market's configuration names, no more and no fewer | `stage11.rs` |
+| Verified mark ✓ | `TraderProfile.evaluations_passed`, written only by the Phase 2 pass | `stage8.rs` |
+| Sweep a settled signer | to the trader only, once `Settled` | `stage10.rs` |
+| Rotate guardian, treasury, admin | admin only; admin moves in two steps | `stage10.rs` |
+| **Fix:** a funded take-profit inside the hold | refused until `min_hold_slots` has passed (see Part 11) | `stage9.rs` |
+
+**Upgrade preconditions**, checked from the VPS on 2026-10-03 and to be re-checked immediately
+before deploying: **no `VirtualPosition` exists on devnet** (0 found) — it is the one account
+that grew, and an open one would no longer deserialise; every other new field was carved from
+`_reserved` and reads as zero on accounts that already exist.
 
 ---
 
@@ -741,7 +796,14 @@ regression tests for the fixes (`tests/stage6.rs`, `tests/stage7.rs`).
   should read.
 - **Some rent is never reclaimed**: an offer and its empty escrow, a stake escrow after refund, and
   about 0.02 SOL left in each mandate signer.
-- **Admin, guardian and treasury cannot be rotated** except by a program upgrade.
+- **Admin, guardian and treasury cannot be rotated** except by a program upgrade. *(Rotatable
+  from the 2026-10-03 source; see above.)*
+
+**Found 2026-10-03, while adding orders:** `funded_place_take_profit` did not check the mandate's
+minimum hold. A take-profit fires inside `solfx-core`, which never consults the mandate, so a
+target one tick from the price, placed at open, was a profitable exit inside `min_hold_slots`.
+An initial stop gives no such exit, because it only releases a loss. Fixed in the source and
+pinned by a test; every devnet mandate has `min_hold_slots = 0`, so nothing live was affected.
 
 Upgrade precondition, checked on devnet before this shipped: no mandate had an open position or
 collateral in SolFX. The new accounting fields were carved from reserved bytes that read as zero,

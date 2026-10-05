@@ -35,6 +35,24 @@ cargo test -p noxfunds --test budgets -- --nocapture
 | `observe_mandate_equity` (5 positions) | 21 | 634 | 50,704 | 65,000 |
 | `observe_mandate_equity` (`MAX_SLOTS` = 8) | 30 | 739 | — | packet only |
 | `claim_settlement` | 15 | 692 | 51,136 | 60,000 |
+| `funded_fill_entry_order` † | 23 | 892 | **113,315 – 120,815** | 150,000 |
+| `funded_move_stop` † | 15 | 637 | **44,697 – 52,197** | 63,000 |
+| `funded_reduce_position` † | 20 | 812 | 85,157 | 110,000 |
+| `funded_add_margin` † | 19 | 771 | 66,508 | 86,500 |
+| `funded_remove_margin` † | 19 | 771 | 71,621 | 93,000 |
+| `eval_place_entry_order` † | 6 | 441 | 18,032 – 21,032 | 36,000 |
+| `eval_fill_entry_order` † | 8 | 461 | 24,512 – 26,012 | 42,500 |
+| `eval_trigger_take_profit` † | 6 | 395 | 15,934 | 21,000 |
+| `eval_set_take_profit` † | 5 | 370 | 10,201 | 13,500 |
+| `eval_move_stop` † | 5 | 370 | 10,252 | 13,500 |
+| `eval_cancel_entry_order` † | 4 | 297 | 8,483 | 11,000 |
+| `claim_stage_pass` (phase 1 / phase 2 with refund) ‡ | 9 | 461 | 19,159 / 21,661 | 25,000 / 28,000 |
+
+† Added 2026-10-03, measured in `tests/stage8.rs` and `tests/stage9.rs`; ranges are the unstored-bump
+search described below. ‡ Re-measured 2026-10-03: it now takes the trader profile, to record a Phase 2
+pass, which added one seeded account and its write-back. The fill is the widest instruction NOXFUNDS
+has — `funded_open_position`'s 21 accounts plus the order and the trader it refunds — and still lands
+under the default 200,000 CU and 1,232 bytes without a lookup table.
 | **Limits** | **64** | **1,232** | **200,000** | |
 
 Bytes are measured the way a client actually builds the transaction — with

@@ -76,12 +76,63 @@ The keeper also runs NOXFUNDS' permissionless cranks (service `nox`, every 30 s;
 | `eval_trigger_stop` | an evaluation's simulated stop was reached |
 | `eval_observe_equity` | an evaluation holds simulated positions and 5 minutes passed |
 | `recompute_tier` | a trader's record earns a different tier from the one it shows |
+| `eval_trigger_take_profit` † | a simulated target was reached and the position has been held 10 minutes |
+| `eval_fill_entry_order` / `funded_fill_entry_order` † | a resting entry's trigger was reached on an open market; the program re-checks every rule |
+| `eval_cancel_entry_order` / `funded_cancel_entry_order` † | an entry can no longer fill — expired, or its evaluation or mandate ended; the rent goes to the trader |
+| `sweep_mandate_signer` † | a settled mandate's signer still holds SOL; it goes to the trader |
+
+† From the 2026-10-03 upgrade; harmless before it (the keeper finds no such accounts). A fill the
+chain refuses a moment later — the price moved back, or a limit's execution price is not there yet
+— is logged at debug as "nothing to do, or lost a race", like a stop that stopped being met.
 
 It does not settle mandates: `claim_settlement` is one click for anyone, and running it from here
 would pay three parties at a moment none of them chose. It pays fees from the same wallet as the
 poster.
 
-## When prices go stale — reading the poster's log
+## The NOXFUNDS indexer
+
+`services/indexer/indexer.ts` keeps every NOXFUNDS transaction in SQLite and serves each trader's
+record, evaluations, mandates and verified mark at `/api/nox/*`, through `solfx-api`. It is
+**not installed**. To run it:
+
+```bash
+cp services/indexer/solfx-nox-indexer.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now solfx-nox-indexer
+systemctl restart solfx-api            # picks up the /api/nox/* route
+curl -s localhost:8788/api/nox/health  # lastSyncAt set, lastError null
+```
+
+It reads the public devnet RPC at one call per 250 ms, deliberately not the keyed endpoint the
+poster depends on. The first backfill took ~25 minutes on 2026-10-03 (515 transactions); it
+caches what it fetches, so a restart resumes. `stored.truncated` counts transactions whose logs
+were cut off — each trader's record says how many of its own it rests on.
+
+To check it against the chain: `curl -s 'localhost:8788/api/nox/traders/<wallet>?verify=1'`
+returns the record beside the profile account's own figures, field by field.
+
+## Deploying the 2026-10-03 NOXFUNDS upgrade
+
+From the WSL checkout (`/mnt/e/SOLFX`), after pulling:
+
+1. **Precondition — no simulated position on devnet.** `VirtualPosition` grew; an existing one
+   would no longer deserialise. Count them by the account's discriminator (`ZyLzBLz1sY1`); it must
+   print `0` (it did on 2026-10-03). Close any open evaluation position first.
+
+   ```bash
+   curl -s https://api.devnet.solana.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,
+     "method":"getProgramAccounts","params":["9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx",
+     {"dataSlice":{"offset":0,"length":0},"filters":[{"memcmp":{"offset":0,"bytes":"ZyLzBLz1sY1"}}]}]}' \
+     | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["result"]))'
+   ```
+2. `anchor build`, then `anchor upgrade` (or `./scripts/deploy-devnet.sh`) for `noxfunds` only.
+   `solfx-core` and `solfx-referral` are unchanged.
+3. Publish the IDL; `deploy-devnet.sh` compares it with `clients/js/idl/noxfunds.json`, which was
+   built from the same source with Anchor's own `IdlBuilder`.
+4. On the VPS, after the upgrade lands: rebuild and restart the keeper
+   (`cargo build --release -p solfx-keeper && systemctl restart solfx-keeper`), then
+   `npm run build` in `app/` — not before, or the site sends instruction layouts the live program
+   does not know.
+
 
 `journalctl -u solfx-price-poster -n 40 -o cat`
 
