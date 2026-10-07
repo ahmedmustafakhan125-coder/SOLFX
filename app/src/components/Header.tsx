@@ -1,5 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 
+import { DevnetHint } from "@/components/DevnetHint";
+import { FaucetButton } from "@/components/FaucetButton";
 import { Logo } from "@/components/Logo";
 import { WalletButton } from "@/components/WalletButton";
 
@@ -50,6 +52,8 @@ export function Header({ rpcLabel }: { rpcLabel: string }) {
           {rpcLabel}
         </span>
 
+        <DevnetHint />
+        <FaucetButton />
         <WalletButton />
       </div>
     </header>

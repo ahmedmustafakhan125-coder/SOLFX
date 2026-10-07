@@ -2,6 +2,8 @@ import { Link, useLocation } from "react-router-dom";
 
 import { Wordmark } from "@/components/Logo";
 import { ProductSwitcher } from "@/components/ProductSwitcher";
+import { DevnetHint } from "@/components/DevnetHint";
+import { FaucetButton } from "@/components/FaucetButton";
 import { WalletButton } from "@/components/WalletButton";
 
 const SPEC =
@@ -96,6 +98,8 @@ export function NoxShell({
               >
                 Spec
               </a>
+              <DevnetHint />
+              <FaucetButton />
               <WalletButton />
             </div>
           </div>

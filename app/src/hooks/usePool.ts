@@ -4,6 +4,7 @@ import type { Address } from "@solana/kit";
 
 import { readPoolStatus, type PoolStatus } from "@/lib/pool";
 import { useRpc } from "@/hooks/useSolfx";
+import { useBalancesChanged } from "@/hooks/useBalancesChanged";
 
 export type PoolState = {
   readonly status: PoolStatus | undefined;
@@ -56,5 +57,7 @@ export function usePool(): PoolState {
   }, [rpc, owner, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  // A faucet claim lands outside this hook; re-read now rather than on the next poll.
+  useBalancesChanged(refresh);
   return { status, owner, loading, error, refresh };
 }

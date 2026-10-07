@@ -4,6 +4,7 @@ import type { Address } from "@solana/kit";
 
 import { readAccountStatus, type AccountStatus } from "@/lib/account";
 import { useRpc } from "@/hooks/useSolfx";
+import { useBalancesChanged } from "@/hooks/useBalancesChanged";
 
 export type AccountState = {
   readonly status: AccountStatus | undefined;
@@ -58,6 +59,8 @@ export function useAccount(pollMs = 20_000): AccountState {
   }, [rpc, owner, nonce]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  // A faucet claim lands outside this hook; re-read now rather than on the next poll.
+  useBalancesChanged(refresh);
 
   useEffect(() => {
     if (!owner) return;

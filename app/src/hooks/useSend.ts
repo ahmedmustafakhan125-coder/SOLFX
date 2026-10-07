@@ -4,6 +4,7 @@ import type { Instruction } from "@solana/kit";
 import { diagnoseSendError } from "@solfx/client";
 
 import { useSigner } from "@/hooks/useSigner";
+import { withClusterHint } from "@/lib/faucet";
 
 export type SendState = {
   readonly busy: boolean;
@@ -73,7 +74,14 @@ export function useSend() {
         // the real cause lives. Without it every failure reads "The provided transaction plan
         // failed to execute", which names neither the program error nor the wallet's refusal.
         const { message, logs } = diagnoseSendError(e);
-        setState({ busy: false, signature: undefined, error: message, logs });
+        // A newcomer's commonest failure is a wallet left on Mainnet, or one with no SOL. Both
+        // read as an opaque RPC error, so the error that looks like either says what to do.
+        setState({
+          busy: false,
+          signature: undefined,
+          error: withClusterHint(message),
+          logs,
+        });
         return undefined;
       }
     },

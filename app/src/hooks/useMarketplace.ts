@@ -5,6 +5,7 @@ import type { Address } from "@solana/kit";
 import { readMarketplace, type Marketplace } from "@/lib/nox";
 import { loadMarkets, type LoadedMarket } from "@/lib/markets";
 import { useRpc } from "@/hooks/useSolfx";
+import { useBalancesChanged } from "@/hooks/useBalancesChanged";
 
 export type MarketplaceState = {
   readonly market: Marketplace | undefined;
@@ -78,5 +79,7 @@ export function useMarketplace(pollMs = 30_000): MarketplaceState {
   }, [pollMs]);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  // A faucet claim lands outside this hook; re-read now rather than on the next poll.
+  useBalancesChanged(refresh);
   return { market, markets, me, loading, error, refresh };
 }
