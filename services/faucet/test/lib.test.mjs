@@ -15,11 +15,13 @@ import {
   validateWallet,
 } from "../lib.mjs";
 import { clientIp, lastForwardedFor } from "../../api/client-ip.mjs";
+import { generateKeyPairSigner } from "@solana/kit";
 
-// A real wallet (the devnet mint authority) and a real PDA (SolFX's protocol account).
-const WALLET = "7ktphnZe9rER59HanbM6mDk9aDAbvc2pcjDcPWDvBdWs";
+// Throwaway wallets, generated per run, and a real PDA (SolFX's protocol account on devnet).
+const [WALLET, OTHER, THIRD] = await Promise.all(
+  [0, 1, 2].map(async () => (await generateKeyPairSigner()).address),
+);
 const PDA = "GbgsnqqqRws5Ch33eHuoAWqKghQiVWt8wBSKzwNffjwc";
-const OTHER = "EyvqeDSh2Y4ZhobJY4bF8ueEZAjRx2V3r2GDf35ktPyo";
 
 // --- amounts ------------------------------------------------------------------------------
 
@@ -124,12 +126,12 @@ test("at most perIp claims per address per 24 h, and the window slides", () => {
   l.commit(WALLET, "ip");
   c.advance(1000);
   l.commit(OTHER, "ip");
-  const third = l.check("9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", "ip");
+  const third = l.check(THIRD, "ip");
   assert.equal(third.ok, false);
   assert.equal(third.reason, "ip");
   assert.equal(third.retryAfterMs, DAY_MS - 1000, "until the oldest claim ages out");
   c.advance(DAY_MS - 1000);
-  assert.equal(l.check("9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", "ip").ok, true);
+  assert.equal(l.check(THIRD, "ip").ok, true);
 });
 
 test("a claim in flight blocks a second one for the same wallet", () => {

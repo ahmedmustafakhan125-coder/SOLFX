@@ -6,10 +6,10 @@
 #   ./scripts/fund-faucet.sh <FAUCET_PUBKEY> --usdc 500000 --sol 2
 #   ./scripts/fund-faucet.sh <FAUCET_PUBKEY> --simulate-as <AUTHORITY_PUBKEY>   # needs no key
 #
-# Signs with the collateral mint's authority (default ~/.config/solana/id.json, override with
-# --authority <path>). That key is why this runs here: the faucet server only ever *transfers*
-# from the balance this puts in its account, so the one key that can create test USDC never
-# leaves the operator's machine. The faucet's public key is printed in the service's log line
+# Signs with the collateral mint's authority: --authority <path>, else $SOLFX_MINT_AUTHORITY,
+# else ~/.config/solana/id.json. That key is why this runs here: the faucet server only ever
+# *transfers* from the balance this puts in its account, so the one key that can create test
+# USDC never leaves the operator's machine. The faucet's public key is printed in the service's log line
 # on start, and by `curl -s 172.18.0.1:8789/faucet/health` on the server.
 #
 # Safe to re-run: the faucet's token account is created idempotently and each run adds more.
@@ -38,5 +38,11 @@ if [[ ! -d services/faucet/node_modules ]]; then
   npm ci --prefix services/faucet --no-fund --no-audit >/dev/null
 fi
 
+# The mint authority's keypair is resolved here, on the operator's machine, so the service code
+# never names a key path. An explicit --authority (or --simulate-as, which needs none) wins.
+AUTHORITY="${SOLFX_MINT_AUTHORITY:-$HOME/.config/solana/id.json}"
+for a in "$@"; do [[ "$a" == "--authority" || "$a" == "--simulate-as" ]] && AUTHORITY=""; done
+
 # The URL goes in as an argument and is never echoed: on a keyed endpoint it carries the key.
-exec node services/faucet/fund.mjs --faucet "$FAUCET" --rpc "$SOLFX_RPC_URL" "$@"
+exec node services/faucet/fund.mjs --faucet "$FAUCET" --rpc "$SOLFX_RPC_URL" \
+  ${AUTHORITY:+--authority "$AUTHORITY"} "$@"

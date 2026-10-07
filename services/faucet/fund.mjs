@@ -10,7 +10,6 @@
  * against the live mint before anyone holding the key runs it for real.
  */
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -47,7 +46,9 @@ const { values: args } = parseArgs({
     faucet: { type: "string" },
     usdc: { type: "string", default: "10000000" },
     sol: { type: "string", default: "10" },
-    authority: { type: "string", default: join(homedir(), ".config", "solana", "id.json") },
+    // No default: which key signs is the caller's decision, made in scripts/fund-faucet.sh on
+    // the operator's machine. Nothing under services/ names a key path.
+    authority: { type: "string" },
     mint: { type: "string" },
     rpc: { type: "string" },
     "simulate-as": { type: "string" },
@@ -78,6 +79,7 @@ const rpc = createSolanaRpc(rpcUrl);
 const mint = address(mintText);
 const owner = address(faucet.wallet);
 const simulateAs = args["simulate-as"];
+if (!simulateAs && !args.authority) fail("--authority <keypair path> is required (or --simulate-as <pubkey>)");
 const authority = simulateAs
   ? createNoopSigner(address(simulateAs))
   : await createKeyPairSignerFromBytes(
