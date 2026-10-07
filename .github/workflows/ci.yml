@@ -98,3 +98,28 @@ jobs:
         env:
           PROPTEST_CASES: 100000
         run: cargo test --release -p solfx-math --test properties
+
+  # The browser app and the devnet faucet. Neither ran in CI before: the app's `npm run ci` was
+  # only ever run by hand. On a runner its `build` step publishes nothing, which is not true on
+  # the VPS, where `app/dist` *is* the live site (see docs/OPERATIONS.md before building there).
+  web:
+    name: web — app ci, faucet tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The app compiles the client SDK from source (tsconfig paths), so it needs the SDK's
+      # dependencies installed too.
+      - name: Install
+        run: |
+          npm ci --prefix clients/js --no-fund --no-audit
+          npm ci --prefix app --no-fund --no-audit
+          npm ci --prefix services/faucet --no-fund --no-audit
+      - name: App — build, lint, format, test
+        working-directory: app
+        run: npm run ci
+      - name: Faucet — unit tests
+        working-directory: services/faucet
+        run: npm test
