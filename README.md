@@ -11,6 +11,27 @@ built on top of it, also live. Devnet only; no real funds involved, and no exter
 
 ---
 
+## Try it on devnet
+
+No CLI, no tokens to find, nothing to ask anyone for. With a fresh Phantom wallet:
+
+1. **Switch Phantom to Devnet:** Settings → Developer Settings. SolFX runs on Solana devnet
+   only; on Mainnet its accounts and test tokens do not exist.
+2. **Open [solfx.cloud/trade](https://solfx.cloud/trade), Connect Wallet, and click
+   _Get test USDC_.** One click sends 10,000 test USDC, plus 0.05 devnet SOL for fees if the
+   wallet has almost none. Once per wallet per day.
+3. **Create account, then Deposit** in the account panel. Collateral moves into your own
+   SolFX account, which only your wallet can withdraw from.
+4. **Trade BTC/USD:** open a position from the order ticket, add a **Stop loss** to it, and
+   **Close** it. BTC/USD is the market open around the clock; FX and metals trade Sunday 21:00
+   to Friday 21:00 UTC and are refused outside it, by design.
+
+NOXFUNDS (`/nox`) uses the same wallet and the same button: start an evaluation from
+`/nox/trader`. The faucet is a separate service with its own wallet; see
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md), "The devnet faucet".
+
+---
+
 ## Documentation
 
 Read in this order:

@@ -107,9 +107,8 @@ cp services/indexer/solfx-nox-indexer.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now solfx-nox-indexer
 curl -s 172.18.0.1:8788/api/nox/health          # lastSyncAt set once the first pass ends
 
-# 2. the container: add under services.web.environment in /docker/solfx/docker-compose.yml
-#      - NOX_INDEXER_URL=http://172.18.0.1:8788
-cd /docker/solfx && docker compose up -d        # recreates solfx-web; a few seconds' gap
+# 2. the container already has NOX_INDEXER_URL=http://172.18.0.1:8788 (added 2026-10-07,
+#    with the faucet's URL, in /docker/solfx/docker-compose.yml)
 curl -s localhost:8787/api/nox/health           # the same answer, through the site
 ```
 
@@ -124,6 +123,68 @@ were cut off — each trader's record says how many of its own it rests on.
 
 To check it against the chain: `curl -s 'localhost:8788/api/nox/traders/<wallet>?verify=1'`
 returns the record beside the profile account's own figures, field by field.
+
+## The devnet faucet
+
+`services/faucet/faucet.mjs` gives a first-time wallet **10,000 test USDC**, plus **0.05 SOL**
+when it holds less than 0.02, so someone with a fresh Phantom wallet can trade without asking
+anyone. The browser calls `POST /faucet`; `server.mjs` in the `solfx-web` container forwards it
+to the faucet on the host with the caller's address.
+
+| | |
+|---|---|
+| Service | `solfx-faucet` (unit in `services/faucet/solfx-faucet.service`), listening on `172.18.0.1:8789` |
+| Its own wallet | `3btr8eF61WQFwCFkeeUibqH85vZXTY7465ATFjGEQR6G`, keypair `/root/solfx-faucet-keypair.json` (outside the repo, mode 600) |
+| Holds | test USDC and devnet SOL only. **It cannot mint**; it only transfers what it was given |
+| RPC | the gateway's `/low` lane, so a burst of claims queues behind the price poster |
+| Limits | one claim per wallet per 24 h; 5 per client address per 24 h (the address Traefik appended, not one the client wrote) |
+| Claim log | `services/faucet/data/claims.json`, written on every claim, so a restart keeps the limits |
+
+**Environment**, all in `.env` (which the unit reads) unless noted:
+
+| Variable | Default | |
+|---|---|---|
+| `SOLFX_FAUCET_KEYPAIR` | none, required | the faucet's own keypair. Never the admin, mint-authority or keeper key |
+| `SOLFX_USDC_MINT` | `deployment.json`'s `usdc_mint` | the collateral mint |
+| `SOLFX_FAUCET_USDC` | `10000` | test USDC per claim |
+| `SOLFX_FAUCET_SOL` / `SOLFX_FAUCET_SOL_BELOW` | `0.05` / `0.02` | SOL sent, and the balance below which it is sent |
+| `SOLFX_FAUCET_PER_IP` | `5` | claims per client address per 24 h |
+| `SOLFX_FAUCET_WARN_USDC` / `SOLFX_FAUCET_WARN_SOL` | `100000` / `1` | log a `LOW` warning below these |
+| `SOLFX_FAUCET_HOST` / `_PORT` / `_RPC_URL` | set in the unit | `.env` would override the unit's `Environment=` lines, so do not put these there |
+| `SOLFX_FAUCET_URL` | `http://127.0.0.1:8789` | **in `/docker/solfx/docker-compose.yml`**, set to `http://172.18.0.1:8789` |
+
+**Is it working?**
+
+```bash
+curl -s 172.18.0.1:8789/faucet/health     # address, balances, claims left at the current size
+journalctl -u solfx-faucet -n 20 -o cat   # one line per claim; LOW / EMPTY warnings
+```
+
+**Refill it, from your own machine** — the mint authority (`7ktphnZe…`) is the only key that
+can create test USDC, and it never comes to this server:
+
+```bash
+cd /mnt/e/SOLFX && set -a && . ./.env && set +a
+./scripts/fund-faucet.sh 3btr8eF61WQFwCFkeeUibqH85vZXTY7465ATFjGEQR6G                  # 10,000,000 USDC + 10 SOL
+./scripts/fund-faucet.sh 3btr8eF61WQFwCFkeeUibqH85vZXTY7465ATFjGEQR6G --usdc 0 --sol 5   # SOL only
+```
+
+It checks the key it was given is the mint's authority before signing anything. Each claim costs
+the faucet at most 0.05 SOL + 0.00204 SOL token-account rent + the fee, so **10 SOL is about 190
+claims**; 10,000,000 USDC is 1,000. No restart is needed after a refill.
+
+**Restart** after changing `.env` or pulling new faucet code:
+
+```bash
+npm ci --prefix services/faucet           # only when package-lock.json changed
+systemctl restart solfx-faucet
+```
+
+**Install from scratch:** create the keypair (`solana-keygen new -o /root/solfx-faucet-keypair.json`,
+then `chmod 600`), set `SOLFX_FAUCET_KEYPAIR` in `.env`, `npm ci --prefix services/faucet`, copy
+the unit to `/etc/systemd/system/`, `systemctl daemon-reload && systemctl enable --now
+solfx-faucet`, add `SOLFX_FAUCET_URL` to the compose file and `cd /docker/solfx && docker compose
+up -d`. `services/faucet/test/localnet.e2e.mjs` runs the whole thing against a local validator.
 
 ## Deploying the 2026-10-03 NOXFUNDS upgrade
 
