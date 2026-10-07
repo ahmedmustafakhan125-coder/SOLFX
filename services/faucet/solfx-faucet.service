@@ -1,0 +1,39 @@
+# The devnet faucet: test USDC and a little SOL for a first-time wallet. See faucet.mjs.
+#
+# Install (docs/OPERATIONS.md, "The faucet"):
+#
+#   npm ci --prefix services/faucet
+#   cp services/faucet/solfx-faucet.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now solfx-faucet
+#
+# It listens on the n8n_default bridge gateway, not loopback, for the same reason the indexer
+# does: the site's server runs inside the solfx-web container, where 127.0.0.1 is the container.
+# The gateway address is reachable from containers on that network and from this host, and from
+# nowhere else — which is what lets it trust the client address server.mjs forwards.
+#
+# Its RPC is the gateway's /low lane, so a burst of claims queues behind the price poster rather
+# than starving it.
+[Unit]
+Description=SolFX devnet faucet (test USDC + SOL for new wallets)
+After=network-online.target docker.service solfx-rpc-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/SOLFX/SOLFX
+EnvironmentFile=/root/SOLFX/SOLFX/.env
+Environment=SOLFX_FAUCET_HOST=172.18.0.1
+Environment=SOLFX_FAUCET_PORT=8789
+Environment=SOLFX_FAUCET_RPC_URL=http://127.0.0.1:8899/low
+ExecStart=/usr/bin/node /root/SOLFX/SOLFX/services/faucet/faucet.mjs
+# Docker creates the bridge address; until it exists the bind fails, and this retries.
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=solfx-faucet
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

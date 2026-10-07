@@ -16,6 +16,8 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 
+import { clientIp } from "./client-ip.mjs";
+
 const here = fileURLToPath(new NodeURL(".", import.meta.url));
 const repoRoot = resolve(here, "..", "..");
 
@@ -242,6 +244,53 @@ async function indexerProxy(req, res, pathname, search) {
   }
 }
 
+/**
+ * The devnet faucet (`services/faucet/faucet.mjs`), which runs on the host because it signs and
+ * this container holds no keys. Deployed value: `SOLFX_FAUCET_URL=http://172.18.0.1:8789`, the
+ * bridge gateway, for the reason `NOX_INDEXER_URL` gives above.
+ *
+ * Only `POST /faucet` is forwarded, with the caller's address taken from the hop Traefik appended
+ * (`client-ip.mjs`), because the faucet's once-a-day limit is per address as well as per wallet.
+ */
+const FAUCET = process.env.SOLFX_FAUCET_URL?.trim() || "http://127.0.0.1:8789";
+const FAUCET_MAX_BODY = 1024;
+/** A claim waits for confirmation, which can take most of a minute on a slow cluster. */
+const FAUCET_TIMEOUT_MS = 75_000;
+
+async function faucetProxy(req, res) {
+  const deny = (status, error) => {
+    res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ error }));
+  };
+  let body = "";
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > FAUCET_MAX_BODY) return void deny(413, "request too large");
+  }
+  try {
+    const upstream = await fetch(`${FAUCET}/faucet`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-solfx-client-ip": clientIp(req) },
+      body,
+      signal: AbortSignal.timeout(FAUCET_TIMEOUT_MS),
+    });
+    res.writeHead(upstream.status, {
+      "content-type": upstream.headers.get("content-type") ?? "application/json",
+      "cache-control": "no-store",
+    });
+    res.end(Buffer.from(await upstream.arrayBuffer()));
+  } catch (err) {
+    const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
+    console.error(`[solfx-api] faucet ${timedOut ? "timeout" : "unreachable"}`);
+    deny(
+      timedOut ? 504 : 502,
+      timedOut
+        ? "The faucet is taking too long. Check your wallet in a minute before trying again."
+        : "The faucet is not running right now. Please try again later.",
+    );
+  }
+}
+
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -360,6 +409,7 @@ const server = createServer((req, res) => {
 
   const metered =
     pathname === "/rpc" ||
+    pathname === "/faucet" ||
     pathname === "/hermes" || pathname.startsWith("/hermes/") ||
     pathname === "/pythpro" || pathname.startsWith("/pythpro/");
 
@@ -370,6 +420,9 @@ const server = createServer((req, res) => {
   }
 
   if (pathname === "/rpc") return void rpcProxy(req, res);
+
+  // POST only: a GET of /faucet is a page load, and falls through to the app like any route.
+  if (pathname === "/faucet" && req.method === "POST") return void faucetProxy(req, res);
 
   // The NOXFUNDS indexer, on this origin so the browser needs no second address. Read-only and
   // unauthenticated: it serves what the chain already says. No Pyth key goes with it.

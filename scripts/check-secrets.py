@@ -116,8 +116,8 @@ def scan_diff(diff: str) -> list[str]:
 def self_test() -> int:
     bad = [n for n, s in SAMPLES.items() if not PATTERNS[n].search(s)]
     bad += [f"placeholder flagged: {p!r}" for p in PLACEHOLDERS if any(r.search(p) for r in PATTERNS.values())]
-    bad += [f"path not refused: {p}" for p in [".env", "keys/a.json", "target/deploy/x-keypair.json", "id.json"] if not FORBIDDEN_PATHS.search(p)]
-    bad += [f"path wrongly refused: {p}" for p in [".env.example", "clients/js/idl/noxfunds.json"] if FORBIDDEN_PATHS.search(p)]
+    bad += [f"path not refused: {p}" for p in [".env", "keys/a.json", "target/deploy/x-keypair.json", "id.json", "solfx-faucet-keypair.json"] if not FORBIDDEN_PATHS.search(p)]
+    bad += [f"path wrongly refused: {p}" for p in [".env.example", "clients/js/idl/noxfunds.json", "services/faucet/package.json"] if FORBIDDEN_PATHS.search(p)]
     for b in bad:
         print(f"  self-test: {b}")
     print("  self-test: " + ("FAILED" if bad else f"ok — {len(SAMPLES)} formats caught, placeholders ignored"))

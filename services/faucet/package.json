@@ -1,0 +1,19 @@
+{
+  "name": "solfx-faucet",
+  "private": true,
+  "type": "module",
+  "description": "Devnet faucet for SolFX's test USDC. Runs on the host, never in the web container. See faucet.mjs.",
+  "scripts": {
+    "start": "node faucet.mjs",
+    "fund": "node fund.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@solana-program/system": "^0.14.0",
+    "@solana-program/token": "^0.16.0",
+    "@solana/kit": "^8.2.0"
+  }
+}

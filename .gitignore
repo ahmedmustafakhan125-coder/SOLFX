@@ -21,6 +21,9 @@ test-ledger/
 *.pem
 id.json
 keypair*.json
+# Any <name>-keypair.json — the faucet's (`solfx-faucet-keypair.json`) as much as a program's.
+# It lives outside the repo (/root on the server), and this is the net under that habit.
+*-keypair.json
 !Anchor.toml
 
 # Probe data: large, regenerable, and not source.
@@ -79,3 +82,6 @@ deployment.*.json
 
 # The NOXFUNDS indexer's database: regenerable from the chain, never source.
 services/indexer/data/
+
+# The faucet's claim log: who claimed when, for the 24-hour limit. Runtime state, not source.
+services/faucet/data/
