@@ -63,9 +63,11 @@ fi
 
 # The poster's fee payer, by public key, from its own startup banner. Checked before anything
 # is changed: a new key cannot bring prices back if the transactions carrying them cannot pay.
+# `|| true`: once the banner has rotated out of the journal, grep finds nothing, and under
+# pipefail that used to end the script with status 1 and no output, before the probe (2026-10-07).
 SOL_FLOOR="${SOLFX_MIN_SOL:-0.5}"
 PAYER="${SOLFX_OPERATOR_PUBKEY:-$(journalctl -u solfx-price-poster.service --no-pager -o cat 2>/dev/null \
-  | grep -oE 'payer +[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -1 | awk '{print $2}')}"
+  | grep -oE 'payer +[1-9A-HJ-NP-Za-km-z]{32,44}' | tail -1 | awk '{print $2}' || true)}"
 check_payer() {
   [[ -n "$PAYER" ]] || { echo "  (could not find the poster's fee payer — skipping the balance check)"; return 0; }
   local rpc bal
