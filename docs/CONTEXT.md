@@ -6,7 +6,7 @@ evaluation, a marketplace and funded trading in the browser; the keeper runs its
 [`NOXFUNDS.md`](NOXFUNDS.md) Part 10; running the box, including replacing the Pyth key, is
 [`OPERATIONS.md`](OPERATIONS.md). **2026-10-03:** NOXFUNDS orders (targets, tighter stops, limit and
 stop entries, partial closes), the verified mark, signer sweep, key rotation and an indexer are
-built and tested but **not deployed** — status and evidence in
+built and tested; **deployed to devnet 2026-10-07** — status and evidence in
 [`NOXFUNDS-COMPLETION-PLAN.md`](NOXFUNDS-COMPLETION-PLAN.md).
 **Status:** Phases 1–7 complete. **Phase 8 (frontend + SDK) substantially built.** Phase 9 in
 progress.

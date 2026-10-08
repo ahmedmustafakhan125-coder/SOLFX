@@ -155,4 +155,40 @@ instruction's measured figures; `OPERATIONS.md` gains the indexer and the deploy
 | 6 | Indexer | **done** | `clients/js/src/nox/indexer.ts` (11 vitest cases: idempotence, order, replay, resume) + `services/indexer/` service and unit file + `/api/nox/*` route. Devnet smoke run 2026-10-03: 515 transactions, 485 events, 0 truncated; **51 of 51** profile figures agree with the live accounts across all 3 traders |
 | 7 | Docs | **done** | `NOXFUNDS.md` §8, §10, §11 and a "Changes not yet deployed" section; `noxfunds-budgets.md` gains every new measurement; `OPERATIONS.md` gains the keeper actions, the indexer, and the deploy runbook with a working precondition command (0 `VirtualPosition` on devnet, re-run 2026-10-03) |
 | 9 | Follow-ups, 2026-10-04 | **done** | `funded_add_margin` / `funded_remove_margin` (3 tests incl. balance-to-the-unit through a stop-out; 66.5k / 71.6k CU); every market shape in evaluations — optional legs on all 7 evaluation instructions, variable-shape crank (`stage11.rs`, 3 tests); keeper passes legs by market configuration (+1 test); browser prices every shape: `legFeeds`, `marketQuote`, conversion and synthetic arithmetic ported with the program's rounding (10 vitest cases, cross-checked against `stage11.rs` figures); IDL rebuilt again (7 changed, 2 added, nothing else moved); `noxfunds` 225/225, app 172, client 254 |
-| 8 | User steps | **yours** | see CP8 above: deploy, restart keeper, build the app, install the indexer, pass an evaluation over 5 days, run the investor-listing path, multisig, stake schedule |
+| 8 | User steps | **partly done, 2026-10-07** | **done:** deploy, keeper restarted, app built, indexer installed (`solfx-nox-indexer`, active since 2026-10-07 20:39 UTC; 531 transactions, 0 truncated, `https://solfx.cloud/api/nox/health` 200 on 2026-10-08), first-time-user flow run on devnet (record below). **Open:** pass an evaluation over 5 days, run the investor-listing path, multisig, stake schedule |
+
+### Deployment record — 2026-10-07
+
+`noxfunds` `9B7qLbLk9PdRfiMEEK9Jzeen1nG8xzA7YvXsELS1DPUx` upgraded from the user's machine.
+Checked independently from the VPS afterwards:
+
+| Check | Result |
+|---|---|
+| Last deployed slot | 508,563,076 (was 503,107,132) |
+| Program data account | 1,496,200 bytes; the ELF inside is ~1,496,185, trailing zeros stripped. Larger than the 1,352,016-byte `.so` the VPS built on 2026-10-04 with `cargo build-sbf`; no source file was newer than that build when it was checked, so the difference is not established (toolchain or build flags are the likely candidates). The deploy was extended to fit, and the bytecode match below is what proves it |
+| On-chain IDL | 53 instructions, matches `clients/js/idl/noxfunds.json` (`scripts/idl-compare.py`) |
+| Bytecode vs source | verified by `deploy-devnet.sh` on the user's machine ("bytecode matches"). Not re-derived on the VPS, whose own build differs in size (row above) |
+
+Then on the VPS: Pyth key rolled out (both Hermes endpoints HTTP 200, poster back to
+`6 posted, 0 failed`), `solfx-keeper` and `price-poster` rebuilt from `8189187` and restarted,
+`solfx-web` recreated, `app/` built after `tsc`, 186 vitest, `eslint` and `prettier` passed.
+
+**First-time-user path** (`app/scripts/judge-flow.ts`, fresh in-memory wallet
+`5so1itSea1eoBi6nXmEqoS5MUiKrYqGhPn8f3SL38Grf`, every call through `https://solfx.cloud/rpc`).
+Round trip cost 0.420002 USDC of 1,000 deposited, in spread and fees. A second faucet claim was
+refused with HTTP 429, as designed.
+
+| Step | Signature |
+|---|---|
+| faucet claim (+10,000 USDC, +0.05 SOL) | `52BymuvLrcgQsWBfnGDC7xPbbbeCMPV5Uqu3npUhcGfZGyJB6wtchFgQk9EzYFT7XtqAWkJEnjhQYEN7szNYQPTb` |
+| create SolFX account | `ya7FXHY8UQYvbmJYacDqvcfEGVMRRT5RQDVPHpJTktFPGpmZPfG2qTBGV36EdGYeHndZmLUXMnur2MEPFAG6SS5` |
+| deposit 1,000 USDC | `2UQMdFvKcQih6m69wMWL7muud6tzxHVya35dZyeispPdZ68k7V59BWaTYjZSc59rBK8SqTifLqxj5hKNzFgbJCB9` |
+| open BTC/USD long | `VBsC5anSRrMTgKJaPXhaofwLt62TQiGJfionPu8R73VDQJ4SJurW4TgPcuuXkEfLUUMP7Sx7Gf7z57BvWv7QToY` |
+| stop-loss 3% below | `3vEFLHNJUpowRJ3VjeVPNoJaZR43opxfpHzYeAEzeUNAGWwaRQgndqqLyncNeNid1T6yXzBNii8vmK5yv6m6LL93` |
+| cancel the stop | `3RwnqoMXgyU9UVVdKQxjQ9NSYZDRjjCHEueKcxBEgGAUF5HbyjK7wthvGycDGAnGQbr55x2foHFjbUnhZ74HwT3P` |
+| close BTC/USD | `2FE9VH1DrMNRUicMKGsuQb2PbSn615cPPUTTMQh1JnjVxHz1TT6Zzf4nMAe9FzQkfafR29Vs9pA7kVSLZgVjXY5o` |
+
+This exercises SolFX and the faucet, **not** NOXFUNDS: none of the instructions added in this
+upgrade has yet run on chain. The first attempt failed on a client bug: the script took the first
+market named `BTC/USD`, which is index 4, halted on a wrong feed; the live one is index 5. The
+script now prefers the tradeable one. The browser selects markets by index and is unaffected.

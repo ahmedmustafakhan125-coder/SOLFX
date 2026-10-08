@@ -453,7 +453,7 @@ depends on SolFX, SolFX knows nothing about NOXFUNDS. This is enforced in CI.
 | `EvalEntryOrder` † | `["eorder", evaluation, order_id]` | a resting limit or stop entry on an evaluation |
 | `MandateEntryOrder` † | `["morder", mandate, order_id]` | a resting limit or stop entry on a funded mandate |
 
-† Built and tested on 2026-10-03 (see "Changes not yet deployed" below); **not on devnet yet**.
+† Built and tested on 2026-10-03; **on devnet since 2026-10-07** (see "Changes deployed 2026-10-07" below).
 
 The `seq` on a mandate lets one investor fund the same trader more than once. The signer is
 derived from the *mandate*, not the trader, so a trader holding several mandates from different
@@ -490,7 +490,7 @@ These are recorded because they are non-obvious and cost real time to discover:
 `abandon_evaluation`; † `eval_set_take_profit`, `eval_trigger_take_profit`, `eval_move_stop`,
 `eval_place_entry_order`, `eval_fill_entry_order`, `eval_cancel_entry_order`
 
-† Not deployed yet.
+† On devnet since 2026-10-07.
 
 `initialize_config` can only be called by the program's **upgrade authority** — enforced on
 chain by checking the program's own `ProgramData` account, not by a stored address that a
@@ -666,7 +666,7 @@ This section exists because a document that only lists what works is marketing.
   entry tier's; only single-leg markets can be traded; and the $50 stake is flat — the plan says
   it rises for larger evaluations but never says by how much. Passing records no tier: tiers
   come from funded trading, as they always have.
-- **Resting entry orders: built, not deployed.** SolFX's own trigger orders still only close
+- **Resting entry orders: deployed 2026-10-07, not yet exercised on chain.** SolFX's own trigger orders still only close
   positions, and `solfx-core` is unchanged. NOXFUNDS now holds the order itself
   (`EvalEntryOrder`, `MandateEntryOrder`) and a keeper fills it through the same checks a
   market order runs — no change to `solfx-core` was needed, contrary to what this section used
@@ -702,7 +702,7 @@ This section exists because a document that only lists what works is marketing.
   SolFX's own cranks, and it does not settle. From the upgrade it also fires simulated targets,
   fills and clears entry orders, and sweeps settled signers — those paths are unit-tested in the
   keeper and have not run against a cluster.
-- **Multi-leg markets in evaluations: built, not deployed.** Every evaluation instruction takes
+- **Multi-leg markets in evaluations: deployed 2026-10-07, not yet exercised on chain.** Every evaluation instruction takes
   the optional secondary and conversion legs, and `eval_observe_equity` reads each position's
   legs in the number its market demands (`tests/stage11.rs`: a rupee-quoted trade lands in
   dollars, a synthetic needs its second leg, a mixed book refuses a missing or spare leg).
@@ -732,11 +732,12 @@ NOXFUNDS is not audited, not safe, and not production-ready.
 
 ---
 
-## Changes not yet deployed — 2026-10-03
+## Changes deployed 2026-10-07
 
-Built, tested, and **not on devnet**. Every line below is true of the source and of LiteSVM,
-and of nothing a reader can check on chain until the upgrade lands. The plan and the evidence
-for each are in [`NOXFUNDS-COMPLETION-PLAN.md`](NOXFUNDS-COMPLETION-PLAN.md).
+Built and tested 2026-10-03, **upgraded onto devnet 2026-10-07** (slot 508,563,076; the on-chain
+IDL matches `clients/js/idl/noxfunds.json` at 53 instructions). Deployed is not exercised: every
+line below is proven in LiteSVM, and none of the new instructions has yet run on chain. The plan
+and the evidence for each are in [`NOXFUNDS-COMPLETION-PLAN.md`](NOXFUNDS-COMPLETION-PLAN.md).
 
 | What | Rule that keeps it safe | Tests |
 |---|---|---|
@@ -752,8 +753,8 @@ for each are in [`NOXFUNDS-COMPLETION-PLAN.md`](NOXFUNDS-COMPLETION-PLAN.md).
 | Rotate guardian, treasury, admin | admin only; admin moves in two steps | `stage10.rs` |
 | **Fix:** a funded take-profit inside the hold | refused until `min_hold_slots` has passed (see Part 11) | `stage9.rs` |
 
-**Upgrade preconditions**, checked from the VPS on 2026-10-03 and to be re-checked immediately
-before deploying: **no `VirtualPosition` exists on devnet** (0 found) — it is the one account
+**Upgrade preconditions**, checked from the VPS on 2026-10-03 and re-checked before the
+2026-10-07 deploy: **no `VirtualPosition` exists on devnet** (0 found) — it is the one account
 that grew, and an open one would no longer deserialise; every other new field was carved from
 `_reserved` and reads as zero on accounts that already exist.
 
