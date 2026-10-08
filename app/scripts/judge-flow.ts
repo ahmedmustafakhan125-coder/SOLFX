@@ -157,7 +157,10 @@ async function main() {
 
   // 3. Open BTC/USD — the one market open around the clock.
   const markets = await loadMarkets(rpc);
-  const btc = markets.find((m) => m.symbol === "BTC/USD");
+  // Two markets are named BTC/USD on devnet: index 4, halted on a wrong feed, and index 5, the
+  // live one. The first match by name is the dead one, so prefer the tradeable one.
+  const named = markets.filter((m) => m.symbol === "BTC/USD");
+  const btc = named.find((m) => m.tradeable) ?? named[0];
   if (!btc?.tradeable)
     throw new Error(`BTC/USD is not tradeable (${btc?.status ?? "missing"})`);
   const mapRes = await fetch(`${SITE}/price-accounts.json`);
