@@ -1,7 +1,8 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { KineticGrid } from "@/components/KineticGrid";
 import { Wordmark } from "@/components/Logo";
+import { NavMenu, type NavEntry } from "@/components/NavMenu";
 import { ProductSwitcher } from "@/components/ProductSwitcher";
 import { DevnetHint } from "@/components/DevnetHint";
 import { FaucetButton } from "@/components/FaucetButton";
@@ -11,24 +12,66 @@ const SPEC =
   "https://github.com/ahmedmustafakhan125-coder/SOLFX/blob/main/docs/NOXFUNDS.md";
 
 /**
- * The tabs, mirrored from SolFX's header: where SolFX links across to NOXFUNDS, NOXFUNDS links
- * back to SolFX, and both reach About. Same order of importance, same style, so moving between
- * the two products changes the colour and nothing else.
+ * The header, mirrored from SolFX's: an Overview section of the landing page's own parts, the
+ * product's working pages as a second section, then the way across to SolFX and to About. Same
+ * shape on both products, so moving between them changes the colour and nothing else.
  */
-const ROUTES = [
-  { to: "/nox", label: "Overview" },
-  { to: "/nox/market", label: "Marketplace" },
-  { to: "/nox/investor", label: "Investor" },
-  { to: "/nox/trader", label: "Trader" },
+const NAV: readonly NavEntry[] = [
+  {
+    label: "Overview",
+    items: [
+      { to: "/nox", label: "Overview", note: "NOXFUNDS on one page" },
+      {
+        to: "/nox#how",
+        label: "How it works",
+        note: "One investor, one trader, one rule set",
+      },
+      {
+        to: "/nox#rules",
+        label: "Rules",
+        note: "Ten rules, checked before the fill",
+      },
+      {
+        to: "/nox#money",
+        label: "Economics",
+        note: "5% to the protocol, then 70/30",
+      },
+      {
+        to: "/nox#proof",
+        label: "Proof",
+        note: "Four mandates settled on devnet",
+      },
+      {
+        href: SPEC,
+        label: "Specification",
+        note: "The full design, on GitHub",
+      },
+    ],
+  },
+  {
+    label: "Marketplace",
+    items: [
+      {
+        to: "/nox/market",
+        label: "Marketplace",
+        note: "Find each other, agree terms, escrow the rest",
+      },
+      {
+        to: "/nox/investor",
+        label: "Investor",
+        note: "Your offers and the mandates you fund",
+      },
+      {
+        to: "/nox/trader",
+        label: "Trader",
+        note: "Your listing, your offers, your record",
+      },
+    ],
+  },
   { to: "/nox/verify", label: "Verify" },
   { to: "/", label: "SolFX" },
   { to: "/about", label: "About" },
-] as const;
-
-/** SolFX's tab classes, verbatim — active is bold and underlined, the rest muted. */
-const TAB = "whitespace-nowrap uppercase tracking-wider";
-const TAB_ACTIVE = `${TAB} border-b-2 border-brand-soft pb-1 font-bold text-brand-soft`;
-const TAB_IDLE = `${TAB} text-ink-muted transition-colors hover:text-ink`;
+];
 
 /**
  * The NOXFUNDS frame: backdrop, product switcher, nav, footer.
@@ -36,18 +79,8 @@ const TAB_IDLE = `${TAB} text-ink-muted transition-colors hover:text-ink`;
  * Shared by every NOXFUNDS page so they cannot drift from one another, and it is what sets
  * `data-product="nox"`, the one attribute that turns SolFX's purple into NOXFUNDS' cyan for
  * everything inside, and the backdrop grid's purple into blue.
- *
- * `anchors` are in-page links for the page that passes them; routes are the same everywhere.
  */
-export function NoxShell({
-  anchors = [],
-  children,
-}: {
-  anchors?: readonly (readonly [string, string])[];
-  children: React.ReactNode;
-}) {
-  const { pathname } = useLocation();
-
+export function NoxShell({ children }: { children: React.ReactNode }) {
   return (
     <div
       data-product="nox"
@@ -65,42 +98,16 @@ export function NoxShell({
               <Wordmark product="nox" />
             </Link>
 
-            <nav className="hidden items-center gap-6 text-sm md:flex">
-              {ROUTES.map(({ to, label }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  aria-current={pathname === to ? "page" : undefined}
-                  className={pathname === to ? TAB_ACTIVE : TAB_IDLE}
-                >
-                  {label}
-                </Link>
-              ))}
-              {/*
-               * In-page tabs only where there is room for them. Eight uppercase tabs, the wordmark
-               * and the wallet button do not fit a medium screen, and a header that wraps is worse
-               * than one that shows the four that matter.
-               */}
-              {anchors.map(([href, label]) => (
-                <a
-                  key={href}
-                  href={href}
-                  className={`${TAB_IDLE} hidden xl:inline`}
-                >
-                  {label}
-                </a>
-              ))}
-            </nav>
+            {/*
+             * From lg up. The long wordmark, five entries and the wallet do not fit a medium
+             * screen, and a header that wraps is worse than one that waits for room.
+             */}
+            <NavMenu
+              entries={NAV}
+              className="hidden items-center gap-6 text-sm lg:flex"
+            />
 
             <div className="ml-auto flex items-center gap-3">
-              <a
-                href={SPEC}
-                target="_blank"
-                rel="noreferrer"
-                className="hidden border border-line px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-muted transition-colors hover:border-brand hover:text-brand sm:block"
-              >
-                Spec
-              </a>
               <DevnetHint />
               <FaucetButton />
               <WalletButton />

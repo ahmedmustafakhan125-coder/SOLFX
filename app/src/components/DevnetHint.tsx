@@ -12,11 +12,14 @@ function readDismissed(): boolean {
 }
 
 /**
- * A one-line reminder, beside Connect Wallet, that this is devnet.
+ * A reminder, beside Connect Wallet, that this is devnet.
  *
  * Phantom opens on Mainnet, where none of SolFX's accounts or test tokens exist, and the wallet
  * gives no hint why a balance reads zero or a signature request looks wrong. Dismissed once per
  * browser: a per-viewer convenience with nothing at stake, so `localStorage` is the right place.
+ *
+ * A short chip with the instruction one hover, focus or tap away. Spelled out in full, the
+ * sentence was too long for the header and got squeezed into a tall column beside the wallet.
  */
 export function DevnetHint() {
   const [dismissed, setDismissed] = useState(readDismissed);
@@ -32,10 +35,14 @@ export function DevnetHint() {
   }
 
   return (
-    <span className="hidden items-center gap-1.5 rounded-md border border-line px-2 py-1 text-[11px] text-ink-muted lg:flex">
-      <span>
-        <span className="font-semibold text-ink">Devnet only:</span> switch
-        Phantom to Devnet (Settings → Developer Settings)
+    <span className="group relative hidden items-center gap-1.5 whitespace-nowrap rounded-md border border-line px-2 py-1 text-[11px] text-ink-muted xl:flex">
+      <span
+        tabIndex={0}
+        aria-describedby="devnet-hint"
+        className="flex cursor-help items-center gap-1.5 outline-none"
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-warn" />
+        <span className="font-semibold text-ink">Devnet only</span>
       </span>
       <button
         onClick={dismiss}
@@ -44,6 +51,14 @@ export function DevnetHint() {
       >
         ×
       </button>
+      <span
+        id="devnet-hint"
+        role="tooltip"
+        className="invisible absolute right-0 top-full z-50 mt-2 w-64 whitespace-normal rounded-md border border-line bg-surface p-3 text-xs leading-relaxed text-ink-muted opacity-0 shadow-xl transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100"
+      >
+        Switch Phantom to Devnet in Settings → Developer Settings. On Mainnet,
+        none of these accounts or test tokens exist.
+      </span>
     </span>
   );
 }

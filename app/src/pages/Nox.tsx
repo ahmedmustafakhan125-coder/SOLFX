@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { HeroGlobe } from "@/components/HeroGlobe";
 import { NoxFlow } from "@/components/NoxFlow";
 import { NoxShell } from "@/components/NoxShell";
 
@@ -95,63 +96,63 @@ function Section({
 
 export function Nox() {
   return (
-    <NoxShell
-      anchors={[
-        ["#how", "How it works"],
-        ["#rules", "Rules"],
-        ["#money", "Economics"],
-        ["#proof", "Proof"],
-      ]}
-    >
+    <NoxShell>
       {/* ------------------------------------------------------------------ hero */}
       <section className="relative overflow-hidden px-4 py-28 md:px-8 md:py-36">
-        <div className="relative z-10 mx-auto max-w-[1200px]">
-          <div className="flex w-fit items-center gap-2 border border-brand/30 bg-brand/5 px-3 py-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-            <span className="tnum text-[10px] uppercase tracking-[0.18em] text-brand-soft">
-              System online / Solana devnet
-            </span>
+        <div className="relative z-10 mx-auto grid max-w-[1200px] grid-cols-1 items-center gap-12 lg:grid-cols-12">
+          <div className="lg:col-span-7">
+            <div className="flex w-fit items-center gap-2 border border-brand/30 bg-brand/5 px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+              <span className="tnum text-[10px] uppercase tracking-[0.18em] text-brand-soft">
+                System online / Solana devnet
+              </span>
+            </div>
+
+            <h1 className="mt-8 max-w-4xl text-4xl font-extrabold uppercase leading-[1.03] tracking-tight md:text-6xl">
+              A prop firm where a rule-breaking trade
+              <br className="hidden md:block" />
+              <span className="text-brand"> cannot happen.</span>
+            </h1>
+
+            <p className="mt-8 max-w-2xl text-base leading-relaxed text-ink-muted">
+              Every other prop firm watches trades after they execute and
+              punishes violations, because their contracts cannot see an order
+              before the venue fills it. NOXFUNDS owns the venue. A trade that
+              breaks the rules is not detected and punished.{" "}
+              <span className="text-ink">
+                It fails as a transaction. It never existed, and the investor
+                never took the loss.
+              </span>
+            </p>
+
+            <div className="mt-10 flex flex-wrap gap-3">
+              <a
+                href="#how"
+                className="cta-solid px-7 py-3 text-[11px] font-bold uppercase tracking-[0.14em]"
+              >
+                See how it works
+              </a>
+              <Link
+                to="/nox/market"
+                className="border border-brand px-7 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-brand transition-colors hover:bg-brand/10"
+              >
+                Open the marketplace
+              </Link>
+              <a
+                href="#proof"
+                className="border border-line px-7 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-muted transition-colors hover:border-brand hover:text-brand"
+              >
+                Verify on chain
+              </a>
+            </div>
           </div>
 
-          <h1 className="mt-8 max-w-4xl text-4xl font-extrabold uppercase leading-[1.03] tracking-tight md:text-6xl">
-            A prop firm where a rule-breaking trade
-            <br className="hidden md:block" />
-            <span className="text-brand"> cannot happen.</span>
-          </h1>
-
-          <p className="mt-8 max-w-2xl text-base leading-relaxed text-ink-muted">
-            Every other prop firm watches trades after they execute and punishes
-            violations, because their contracts cannot see an order before the
-            venue fills it. NOXFUNDS owns the venue. A trade that breaks the
-            rules is not detected and punished.{" "}
-            <span className="text-ink">
-              It fails as a transaction. It never existed, and the investor
-              never took the loss.
-            </span>
-          </p>
-
-          <div className="mt-10 flex flex-wrap gap-3">
-            <a
-              href="#how"
-              className="cta-solid px-7 py-3 text-[11px] font-bold uppercase tracking-[0.14em]"
-            >
-              See how it works
-            </a>
-            <Link
-              to="/nox/market"
-              className="border border-brand px-7 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-brand transition-colors hover:bg-brand/10"
-            >
-              Open the marketplace
-            </Link>
-            <a
-              href="#proof"
-              className="border border-line px-7 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-muted transition-colors hover:border-brand hover:text-brand"
-            >
-              Verify on chain
-            </a>
+          {/* The same globe as SolFX's landing page, so the two products open alike. */}
+          <div className="mx-auto w-full max-w-[460px] lg:col-span-5">
+            <HeroGlobe />
           </div>
 
-          <dl className="mt-20 grid max-w-4xl grid-cols-2 gap-px border border-line bg-line md:grid-cols-4">
+          <dl className="mt-8 grid max-w-4xl grid-cols-2 gap-px border border-line bg-line md:grid-cols-4 lg:col-span-12">
             {[
               ["Rules checked", "before the fill"],
               ["Trader can withdraw", "never"],

@@ -1,29 +1,68 @@
-import { Suspense, lazy } from "react";
 import { Link } from "react-router-dom";
 
+import { HeroGlobe } from "@/components/HeroGlobe";
 import { KineticGrid } from "@/components/KineticGrid";
 import { Wordmark } from "@/components/Logo";
+import { NavMenu, type NavEntry } from "@/components/NavMenu";
 import { ProductSwitcher } from "@/components/ProductSwitcher";
 import { TICKER, useTicker } from "@/hooks/useTicker";
 
 const PROGRAM_ID = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi";
 
-/** The globe and its geometry library load after the page, so they never hold up first paint. */
-const DottedGlobe = lazy(() =>
-  import("@/components/DottedGlobe").then((m) => ({ default: m.DottedGlobe }))
-);
-
 /**
- * Holds the globe's place while its chunk loads: the same square, with the disc's outline where
- * the disc will be (80% of the box, matching `DottedGlobe`), so nothing moves when it arrives.
+ * The header: this page's own parts under Overview, the working pages under Trade, then across to
+ * NOXFUNDS and to About. NOXFUNDS' header has the same shape.
  */
-function GlobePlaceholder() {
-  return (
-    <div className="relative aspect-square w-full">
-      <div className="absolute inset-[10%] rounded-full border-2 border-white/10" />
-    </div>
-  );
-}
+const NAV: readonly NavEntry[] = [
+  {
+    label: "Overview",
+    items: [
+      { to: "/", label: "Overview", note: "SolFX on one page" },
+      {
+        to: "/#markets",
+        label: "Markets",
+        note: "Six live markets and their hours",
+      },
+      {
+        to: "/#verification",
+        label: "Verification",
+        note: "Every number measured and reproducible",
+      },
+      {
+        to: "/#scope",
+        label: "Scope",
+        note: "Built for devnet, designed for mainnet",
+      },
+      {
+        to: "/#status",
+        label: "Status",
+        note: "What works, and what does not yet",
+      },
+    ],
+  },
+  {
+    label: "Trade",
+    items: [
+      {
+        to: "/trade",
+        label: "Terminal",
+        note: "Margin FX, metals and crypto, settled in USDC",
+      },
+      {
+        to: "/pool",
+        label: "Liquidity pool",
+        note: "The counterparty to every trade",
+      },
+      {
+        to: "/partners",
+        label: "Partners",
+        note: "Rebates anyone can recompute on chain",
+      },
+    ],
+  },
+  { to: "/nox", label: "Noxfunds" },
+  { to: "/about", label: "About" },
+];
 
 function Nav() {
   return (
@@ -32,50 +71,7 @@ function Nav() {
         <Link to="/" className="text-brand-soft">
           <Wordmark product="solfx" />
         </Link>
-        <nav className="hidden items-center gap-6 text-sm md:flex">
-          <Link
-            to="/trade"
-            className="border-b-2 border-brand-soft pb-1 font-bold uppercase tracking-wider text-brand-soft"
-          >
-            Trade
-          </Link>
-          <Link
-            to="/trade"
-            className="uppercase tracking-wider text-ink-muted hover:text-ink"
-          >
-            Markets
-          </Link>
-          <Link
-            to="/nox"
-            className="uppercase tracking-wider text-ink-muted hover:text-ink"
-          >
-            Noxfunds
-          </Link>
-          <Link
-            to="/about"
-            className="uppercase tracking-wider text-ink-muted hover:text-ink"
-          >
-            About
-          </Link>
-          <a
-            href="#verification"
-            className="uppercase tracking-wider text-ink-muted hover:text-ink"
-          >
-            Verification
-          </a>
-          <a
-            href="#scope"
-            className="uppercase tracking-wider text-ink-muted hover:text-ink"
-          >
-            Scope
-          </a>
-          <a
-            href="#status"
-            className="uppercase tracking-wider text-ink-muted hover:text-ink"
-          >
-            Status
-          </a>
-        </nav>
+        <NavMenu entries={NAV} />
         <div className="ml-auto">
           <Link
             to="/trade"
@@ -312,12 +308,14 @@ const MAINNET_PATH: readonly {
 ];
 
 function Band({
+  id,
   eyebrow,
   title,
   accent,
   sub,
   children,
 }: {
+  id?: string;
   eyebrow?: string;
   title: string;
   accent?: string;
@@ -325,7 +323,7 @@ function Band({
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-t border-line px-4 py-20 md:px-8">
+    <section id={id} className="border-t border-line px-4 py-20 md:px-8">
       <div className="mx-auto max-w-[1440px]">
         <div className="mx-auto max-w-3xl text-center">
           {eyebrow ? (
@@ -396,9 +394,7 @@ export function Landing() {
             </div>
 
             <div className="relative z-10 mx-auto w-full max-w-[520px] lg:col-span-5">
-              <Suspense fallback={<GlobePlaceholder />}>
-                <DottedGlobe />
-              </Suspense>
+              <HeroGlobe />
             </div>
 
             <div className="relative z-10 lg:col-span-12">
@@ -442,6 +438,7 @@ export function Landing() {
 
         {/* Markets */}
         <Band
+          id="markets"
           title="Six live"
           accent="Markets"
           sub="Majors, a managed currency, both metals, and the one instrument that trades all weekend."
