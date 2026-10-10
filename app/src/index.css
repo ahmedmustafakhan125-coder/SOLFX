@@ -10,18 +10,29 @@
  */
 :root {
   /* Tokens taken from design/stitch — the Material 3 set the sketches were built on. */
-  --sf-bg: #0e0e0e;
-  --sf-surface: #131313;
-  --sf-surface-high: #20201f;
-  --sf-surface-highest: #2a2a2a;
+  /*
+   * The kinetic grid's own base colour, so the page and the canvas read as one surface. The
+   * surfaces sit one step above it, as they did above the old #0e0e0e, and the dim text is a
+   * touch lighter so that no text/surface pair lost contrast in the move: every ratio is at or
+   * above its old value, and dim text on a raised panel now clears 4.5:1 (4.57, was 4.40).
+   */
+  --sf-bg: #161618;
+  --sf-surface: #1c1c1f;
+  --sf-surface-high: #242428;
+  --sf-surface-highest: #2d2d31;
   --sf-border: #4c4546;
   --sf-border-soft: #2a2a2a;
   --sf-text: #e5e2e1;
   --sf-text-muted: #cfc4c5;
-  --sf-text-dim: #8a8384;
+  --sf-text-dim: #918a8b;
   --sf-purple: #9843fe;
-  /* The same purple as bare channels, for the grid and glow that use it at low alpha. */
-  --sf-accent-rgb: 152 67 254;
+  /*
+   * The kinetic grid's hue as bare channels, because the grid uses it at many alphas. Kept apart
+   * from the brand accent so a product can glow in a colour its buttons do not use. On SolFX it
+   * is the brand purple; the ripple is a lighter tint of it.
+   */
+  --sf-grid-rgb: 152 67 254;
+  --sf-ripple-rgb: 181 128 255;
   --sf-purple-dim: #7b2fd6;
   --sf-purple-soft: #d8b9ff;
   /* Text on a solid brand fill. White on purple; dark on cyan, where white fails contrast. */
@@ -103,53 +114,6 @@ body {
 }
 
 /*
- * The page backdrop: one grid and one glow, shared by both products.
- *
- * The only thing that differs between SolFX and NOXFUNDS is the hue, so the hue is the only
- * thing either surface sets. `--sf-accent-rgb` carries it as bare channels, because a colour
- * used at four different alphas cannot be a hex literal without repeating it four times and
- * letting one of them drift.
- *
- * Both layers are **fixed**, so one covers any scroll height. An absolute grid inside each
- * section would restart its rhythm at every boundary and show a seam wherever a section's
- * height was not a whole number of cells. Page content sits in a `relative z-10` wrapper above
- * them; panels are opaque, so the grid reads in the gutters rather than through them.
- */
-.gridwork {
-  background-image:
-    linear-gradient(rgb(var(--sf-accent-rgb) / 0.13) 1px, transparent 1px),
-    linear-gradient(
-      90deg,
-      rgb(var(--sf-accent-rgb) / 0.13) 1px,
-      transparent 1px
-    );
-  background-size: 60px 60px;
-}
-
-/*
- * The glow. Strong from the right, faint from the top left.
- *
- * On the right because that is the empty half of the hero — the headline and copy sit left, so
- * a glow behind them washes out the text it is meant to set off.
- *
- * Tinted only. There is no white layer: a white wash over a dark surface greys the grid out
- * and reads as fog rather than as light, which is exactly what the earlier hero gradient did.
- */
-.glowfield {
-  background:
-    radial-gradient(
-      55% 65% at 100% 32%,
-      rgb(var(--sf-accent-rgb) / 0.16),
-      transparent 70%
-    ),
-    radial-gradient(
-      45% 55% at 0% 0%,
-      rgb(var(--sf-accent-rgb) / 0.09),
-      transparent 70%
-    );
-}
-
-/*
  * NOXFUNDS is a second product on the same surface, so it gets a second accent rather than a
  * second stylesheet. Scoped to `[data-product="nox"]`, which the NOXFUNDS pages set on their
  * root element — everything built from `--color-brand` retints with no new class names.
@@ -159,12 +123,16 @@ body {
  *
  * Cyan rather than the obvious green: `--sf-green` is already load-bearing as "long" on the
  * terminal, and a brand colour a trader can confuse with a direction is a bad brand colour.
+ *
+ * The one deliberate exception to "only the hue": the kinetic grid glows blue here, #4A9EFF with
+ * a #64B4FF ripple, the grid's own colours, while buttons and headings stay cyan.
  */
 [data-product="nox"] {
   --sf-purple: #00e5ff;
   --sf-purple-dim: #00b4cc;
   --sf-purple-soft: #7df3ff;
-  --sf-accent-rgb: 0 229 255;
+  --sf-grid-rgb: 74 158 255;
+  --sf-ripple-rgb: 100 180 255;
   --sf-on-brand: #04080a;
 }
 

@@ -20,7 +20,8 @@ export function Header({ rpcLabel }: { rpcLabel: string }) {
   const { pathname } = useLocation();
 
   return (
-    <header className="flex items-center gap-6 border-b border-line-soft px-5 py-3">
+    // Opaque, so the nav reads cleanly where a page puts the kinetic grid behind it.
+    <header className="flex items-center gap-6 border-b border-line-soft bg-bg px-5 py-3">
       <Link to="/" className="flex items-center gap-2">
         <Logo className="h-6 w-6 shrink-0 text-brand" />
         <span className="text-lg font-extrabold tracking-tight">SolFX</span>

@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 
+import { KineticGrid } from "@/components/KineticGrid";
 import { Wordmark } from "@/components/Logo";
 import { ProductSwitcher } from "@/components/ProductSwitcher";
 import { DevnetHint } from "@/components/DevnetHint";
@@ -33,8 +34,8 @@ const TAB_IDLE = `${TAB} text-ink-muted transition-colors hover:text-ink`;
  * The NOXFUNDS frame: backdrop, product switcher, nav, footer.
  *
  * Shared by every NOXFUNDS page so they cannot drift from one another, and it is what sets
- * `data-product="nox"` — the one attribute that turns SolFX's purple into NOXFUNDS' cyan for
- * everything inside, grid and glow included.
+ * `data-product="nox"`, the one attribute that turns SolFX's purple into NOXFUNDS' cyan for
+ * everything inside, and the backdrop grid's purple into blue.
  *
  * `anchors` are in-page links for the page that passes them; routes are the same everywhere.
  */
@@ -48,10 +49,12 @@ export function NoxShell({
   const { pathname } = useLocation();
 
   return (
-    <div data-product="nox" className="relative min-h-screen bg-bg text-ink">
-      {/* The shared backdrop. Identical to SolFX's; only the accent hue differs. */}
-      <div className="gridwork pointer-events-none fixed inset-0 z-0" />
-      <div className="glowfield pointer-events-none fixed inset-0 z-0" />
+    <div
+      data-product="nox"
+      className="relative isolate min-h-screen bg-bg text-ink"
+    >
+      {/* The shared backdrop. Identical to SolFX's; only the grid's hue differs. */}
+      <KineticGrid />
 
       <div className="relative z-10">
         <ProductSwitcher active="nox" />

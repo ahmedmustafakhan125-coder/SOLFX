@@ -8,6 +8,7 @@ import {
 } from "@solfx/client";
 
 import { Header } from "@/components/Header";
+import { KineticGrid } from "@/components/KineticGrid";
 import { usePool } from "@/hooks/usePool";
 import { useSend } from "@/hooks/useSend";
 import { useSigner } from "@/hooks/useSigner";
@@ -165,7 +166,8 @@ export function Pool() {
   }
 
   return (
-    <div className="min-h-screen bg-surface text-ink">
+    <div className="isolate min-h-screen bg-surface text-ink">
+      <KineticGrid />
       <Header rpcLabel={rpcLabel(RPC_URL)} />
 
       <main className="mx-auto max-w-5xl px-5 py-8">

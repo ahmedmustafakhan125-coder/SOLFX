@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { KineticGrid } from "@/components/KineticGrid";
 import { Wordmark } from "@/components/Logo";
 import { ProductSwitcher } from "@/components/ProductSwitcher";
 import { TICKER, useTicker } from "@/hooks/useTicker";
@@ -328,10 +329,9 @@ function Band({
 
 export function Landing() {
   return (
-    <div className="relative min-h-screen bg-bg text-ink">
-      {/* The shared backdrop. Identical to NOXFUNDS'; only the accent hue differs. */}
-      <div className="gridwork pointer-events-none fixed inset-0 z-0" />
-      <div className="glowfield pointer-events-none fixed inset-0 z-0" />
+    <div className="relative isolate min-h-screen bg-bg text-ink">
+      {/* The shared backdrop. Identical to NOXFUNDS'; only the grid's hue differs. */}
+      <KineticGrid />
 
       <div className="relative z-10">
         <ProductSwitcher active="solfx" />

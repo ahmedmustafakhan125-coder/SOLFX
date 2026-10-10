@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 
+import { KineticGrid } from "@/components/KineticGrid";
+
 /**
  * Everything personal lives in this one object so it can be edited without touching markup.
  *
@@ -55,7 +57,8 @@ export function About() {
   const incomplete = ME.role === "" || ME.bio.length === 0;
 
   return (
-    <div className="min-h-screen bg-bg text-ink">
+    <div className="isolate min-h-screen bg-bg text-ink">
+      <KineticGrid />
       <section className="border-b border-line-soft px-6 py-20 md:px-10">
         <div className="mx-auto max-w-4xl">
           <div className="text-[10px] uppercase tracking-[0.2em] text-brand">

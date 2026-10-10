@@ -1,6 +1,7 @@
 import { referral } from "@solfx/client";
 
 import { Header } from "@/components/Header";
+import { KineticGrid } from "@/components/KineticGrid";
 import { usePartners } from "@/hooks/usePartners";
 import { RPC_URL, rpcLabel } from "@/config";
 import { fmtBps, fmtUsd } from "@/lib/format";
@@ -118,7 +119,8 @@ export function Partners() {
       : false;
 
   return (
-    <div className="min-h-screen bg-surface text-ink">
+    <div className="isolate min-h-screen bg-surface text-ink">
+      <KineticGrid />
       <Header rpcLabel={rpcLabel(RPC_URL)} />
 
       <main className="mx-auto max-w-5xl px-5 py-8">
