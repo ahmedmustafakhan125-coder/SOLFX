@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import {
   GRID,
   advanceRipple,
+  blend,
   easeFactor,
   lerp,
   mix,
@@ -16,6 +17,20 @@ import {
 } from "@/lib/kinetic";
 
 const WHITE: Rgb = [255, 255, 255];
+
+/**
+ * The look, in one place. The resting grid carries the surface's hue (`tint` of the way from
+ * white to it), so the product's colour shows across the whole page and not only under the cursor.
+ * "Hot" values are what a line or node reaches right beside the cursor.
+ */
+const LOOK = {
+  tint: 0.45,
+  dotAlpha: 0.07,
+  line: { alpha: 0.2, hotAlpha: 1, width: 0.8, hotWidth: 2 },
+  node: { alpha: 0.35, radius: 1.8, hotRadius: 3.6 },
+  glow: { alpha: 0.6, reach: 10 },
+  ripple: { alpha: 0.55, width: 2 },
+} as const;
 /** Used only if the surface sets no hue: SolFX's purple. */
 const FALLBACK: Rgb = [152, 67, 254];
 /** Where the cursor is before it has ever moved: far enough away to influence nothing. */
@@ -39,7 +54,7 @@ function paintTexture(
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.fillStyle = background;
   g.fillRect(0, 0, width, height);
-  g.fillStyle = "rgba(255,255,255,0.05)";
+  g.fillStyle = rgba(WHITE, LOOK.dotAlpha);
   g.beginPath();
   for (let x = GRID.dotSpacing / 2; x < width; x += GRID.dotSpacing) {
     for (let y = GRID.dotSpacing / 2; y < height; y += GRID.dotSpacing) {
@@ -79,6 +94,8 @@ export function KineticGrid() {
     const css = getComputedStyle(canvas);
     const hue = parseChannels(css.getPropertyValue("--sf-grid-rgb"), FALLBACK);
     const ring = parseChannels(css.getPropertyValue("--sf-ripple-rgb"), hue);
+    const rest = blend(WHITE, hue, LOOK.tint);
+    const bright = blend(hue, WHITE, 0.25);
     const background = css.getPropertyValue("--sf-bg").trim() || "#161618";
     const still = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -152,8 +169,8 @@ export function KineticGrid() {
           segment(row * cols + col, (row + 1) * cols + col);
         }
       }
-      ctx.strokeStyle = rgba(WHITE, 0.13);
-      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = rgba(rest, LOOK.line.alpha);
+      ctx.lineWidth = LOOK.line.width;
       ctx.stroke();
       for (let k = 0; k < hot.length; k += 2) {
         const a = hot[k];
@@ -162,8 +179,14 @@ export function KineticGrid() {
         ctx.beginPath();
         ctx.moveTo(xs[a], ys[a]);
         ctx.lineTo(xs[b], ys[b]);
-        ctx.strokeStyle = mix(WHITE, 0.13, hue, 0.9, t);
-        ctx.lineWidth = lerp(0.8, 1.5, t);
+        ctx.strokeStyle = mix(
+          rest,
+          LOOK.line.alpha,
+          hue,
+          LOOK.line.hotAlpha,
+          t
+        );
+        ctx.lineWidth = lerp(LOOK.line.width, LOOK.line.hotWidth, t);
         ctx.stroke();
       }
 
@@ -175,16 +198,16 @@ export function KineticGrid() {
           hotNodes.push(i);
           continue;
         }
-        ctx.moveTo(xs[i] + 1.8, ys[i]);
-        ctx.arc(xs[i], ys[i], 1.8, 0, TAU);
+        ctx.moveTo(xs[i] + LOOK.node.radius, ys[i]);
+        ctx.arc(xs[i], ys[i], LOOK.node.radius, 0, TAU);
       }
-      ctx.fillStyle = rgba(WHITE, 0.2);
+      ctx.fillStyle = rgba(rest, LOOK.node.alpha);
       ctx.fill();
       for (const i of hotNodes) {
         const t = smoothstep(near[i]);
-        const r = lerp(1.8, 3.2, t);
+        const r = lerp(LOOK.node.radius, LOOK.node.hotRadius, t);
         if (t > 0.3) {
-          const glowR = r + lerp(0, 6, (t - 0.3) / 0.7);
+          const glowR = r + lerp(0, LOOK.glow.reach, (t - 0.3) / 0.7);
           const grd = ctx.createRadialGradient(
             xs[i],
             ys[i],
@@ -193,7 +216,7 @@ export function KineticGrid() {
             ys[i],
             glowR
           );
-          grd.addColorStop(0, rgba(hue, t * 0.3));
+          grd.addColorStop(0, rgba(hue, t * LOOK.glow.alpha));
           grd.addColorStop(1, rgba(hue, 0));
           ctx.beginPath();
           ctx.arc(xs[i], ys[i], glowR, 0, TAU);
@@ -202,15 +225,15 @@ export function KineticGrid() {
         }
         ctx.beginPath();
         ctx.arc(xs[i], ys[i], r, 0, TAU);
-        ctx.fillStyle = mix(WHITE, 0.2, hue, 1, t);
+        ctx.fillStyle = mix(rest, LOOK.node.alpha, bright, 1, t);
         ctx.fill();
       }
 
       for (const r of ripples) {
         ctx.beginPath();
         ctx.arc(r.x, r.y, Math.max(0, r.radius), 0, TAU);
-        ctx.strokeStyle = rgba(ring, r.opacity * 0.28);
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = rgba(ring, r.opacity * LOOK.ripple.alpha);
+        ctx.lineWidth = LOOK.ripple.width;
         ctx.stroke();
       }
     };

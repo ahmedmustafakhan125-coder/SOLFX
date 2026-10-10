@@ -14,7 +14,7 @@ export const GRID = {
   /** Target cell size in CSS pixels. The real cells stretch so the grid fills the viewport exactly. */
   cell: 55,
   /** How far from the cursor the grid bends, in pixels. */
-  influence: 260,
+  influence: 300,
   /** The furthest a node is pulled toward the cursor, in pixels. */
   maxWarp: 24,
   /**
@@ -158,6 +158,15 @@ export function rgba([r, g, b]: Rgb, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
 }
 
+/** A colour `t` of the way from `a` to `b`, channel by channel. */
+export function blend(a: Rgb, b: Rgb, t: number): Rgb {
+  return [
+    Math.round(lerp(a[0], b[0], t)),
+    Math.round(lerp(a[1], b[1], t)),
+    Math.round(lerp(a[2], b[2], t)),
+  ];
+}
+
 /** Channel by channel from one colour to another, alpha included. */
 export function mix(
   from: Rgb,
@@ -166,12 +175,5 @@ export function mix(
   toAlpha: number,
   t: number
 ): string {
-  return rgba(
-    [
-      Math.round(lerp(from[0], to[0], t)),
-      Math.round(lerp(from[1], to[1], t)),
-      Math.round(lerp(from[2], to[2], t)),
-    ],
-    lerp(fromAlpha, toAlpha, t)
-  );
+  return rgba(blend(from, to, t), lerp(fromAlpha, toAlpha, t));
 }
