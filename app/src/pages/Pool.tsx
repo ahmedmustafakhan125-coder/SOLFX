@@ -166,7 +166,7 @@ export function Pool() {
   }
 
   return (
-    <div className="isolate min-h-screen bg-surface text-ink">
+    <div className="has-grid isolate min-h-screen bg-surface text-ink">
       <KineticGrid />
       <Header rpcLabel={rpcLabel(RPC_URL)} />
 
@@ -194,7 +194,7 @@ export function Pool() {
         {status ? (
           <div className="grid gap-6 md:grid-cols-2">
             {/* --- the pool itself, public --- */}
-            <section className="rounded-lg border border-line-soft bg-surface-high p-4">
+            <section className="glass rounded-lg border border-line-soft p-4">
               <h2 className="mb-3 text-[10px] uppercase tracking-[0.18em] text-ink-dim">
                 The pool
               </h2>
@@ -254,7 +254,7 @@ export function Pool() {
             </section>
 
             {/* --- the connected wallet's position --- */}
-            <section className="rounded-lg border border-line-soft bg-surface-high p-4">
+            <section className="glass rounded-lg border border-line-soft p-4">
               <h2 className="mb-3 text-[10px] uppercase tracking-[0.18em] text-ink-dim">
                 Your position
               </h2>

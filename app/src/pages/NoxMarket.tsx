@@ -350,7 +350,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function RecordStrip({ stats }: { stats: TraderStats }) {
   return (
-    <div className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4 lg:grid-cols-8">
+    <div className="grid grid-cols-2 glass-grid border border-line sm:grid-cols-4 lg:grid-cols-8">
       <Stat label="Tier" value={TIER_NAME[stats.tier]} />
       <Stat label="Trades" value={String(stats.trades)} />
       <Stat label="Win rate" value={fmtPctBps(stats.winRateBps)} />
@@ -1054,7 +1054,7 @@ function MandatesPanel({
                     />
                   </span>
                 </div>
-                <div className="mt-3 grid gap-px border border-line bg-line sm:grid-cols-4">
+                <div className="mt-3 grid glass-grid border border-line sm:grid-cols-4">
                   <Stat
                     label="Principal"
                     value={`$${fmtUsd(data.principal, 2)}`}
@@ -1202,7 +1202,7 @@ function Settlement({
         </span>
       </div>
 
-      <div className="mt-3 grid gap-px border border-line bg-line sm:grid-cols-4">
+      <div className="mt-3 grid glass-grid border border-line sm:grid-cols-4">
         <Stat label="Investor takes" value={`$${fmtUsd(split.investor, 2)}`} />
         <Stat label="Trader takes" value={`$${fmtUsd(split.trader, 2)}`} />
         <Stat label="Protocol fee" value={`$${fmtUsd(split.protocol, 2)}`} />
@@ -1353,7 +1353,7 @@ function EvaluationPanel({
             Starting another opens a fresh record at sequence {seq}.
           </p>
         ) : null}
-        <div className="grid gap-px border border-line bg-line sm:grid-cols-4">
+        <div className="grid glass-grid border border-line sm:grid-cols-4">
           <Stat label="Stake" value="$50, refundable" />
           <Stat label="Phase 1 target" value={`${EVAL.targetBps[0] / 100}%`} />
           <Stat label="Phase 2 target" value={`${EVAL.targetBps[1] / 100}%`} />
@@ -1505,7 +1505,7 @@ function EvaluationPanel({
       title={`Evaluation · Phase ${p.stage}`}
       hint={`Simulated $${fmtUsd(live.data.accountSize, 0)} · stake $50 held`}
     >
-      <div className="grid gap-px border border-line bg-line sm:grid-cols-4">
+      <div className="grid glass-grid border border-line sm:grid-cols-4">
         <Stat label="Balance" value={`$${fmtUsd(p.equity, 2)}`} />
         <Stat
           label="Equity, at the oracle"
@@ -2362,7 +2362,7 @@ function FundedTradingPanel({
         </label>
       ) : null}
 
-      <div className="grid gap-px border border-line bg-line sm:grid-cols-4">
+      <div className="grid glass-grid border border-line sm:grid-cols-4">
         <Stat label="Principal" value={`$${fmtUsd(d.principal, 2)}`} />
         <Stat
           label="Per trade"
@@ -3639,7 +3639,7 @@ function TraderView({ m, s, act, busy, mode }: ViewProps) {
                         {noteText(d.note, d.noteLen)}
                       </p>
                     ) : null}
-                    <div className="mt-3 grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4">
+                    <div className="mt-3 grid grid-cols-2 glass-grid border border-line sm:grid-cols-4">
                       <Stat
                         label="Max drawdown"
                         value={fmtPctBps(d.maxDrawdownBps)}

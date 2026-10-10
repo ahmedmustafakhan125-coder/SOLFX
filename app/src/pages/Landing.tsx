@@ -346,7 +346,7 @@ function Band({
 
 export function Landing() {
   return (
-    <div className="relative isolate min-h-screen bg-bg text-ink">
+    <div className="has-grid relative isolate min-h-screen bg-bg text-ink">
       {/* The shared backdrop. Identical to NOXFUNDS'; only the grid's hue differs. */}
       <KineticGrid />
 
@@ -734,7 +734,7 @@ export function Landing() {
               </p>
             </div>
             <div className="mt-12 grid gap-4 md:grid-cols-2">
-              <div className="border border-long/25 bg-long/5 p-6">
+              <div className="border border-long/25 bg-long/5 p-6 backdrop-blur-md">
                 <div className="text-xs font-bold uppercase tracking-wider text-long">
                   Working
                 </div>
@@ -754,7 +754,7 @@ export function Landing() {
                   </li>
                 </ul>
               </div>
-              <div className="border border-warn/25 bg-warn/5 p-6">
+              <div className="border border-warn/25 bg-warn/5 p-6 backdrop-blur-md">
                 <div className="text-xs font-bold uppercase tracking-wider text-warn">
                   Not yet
                 </div>
@@ -847,7 +847,7 @@ export function Landing() {
               ].map(([label, body, done]) => (
                 <div
                   key={label as string}
-                  className={`border p-5 ${done ? "border-brand/40 bg-brand/5" : "border-line bg-surface"}`}
+                  className={`border p-5 ${done ? "border-brand/40 bg-brand/5 backdrop-blur-md" : "glass border-line"}`}
                 >
                   <div className="flex items-center gap-2">
                     <span

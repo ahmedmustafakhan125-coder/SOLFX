@@ -85,7 +85,7 @@ export function NoxShell({ children }: { children: React.ReactNode }) {
   return (
     <div
       data-product="nox"
-      className="relative isolate min-h-screen bg-bg text-ink"
+      className="has-grid relative isolate min-h-screen bg-bg text-ink"
     >
       {/* The shared backdrop. Identical to SolFX's; only the grid's hue differs. */}
       <KineticGrid />

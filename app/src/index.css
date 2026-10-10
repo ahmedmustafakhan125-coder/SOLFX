@@ -145,6 +145,53 @@ body {
 }
 
 /*
+ * Cards, as glass: the kinetic grid shows through them, blurred, and slides behind as the page
+ * scrolls.
+ *
+ * `.panel` turns to glass only on pages that draw the grid; their root carries `has-grid`. The
+ * terminal has no grid behind its panels, so there they stay solid and pay no blur cost. `.glass`
+ * is the same surface for a card that is not a `.panel`.
+ *
+ * Borders are left alone. These rules sit outside Tailwind's layers, so a border colour set here
+ * would beat every `hover:border-*` utility and silently kill the hover accents.
+ *
+ * `.glass-grid` is the frosted form of the `gap-px bg-line` tables. Those draw separators by
+ * letting a solid line colour show through 1px gaps between solid cells, which turns grey the
+ * moment the cells are translucent. Here the whole table is one frosted surface, its cells are
+ * clear, and each cell draws a hairline on its right and bottom; the outer ones are clipped by
+ * `overflow: hidden` so the table's own border frames it. One blur per table rather than one per
+ * figure, which matters on a page with dozens of them.
+ */
+.has-grid .panel,
+.glass,
+.glass-grid {
+  background-color: color-mix(in srgb, var(--sf-surface) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 12px 32px -16px rgb(0 0 0 / 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
+}
+.glass-grid {
+  overflow: hidden;
+}
+.glass-grid > * {
+  background-color: transparent;
+  box-shadow:
+    1px 0 0 0 rgb(255 255 255 / 0.08),
+    0 1px 0 0 rgb(255 255 255 / 0.08);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .has-grid .panel,
+  .glass,
+  .glass-grid {
+    background-color: var(--sf-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/*
  * NOXFUNDS is a second product on the same surface, so it gets a second accent rather than a
  * second stylesheet. Scoped to `[data-product="nox"]`, which the NOXFUNDS pages set on their
  * root element — everything built from `--color-brand` retints with no new class names.

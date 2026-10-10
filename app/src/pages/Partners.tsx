@@ -119,7 +119,7 @@ export function Partners() {
       : false;
 
   return (
-    <div className="isolate min-h-screen bg-surface text-ink">
+    <div className="has-grid isolate min-h-screen bg-surface text-ink">
       <KineticGrid />
       <Header rpcLabel={rpcLabel(RPC_URL)} />
 
@@ -175,7 +175,7 @@ export function Partners() {
 
             <div className="grid gap-6 md:grid-cols-2">
               {/* --- the pool, from solfx-core --- */}
-              <section className="rounded-lg border border-line-soft bg-surface-high p-4">
+              <section className="glass rounded-lg border border-line-soft p-4">
                 <h2 className="mb-3 text-[10px] uppercase tracking-[0.18em] text-ink-dim">
                   The referral pool
                 </h2>
@@ -228,7 +228,7 @@ export function Partners() {
               </section>
 
               {/* --- the tier ladder --- */}
-              <section className="rounded-lg border border-line-soft bg-surface-high p-4">
+              <section className="glass rounded-lg border border-line-soft p-4">
                 <h2 className="mb-3 text-[10px] uppercase tracking-[0.18em] text-ink-dim">
                   Tiers
                 </h2>
@@ -244,7 +244,7 @@ export function Partners() {
             </div>
 
             {/* --- the connected wallet --- */}
-            <section className="rounded-lg border border-line-soft bg-surface-high p-4">
+            <section className="glass rounded-lg border border-line-soft p-4">
               <h2 className="mb-3 text-[10px] uppercase tracking-[0.18em] text-ink-dim">
                 Your standing
               </h2>

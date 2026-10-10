@@ -57,7 +57,7 @@ export function About() {
   const incomplete = ME.role === "" || ME.bio.length === 0;
 
   return (
-    <div className="isolate min-h-screen bg-bg text-ink">
+    <div className="has-grid isolate min-h-screen bg-bg text-ink">
       <KineticGrid />
       <section className="border-b border-line-soft px-6 py-20 md:px-10">
         <div className="mx-auto max-w-4xl">
@@ -98,7 +98,7 @@ export function About() {
               href={REPO}
               target="_blank"
               rel="noreferrer"
-              className="mt-8 flex items-center justify-between border border-line bg-surface px-4 py-3 transition-colors hover:border-brand"
+              className="glass mt-8 flex items-center justify-between border border-line px-4 py-3 transition-colors hover:border-brand"
             >
               <span>
                 <span className="block text-[10px] uppercase tracking-[0.16em] text-ink-dim">
@@ -162,7 +162,7 @@ export function About() {
             </ul>
           </div>
 
-          <aside className="space-y-1 rounded-lg border border-line-soft bg-surface p-5">
+          <aside className="glass space-y-1 rounded-lg border border-line-soft p-5">
             <Field label="Contact">
               <a
                 className="underline hover:text-brand-soft"

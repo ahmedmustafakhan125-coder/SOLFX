@@ -152,7 +152,7 @@ export function Nox() {
             <HeroGlobe />
           </div>
 
-          <dl className="mt-8 grid max-w-4xl grid-cols-2 gap-px border border-line bg-line md:grid-cols-4 lg:col-span-12">
+          <dl className="mt-8 grid max-w-4xl grid-cols-2 glass-grid border border-line md:grid-cols-4 lg:col-span-12">
             {[
               ["Rules checked", "before the fill"],
               ["Trader can withdraw", "never"],
@@ -206,7 +206,7 @@ export function Nox() {
             </p>
           </div>
 
-          <div className="grid gap-px border border-line bg-line sm:grid-cols-2">
+          <div className="grid glass-grid border border-line sm:grid-cols-2">
             <div className="bg-bg p-5">
               <div className="text-[10px] uppercase tracking-[0.16em] text-long">
                 A trader can
@@ -238,7 +238,7 @@ export function Nox() {
         eyebrow="The rulebook"
         title="Ten rules, each with its own error, each checked before the exchange is called."
       >
-        <div className="grid gap-px border border-line bg-line sm:grid-cols-2">
+        <div className="grid glass-grid border border-line sm:grid-cols-2">
           {RULES.map(([rule, stops], i) => (
             <div key={rule} className="relative bg-bg p-5">
               <span className="tnum absolute right-4 top-4 text-[10px] tracking-wider text-ink-dim/60">
@@ -481,7 +481,7 @@ export function Nox() {
           only lists wins is the thing this product exists to replace.
         </p>
 
-        <div className="mt-8 grid gap-px border border-line bg-line sm:grid-cols-2">
+        <div className="mt-8 grid glass-grid border border-line sm:grid-cols-2">
           <div className="bg-bg p-5">
             <div className="text-[10px] uppercase tracking-[0.16em] text-ink-dim">
               NOXFUNDS program
@@ -563,7 +563,7 @@ export function Nox() {
           </div>
         </div>
 
-        <div className="mt-10 border border-warn/25 bg-warn/5 p-5 text-sm leading-relaxed text-warn">
+        <div className="mt-10 border border-warn/25 bg-warn/5 p-5 text-sm leading-relaxed text-warn backdrop-blur-md">
           Green tests mean the behaviours someone thought to test behave as
           expected. Nothing more. NOXFUNDS is not audited, not safe, and not
           production-ready. This is devnet, with test USDC.
