@@ -117,7 +117,7 @@ export function ActivityPanel({
 
   const body = (
     <>
-      <div className="flex items-center justify-between gap-3 px-5">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-5">
         <div className="flex">
           {tabs.map((t) => (
             <button
@@ -162,43 +162,53 @@ export function ActivityPanel({
         </div>
       </div>
 
-      {tab === "positions" ? (
-        <PositionsPanel
-          positions={positions}
-          markets={markets}
-          prices={prices}
-          priceAccounts={priceAccounts}
-          loadError={positionsError}
-          onClosed={onClosed}
-        />
-      ) : tab === "history" ? (
-        <HistoryPanel
-          rows={history?.rows ?? []}
-          markets={markets}
-          truncated={truncated}
-          loading={loading}
-          loadError={error}
-        />
-      ) : tab === "summary" ? (
-        <SummaryPanel
-          totals={totals}
-          positions={positions}
-          truncated={truncated}
-          loading={loading}
-          loadError={error}
-        />
-      ) : (
-        <AdlPanel
-          positions={positions}
-          markets={markets}
-          active={tab === "adl"}
-        />
-      )}
+      {/* The tab's content scrolls under the tab bar, which stays put. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {tab === "positions" ? (
+          <PositionsPanel
+            positions={positions}
+            markets={markets}
+            prices={prices}
+            priceAccounts={priceAccounts}
+            loadError={positionsError}
+            onClosed={onClosed}
+          />
+        ) : tab === "history" ? (
+          <HistoryPanel
+            rows={history?.rows ?? []}
+            markets={markets}
+            truncated={truncated}
+            loading={loading}
+            loadError={error}
+          />
+        ) : tab === "summary" ? (
+          <SummaryPanel
+            totals={totals}
+            positions={positions}
+            truncated={truncated}
+            loading={loading}
+            loadError={error}
+          />
+        ) : (
+          <AdlPanel
+            positions={positions}
+            markets={markets}
+            active={tab === "adl"}
+          />
+        )}
+      </div>
     </>
   );
 
   if (!layout.floating) {
-    return <div className="border-t border-line-soft">{body}</div>;
+    // Capped at 40% of the screen. The chart above takes whatever height is left, so without a
+    // cap a long history grew the panel until the chart had none and its timeframe buttons
+    // were drawn on top of these tabs.
+    return (
+      <div className="flex max-h-[40vh] shrink-0 flex-col border-t border-line-soft">
+        {body}
+      </div>
+    );
   }
 
   // Docked, the panel is a row in a column layout; floated, it leaves a hole. The strip
