@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Link } from "react-router-dom";
 
 import { KineticGrid } from "@/components/KineticGrid";
@@ -6,6 +7,23 @@ import { ProductSwitcher } from "@/components/ProductSwitcher";
 import { TICKER, useTicker } from "@/hooks/useTicker";
 
 const PROGRAM_ID = "2EQzy2Mzixi54tJkMbWWqJFoayUoGBNwZCEJCy44ZVKi";
+
+/** The globe and its geometry library load after the page, so they never hold up first paint. */
+const DottedGlobe = lazy(() =>
+  import("@/components/DottedGlobe").then((m) => ({ default: m.DottedGlobe }))
+);
+
+/**
+ * Holds the globe's place while its chunk loads: the same square, with the disc's outline where
+ * the disc will be (80% of the box, matching `DottedGlobe`), so nothing moves when it arrives.
+ */
+function GlobePlaceholder() {
+  return (
+    <div className="relative aspect-square w-full">
+      <div className="absolute inset-[10%] rounded-full border-2 border-white/10" />
+    </div>
+  );
+}
 
 function Nav() {
   return (
@@ -377,11 +395,19 @@ export function Landing() {
               </div>
             </div>
 
-            <div className="relative z-10 mt-12 flex flex-col gap-4 lg:col-span-5 lg:mt-0">
-              {TICKER.slice(0, 3).map((t) => (
-                <Quote key={t.symbol} t={t} />
-              ))}
-              <p className="text-[11px] leading-relaxed text-ink-dim">
+            <div className="relative z-10 mx-auto w-full max-w-[520px] lg:col-span-5">
+              <Suspense fallback={<GlobePlaceholder />}>
+                <DottedGlobe />
+              </Suspense>
+            </div>
+
+            <div className="relative z-10 lg:col-span-12">
+              <div className="grid gap-4 md:grid-cols-3">
+                {TICKER.slice(0, 3).map((t) => (
+                  <Quote key={t.symbol} t={t} />
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] leading-relaxed text-ink-dim">
                 Live from Pyth, the same feed the program prices against. Change
                 is measured against the feed's own EMA.
               </p>
