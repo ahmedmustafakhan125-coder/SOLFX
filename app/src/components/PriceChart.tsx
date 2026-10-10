@@ -70,7 +70,7 @@ export function PriceChart({ symbol, live, levels }: Props) {
       layout: {
         background: { color: "transparent" },
         textColor: "#8b8b93",
-        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontFamily: "'Geist Mono Variable', ui-monospace, monospace",
         fontSize: 10,
       },
       grid: {
