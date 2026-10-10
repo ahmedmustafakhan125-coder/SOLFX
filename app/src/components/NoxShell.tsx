@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { GlassHeader } from "@/components/GlassHeader";
 import { KineticGrid } from "@/components/KineticGrid";
 import { Wordmark } from "@/components/Logo";
 import { NavMenu, type NavEntry } from "@/components/NavMenu";
@@ -92,7 +93,7 @@ export function NoxShell({ children }: { children: React.ReactNode }) {
       <div className="relative z-10">
         <ProductSwitcher active="nox" />
 
-        <header className="sticky top-0 z-50 border-b border-line-soft bg-bg/95 backdrop-blur">
+        <GlassHeader className="sticky top-0 z-50">
           <div className="mx-auto flex max-w-[1440px] items-center gap-8 px-4 py-4 md:px-8">
             <Link to="/nox">
               <Wordmark product="nox" />
@@ -113,7 +114,7 @@ export function NoxShell({ children }: { children: React.ReactNode }) {
               <WalletButton />
             </div>
           </div>
-        </header>
+        </GlassHeader>
 
         {children}
 

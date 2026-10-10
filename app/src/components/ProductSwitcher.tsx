@@ -17,7 +17,9 @@ export function ProductSwitcher({ active }: { active: "solfx" | "nox" }) {
     ].join(" ");
 
   return (
-    <div className="border-b border-line-soft bg-bg">
+    // No fill: the header beneath is clear at the top of the page, and a solid strip above a
+    // clear bar would read as a band rather than as the page.
+    <div className="border-b border-line-soft">
       <div className="mx-auto flex max-w-[1440px] items-center justify-center px-4 py-2">
         <div className="flex items-center rounded-full border border-line p-0.5">
           <Link

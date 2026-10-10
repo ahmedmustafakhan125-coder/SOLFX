@@ -114,6 +114,37 @@ body {
 }
 
 /*
+ * The header, as glass. Clear while the page is at the top, so the grid runs straight under it;
+ * frosted once the page scrolls (`GlassHeader` sets `data-scrolled`), so whatever slides beneath
+ * is blurred rather than hidden. At 95% solid, as it was, the blur had nothing to show.
+ */
+.glass-header {
+  border-bottom: 1px solid transparent;
+  background-color: transparent;
+  transition:
+    background-color 300ms ease,
+    border-color 300ms ease,
+    box-shadow 300ms ease,
+    backdrop-filter 300ms ease,
+    -webkit-backdrop-filter 300ms ease;
+}
+.glass-header-ruled {
+  border-bottom-color: var(--sf-border-soft);
+}
+.glass-header[data-scrolled] {
+  background-color: color-mix(in srgb, var(--sf-bg) 60%, transparent);
+  border-bottom-color: rgb(255 255 255 / 0.08);
+  box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.6);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass-header[data-scrolled] {
+    background-color: var(--sf-bg);
+  }
+}
+
+/*
  * NOXFUNDS is a second product on the same surface, so it gets a second accent rather than a
  * second stylesheet. Scoped to `[data-product="nox"]`, which the NOXFUNDS pages set on their
  * root element — everything built from `--color-brand` retints with no new class names.

@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 
 import { DevnetHint } from "@/components/DevnetHint";
 import { FaucetButton } from "@/components/FaucetButton";
+import { GlassHeader } from "@/components/GlassHeader";
 import { Logo } from "@/components/Logo";
 import { WalletButton } from "@/components/WalletButton";
 
@@ -20,8 +21,12 @@ export function Header({ rpcLabel }: { rpcLabel: string }) {
   const { pathname } = useLocation();
 
   return (
-    // Opaque, so the nav reads cleanly where a page puts the kinetic grid behind it.
-    <header className="flex items-center gap-6 border-b border-line-soft bg-bg px-5 py-3">
+    // Sticky, so on Pool and Partners it stays up and frosts as the page scrolls beneath it.
+    // Ruled, because the terminal never scrolls and needs the line above its panels.
+    <GlassHeader
+      ruled
+      className="sticky top-0 z-40 flex items-center gap-6 px-5 py-3"
+    >
       <Link to="/" className="flex items-center gap-2">
         <Logo className="h-6 w-6 shrink-0 text-brand" />
         <span className="text-lg font-extrabold tracking-tight">SolFX</span>
@@ -57,6 +62,6 @@ export function Header({ rpcLabel }: { rpcLabel: string }) {
         <FaucetButton />
         <WalletButton />
       </div>
-    </header>
+    </GlassHeader>
   );
 }

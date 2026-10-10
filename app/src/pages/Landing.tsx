@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { GlassHeader } from "@/components/GlassHeader";
 import { HeroGlobe } from "@/components/HeroGlobe";
 import { KineticGrid } from "@/components/KineticGrid";
 import { Wordmark } from "@/components/Logo";
@@ -66,7 +67,7 @@ const NAV: readonly NavEntry[] = [
 
 function Nav() {
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-bg/95 backdrop-blur">
+    <GlassHeader className="sticky top-0 z-50">
       <div className="mx-auto flex max-w-[1440px] items-center gap-8 px-4 py-4 md:px-8">
         <Link to="/" className="text-brand-soft">
           <Wordmark product="solfx" />
@@ -81,7 +82,7 @@ function Nav() {
           </Link>
         </div>
       </div>
-    </header>
+    </GlassHeader>
   );
 }
 
